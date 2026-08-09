@@ -30,6 +30,18 @@ def _convert(name: Path, mode, tmp_path, **kw):
     return ingest_document(name, tmp_path / "out", config=cfg, lint=False)
 
 
+def _requires_formula():
+    """Skip when the vendored formula OCR can't load (bobine[formula] missing)."""
+    try:
+        import onnxruntime  # noqa: F401
+
+        from bobine.engine import LatexOCR
+    except ImportError:
+        pytest.skip("formula OCR runtime not installed (pip install bobine[formula])")
+    if LatexOCR is None:
+        pytest.skip("vendored formula OCR unavailable (cv2/numpy missing)")
+
+
 class TestBornDigitalText:
     @pytest.mark.slow
     def test_never_mode_extracts_full_text(self, tmp_path):
@@ -46,6 +58,7 @@ class TestBornDigitalText:
     def test_surgical_recognizes_formulas(self, tmp_path):
         """Real LaTeX pages: math boxes detected AND recognized to LaTeX."""
         pytest.importorskip("pdf_oxide")
+        _requires_formula()
         from bobine import RoutingMode
 
         r = _convert(SPLITTING, RoutingMode.SURGICAL, tmp_path)
