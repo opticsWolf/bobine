@@ -1,6 +1,12 @@
-# Release workflow: build bobine, verify it, and publish to PyPI.
+# Release workflow: build bobine on Linux/macOS/Windows, verify, publish to PyPI.
 #
 # Triggers on version tags, e.g. `git tag v0.2.0 && git push origin v0.2.0`.
+#
+# bobine is pure Python, so the wheel is platform-independent
+# (`py3-none-any`): the cross-platform matrix is for VERIFICATION (lint,
+# tests, tag/version guard, zero-dependency wheel smoke test) on each OS,
+# and every platform uploads its build artifacts. The publish job merges the
+# (byte-identical) artifacts from all platforms and publishes once.
 #
 # Publishing uses PyPI **trusted publishing** (OpenID Connect) — no API
 # tokens stored in secrets. One-time setup on PyPI:
@@ -9,9 +15,10 @@
 #      (use the TestPyPI equivalent for the `testpypi` variant below).
 #
 # Job layout:
-#   build          → lint + unit tests (bare install) + `uv build` + wheel
+#   build          → matrix [ubuntu | macos | windows] × [py3.10…3.13]:
+#                    lint + unit tests (bare install) + `uv build` + wheel
 #                    smoke test (zero-dependency import) + artifact upload
-#   publish-pypi   → trusted publish of the sdist + wheel to PyPI
+#   publish-pypi   → trusted publish of the merged sdist + wheel to PyPI
 #   github-release → draft a GitHub Release with the artifacts attached
 
 name: release
@@ -26,8 +33,13 @@ permissions:
 
 jobs:
   build:
-    name: build & verify
-    runs-on: ubuntu-latest
+    name: build & verify (${{ matrix.os }} / py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
@@ -37,11 +49,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install (bare + dev)
-        run: |
-          uv sync --extra dev --extra markdown --frozen
+        run: uv sync --extra dev --extra markdown --frozen
 
       - name: Lint + format
         run: uv run ruff check . && uv run ruff format --check .
@@ -50,6 +61,7 @@ jobs:
         run: uv run pytest -m "not integration" -q
 
       - name: Tag/version consistency
+        shell: bash
         run: |
           tag="${GITHUB_REF#refs/tags/v}"
           pkg="$(uv run python -c 'import bobine; print(bobine.__version__)')"
@@ -60,16 +72,17 @@ jobs:
         run: uv build
 
       - name: Wheel smoke test (zero-dependency import)
+        shell: bash
         run: |
-          python -m venv /tmp/wheelcheck
-          /tmp/wheelcheck/bin/pip install --no-deps dist/bobine-*.whl
-          /tmp/wheelcheck/bin/python -c \
+          python -m venv "${{ runner.temp }}/wheelcheck"
+          python -m pip install --no-deps dist/bobine-*.whl
+          "${{ runner.temp }}/wheelcheck/bin/python" -c \
             "import bobine; print('wheel ok:', bobine.__version__)"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-${{ matrix.os }}-py${{ matrix.python-version }}
           path: dist/
 
   publish-pypi:
@@ -80,9 +93,11 @@ jobs:
     permissions:
       id-token: write  # trusted publishing (OIDC) — no token secret
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Collect artifacts from all platforms
+        uses: actions/download-artifact@v4
         with:
-          name: dist
+          pattern: dist-*
+          merge-multiple: true
           path: dist/
 
       - name: Publish to PyPI
@@ -100,9 +115,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Collect artifacts from all platforms
+        uses: actions/download-artifact@v4
         with:
-          name: dist
+          pattern: dist-*
+          merge-multiple: true
           path: dist/
 
       - name: Draft release
