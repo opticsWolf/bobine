@@ -8,6 +8,14 @@ for PDFs, pure Python for text documents.
 Dual-licensed under the terms of either the MIT License or the Apache License,
 Version 2.0 — you may choose either (see [LICENSE](LICENSE)).
 
+## Docs
+
+- [**Quick reference**](docs/quickref.md) — install, API, config, common tasks
+- [**Architecture**](docs/architecture.md) — modules, data flow, coordinate
+  spaces, vendoring, testing strategy
+- [**Implementation plan**](docs/IMPLEMENTATION_PLAN.md) — phases, roadmap, status
+- [**Parity audit**](docs/PARITY.md) — OKFgraph extraction fidelity + drift catalogue
+
 ## Why bobine?
 
 The ingestion pipeline was entangled with the knowledge-graph project it served.
@@ -154,10 +162,11 @@ attribution. The full untrimmed PDFs are git-ignored under
 ```bash
 uv run --with reportlab python tests/fixtures/generate_corpus.py
 ```
-(heavy). The integration tests self-skip when backends are missing, so the
-bare install always stays green. CI (`.github/workflows/ci.yml`) runs the
-core suite on Python 3.10–3.13 plus an integration job.
 
+The integration tests self-skip when backends are missing, so the bare install
+always stays green. CI (`.github/workflows/ci.yml`) runs the core suite on
+Python 3.10–3.13 plus an integration job. **169 tests, 92 % coverage** as of
+2026-08-09.
 ## Version pinning
 
 RapidAI packages move fast; `check_rapid_versions()` warns on first import if

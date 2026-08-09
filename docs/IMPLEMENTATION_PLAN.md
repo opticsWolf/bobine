@@ -1,7 +1,9 @@
 # bobine — Consolidated Implementation Plan
 
 **Status:** v0.1.0 · dual-licensed (Apache-2.0 OR MIT) · `https://github.com/opticsWolf/bobine`
-**Last updated:** 2026-08-09 · latest commit pending (parity audit)
+**Last updated:** 2026-08-09 · latest commit pending (docs: quickref + architecture)
+
+**Docs:** [quickref.md](quickref.md) · [architecture.md](architecture.md) · [PARITY.md](PARITY.md)
 
 ---
 
@@ -309,7 +311,7 @@ bobine/
 | 5 | **`slow` GPU job** in CI (onnxruntime CUDA) — optional | L | GPU provider path (`ort_providers`) untested |
 | 6 | **PyPI publish** (0.1.0 or 0.2.0): `uv build`/twine, long description, classifiers | S | Distribution |
 | 7 | **Consume from OKFgraph** (optional follow-up, per user constraint OKFgraph stays untouched for now): re-export shim or refactor of `cli.py`/`components/ingest.py` | M | Remove duplication, single source of truth |
-| 8 | **Converter label fix**: add `display_formula`/`inline_formula` (pp_doc_layoutv3) to the formula-label tuple in `_full_structure_page_markdown` so layout-detected formulas route to the recognizer instead of OCR-as-text | S | Cheap, makes RapidLayout 1.2.1 formula detection usable |
+| 8 | ~~Converter label fix~~ ✅ **done (2026-08-09, Phase 8)** — `_MATH_LAYOUT_LABELS` = equation/display_formula/inline_formula/isolate_formula/formula, used by both the full-structure path and the P2 fallback (was `("formula", "equation", "isolate_formula")`) | — | — |
 | 9 | **Formula accuracy upgrade (optional)**: TexTeller (80M pairs) or pix2tex-ONNX as an alternative recognizer behind `OnnxRapidEngine.recognize_formula` | M | Vendored model is the 100K-pair accuracy ceiling |
 
 **Legend:** S = < 1 day · M = 2–3 days · L = 1+ week
