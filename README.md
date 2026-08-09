@@ -21,6 +21,7 @@ database stack.
 ```bash
 pip install -e .                # core (Pillow only)
 pip install -e ".[pdf-ingest]"  # + pdf_oxide + RapidAI ONNX passes
+pip install -e ".[formula]"     # + formula OCR (vendored RapidLaTeXOCR)
 pip install -e ".[markdown]"    # + mordant linting + frontmatter parsing
 ```
 
@@ -93,8 +94,19 @@ bobine/
 ├── versions.py      RapidAI version pins + runtime check
 ├── documents.py     Document model, frontmatter, thoughts wrapper
 ├── markdown.py      mordant linting (guarded, no-op without it)
-└── pipeline.py      convert_to_markdown / stage_images / ingest_document
+├── pipeline.py      convert_to_markdown / stage_images / ingest_document
+└── _vendor/         third-party code, vendored with licenses intact
+    └── rapid_latex_ocr/   formula OCR (MIT (c) 2023 RapidAI; numpy-2 fixed)
 ```
+
+### Formula OCR (SURGICAL mode)
+
+The LaTeX formula recognizer is **vendored** (`bobine/_vendor/rapid_latex_ocr/`,
+MIT (c) 2023 RapidAI) with the numpy-2 incompatibility fixed upstream never
+addressed — no external package needed. Runtime deps come from the
+`[formula]` extra; the ONNX models (~179 MB) auto-download on first use from
+`github.com/RapidAI/RapidLaTeXOCR/releases/download/v0.0.0/` into
+`bobine/_vendor/rapid_latex_ocr/models/` (git-ignored).
 
 ## Output contract
 

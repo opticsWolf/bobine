@@ -8,3 +8,6 @@ dist/
 .coverage
 .coverage.*
 htmlcov/
+
+# Vendored RapidLaTeXOCR models (~179 MB, auto-downloaded on first use)
+bobine/_vendor/rapid_latex_ocr/models/

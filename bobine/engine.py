@@ -17,8 +17,8 @@ from pathlib import Path
 # -- lazy imports: all guarded so the module loads without RapidAI installed --
 
 try:
-    from rapid_latex_ocr import LatexOCR  # VERIFY: class may be LaTeXOCR in some builds
-except ImportError:  # pragma: no cover
+    from bobine._vendor.rapid_latex_ocr import LatexOCR
+except ImportError:  # pragma: no cover — optional deps (onnxruntime/tokenizers/cv2) missing
     LatexOCR = None  # type: ignore[assignment]
 
 try:
@@ -62,9 +62,11 @@ class OnnxRapidEngine:
         """Return the RapidLaTeXOCR instance (lazy)."""
         if self._formula is None:
             if LatexOCR is None:
-                self.log("⚠️  rapid_latex_ocr not installed; math stays as text.")
+                self.log(
+                    "⚠️  formula OCR unavailable (pip install bobine[formula]); math stays as text."
+                )
                 return None
-            self.log("⚙️  Loading RapidLaTeXOCR (formula → LaTeX)…")
+            self.log("⚙️  Loading formula OCR (vendored RapidLaTeXOCR → LaTeX)…")
             try:
                 self._formula = LatexOCR()  # VERIFY: pass model paths for offline
             except Exception as e:

@@ -61,9 +61,11 @@ bobine/
 │   ├── versions.py           # RapidAI version pins + runtime check
 │   ├── documents.py          # Document model, frontmatter, wrap_thoughts
 │   ├── markdown.py           # mordant linting (guarded)
-│   └── pipeline.py           # convert_to_markdown / stage_images /
-│                             #   ingest_document / convert_directory
-└── tests/                    # 12 files, 99 unit + 3 integration tests
+│   ├── pipeline.py           # convert_to_markdown / stage_images /
+│   │                         #   ingest_document / convert_directory
+│   └── _vendor/              # third-party code, vendored with licenses
+│       └── rapid_latex_ocr/  # formula OCR (MIT (c) 2023 RapidAI, numpy-2 fixed)
+└── tests/                    # 13 files, 104 unit + 5 integration tests
 ```
 
 ### Extras (all optional — the package imports with zero dependencies)
@@ -71,7 +73,8 @@ bobine/
 | Extra | Provides |
 |---|---|
 | *(core)* | `Pillow` |
-| `[pdf-ingest]` | `pdf_oxide`, `rapidocr==1.5.2`, `rapid_latex_ocr==1.0.13`, `rapid_layout==0.2.0`, `rapid_table==1.0.3`, `numpy` |
+| `[pdf-ingest]` | `pdf_oxide`, `office_oxide`, `rapidocr==3.9.2`, `rapid_layout==1.2.1`, `rapid_table==3.0.2`, `numpy>=2` |
+| `[formula]` | vendored formula OCR runtime: `onnxruntime`, `tokenizers`, `opencv-python`, `chardet`, `requests`, `pyyaml` (models ~179 MB auto-download) |
 | `[markdown]` | `mordant`, `python-frontmatter`, `pyyaml` |
 | `[dev]` | `pytest` |
 
@@ -140,13 +143,14 @@ bobine/
 
 | # | Item | Effort | Why |
 |---|---|---|---|
-| 1 | **Verify against real backends**: `pip install -e ".[pdf-ingest]"`, run `pytest -m integration`; validate RapidAI version pins (`versions.py`) against the real installed stack | S | Biggest open risk: 3 integration tests never executed; pins inherited unvalidated |
+| 1 | **Verify against real backends**: `pip install -e ".[pdf-ingest]"`, run `pytest -m integration`; validate RapidAI version pins (`versions.py`) against the real installed stack | S | Biggest open risk: PDF integration tests never executed; rapidocr/layout/table pins (3.9.2/1.2.1/3.0.2) verified to resolve but not run |
 | 2 | **Test-PDF corpus** (reportlab-generated at test time): digital text, math formulas, GFM tables, embedded images, scanned page — exercise SURGICAL/ALWAYS + table/formula/image paths against real pdf_oxide | M | Fake tests prove logic, not pdf_oxide output fidelity |
 | 3 | **Raise coverage** 78% → ≥85%: converter guard/fallback lines, `engine.py` lazy-loaders (43% — only reachable with real RapidAI or tighter engine fakes) | M | Confidence in degradation paths |
 | 4 | **Parity check** ported tests vs OKFgraph originals; document any behavioural drift | S | Keep the two codebases honest |
 | 5 | **`slow` GPU job** in CI (onnxruntime CUDA) — optional | L | GPU provider path (`ort_providers`) untested |
 | 6 | **PyPI publish** (0.1.0 or 0.2.0): twine/uv build, `README`/long_description, classifiers | S | Distribution |
 | 7 | **Consume from OKFgraph** (optional follow-up, per user constraint OKFgraph stays untouched for now): re-export shim or refactor of `cli.py`/`components/ingest.py` | M | Remove duplication, single source of truth |
+| 8 | **Formula OCR modernization (optional)**: TexTeller (80M pairs, better accuracy) or pix2tex-ONNX as an alternative recognizer behind `OnnxRapidEngine.recognize_formula`; also add `display_formula`/`inline_formula` (pp_doc_layoutv3) to the converter's formula-label tuple | M | Vendored RapidLaTeXOCR is modernized but accuracy is the 100K-pair ceiling |
 
 **Legend:** S = < 1 day · M = 2–3 days · L = 1+ week
 

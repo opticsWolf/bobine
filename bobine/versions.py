@@ -30,15 +30,20 @@ log = logging.getLogger(__name__)
 
 # ── Known-good version ranges ──────────────────────────────────────────────
 # Each entry: (package_name, exact_version_or_range, display_name)
-# The "exact" field is the version that has been tested and verified.
-# We allow ±1 patch version as a tolerance band.
+# The "exact" field is the version that the code is written against (verified
+# to resolve on PyPI; runtime verification against a real install is tracked
+# in docs/IMPLEMENTATION_PLAN.md, open item #1). We allow ±1 patch version as
+# a tolerance band.
+#
+# NOTE: rapid_latex_ocr is NOT listed — it is vendored into
+# bobine/_vendor/rapid_latex_ocr (MIT, with the numpy-2 fix), so it is never
+# installed as a distribution and has nothing to pin.
 
 _KNOWN_GOOD: dict[str, tuple[str, str]] = {
-    "rapidocr": ("1.5.2", "rapidocr"),
-    "rapid_latex_ocr": ("1.0.13", "rapid_latex_ocr"),
-    "rapid_layout": ("0.2.0", "rapid_layout"),
-    "rapid_table": ("1.0.3", "rapid_table"),
-    "pdf_oxide": ("0.2.1", "pdf_oxide"),
+    "rapidocr": ("3.9.2", "rapidocr"),
+    "rapid_layout": ("1.2.1", "rapid_layout"),
+    "rapid_table": ("3.0.2", "rapid_table"),
+    "pdf_oxide": ("0.3.77", "pdf_oxide"),
 }
 
 
