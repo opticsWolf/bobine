@@ -74,9 +74,12 @@ jobs:
       - name: Wheel smoke test (zero-dependency import)
         shell: bash
         run: |
-          python -m venv "${{ runner.temp }}/wheelcheck"
+          VENV="${{ runner.temp }}/wheelcheck"
+          python -m venv "$VENV"
           python -m pip install --no-deps dist/bobine-*.whl
-          "${{ runner.temp }}/wheelcheck/bin/python" -c \
+          PY="$VENV/bin/python"          # POSIX (linux / macos)
+          [ -x "$PY" ] || PY="$VENV/Scripts/python.exe"  # Windows
+          "$PY" -c \
             "import bobine; print('wheel ok:', bobine.__version__)"
 
       - name: Upload artifacts
