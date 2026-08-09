@@ -1,7 +1,7 @@
 # bobine — Consolidated Implementation Plan
 
 **Status:** v0.1.0 · dual-licensed (Apache-2.0 OR MIT) · `https://github.com/opticsWolf/bobine`
-**Last updated:** 2026-08-09 · latest commit pending (coverage 92%)
+**Last updated:** 2026-08-09 · latest commit pending (parity audit)
 
 ---
 
@@ -305,7 +305,7 @@ bobine/
 | 2a | **Formula splice placement** ✅ **done (2026-08-09)** — root cause was two real bugs (cmr10 body-font false positive; bbox `(x,y,w,h)` vs `(x0,y0,x1,y1)` drift), fixed + tuned; formulas splice in place. **P1 line-aware merge** (multi-line equations = 1 box) and **P2 layout fallback** (`formula_layout_fallback`, off by default) implemented in Phase 8 | — | — |
 | 2b | **Table structure quality** ✅ **done (2026-08-09)** — root cause: layout model mislabels two-column pages (prose→table, real table→text); v3 model no better; fixed via text-layer-first on born-digital pages (lossless, 7× faster). Slanet HTML still used for scans | — | — |
 | 3 | ~~Raise coverage~~ ✅ **done (2026-08-09)** — **92%** total (converter 91%, engine 93%, pipeline 97%); 33 new fake/monkeypatch tests; see Phase 10 | — | — |
-| 4 | **Parity check** ported tests vs OKFgraph originals; document any behavioural drift | S | Keep the two codebases honest |
+| 4 | ~~Parity check~~ ✅ **done (2026-08-09)** — OKFgraph's 35 pure-pipeline tests pass against bobine via shim; all code drift intentional; see `docs/PARITY.md` | — | — |
 | 5 | **`slow` GPU job** in CI (onnxruntime CUDA) — optional | L | GPU provider path (`ort_providers`) untested |
 | 6 | **PyPI publish** (0.1.0 or 0.2.0): `uv build`/twine, long description, classifiers | S | Distribution |
 | 7 | **Consume from OKFgraph** (optional follow-up, per user constraint OKFgraph stays untouched for now): re-export shim or refactor of `cli.py`/`components/ingest.py` | M | Remove duplication, single source of truth |
