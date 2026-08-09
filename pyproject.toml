@@ -7,7 +7,7 @@ name = "bobine"
 version = "0.1.0"
 description = "Standalone PDF / Office / text → Markdown ingestion engine (extracted from OKFgraph)"
 requires-python = ">=3.10"
-license = "MIT"
+license = "Apache-2.0 OR MIT"
 dependencies = [
     "Pillow>=10.0",
 ]

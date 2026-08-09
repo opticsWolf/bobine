@@ -5,6 +5,9 @@ the OKFgraph project as a self-contained module. Runs on a single
 `onnxruntime` wheel with no CUDA-version coupling — RapidAI family + `pdf_oxide`
 for PDFs, pure Python for text documents.
 
+Dual-licensed under the terms of either the MIT License or the Apache License,
+Version 2.0 — you may choose either (see [LICENSE](LICENSE)).
+
 ## Why bobine?
 
 The ingestion pipeline was entangled with the knowledge-graph project it served.
