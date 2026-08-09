@@ -33,7 +33,11 @@ class TestHybridConverterInit:
         assert not _is_mono_font("Arial")
 
     def test_pdf_missing_raises_runtime_error(self, tmp_path):
-        """Without pdf_oxide installed, convert_pdf raises a clear error."""
+        """convert_pdf fails loudly when it cannot open the PDF: a clear
+        RuntimeError when pdf_oxide is absent, pdf_oxide's own error when the
+        real backend is installed."""
+        import importlib.util
+
         import pytest
 
         from bobine.pipeline import convert_to_markdown
@@ -41,6 +45,11 @@ class TestHybridConverterInit:
         pdf = tmp_path / "x.pdf"
         pdf.write_bytes(b"%PDF-1.4 fake")
         cfg = ConverterConfig(routing_mode=RoutingMode.NEVER)
-        # convert_to_markdown raises RuntimeError when pdf_oxide is absent
-        with pytest.raises(RuntimeError):
-            convert_to_markdown(pdf, cfg, tmp_path / "work")
+        if importlib.util.find_spec("pdf_oxide") is None:
+            # no backend → clear guidance error
+            with pytest.raises(RuntimeError):
+                convert_to_markdown(pdf, cfg, tmp_path / "work")
+        else:
+            # real backend → the invalid file surfaces pdf_oxide's own error
+            with pytest.raises((OSError, RuntimeError)):
+                convert_to_markdown(pdf, cfg, tmp_path / "work")

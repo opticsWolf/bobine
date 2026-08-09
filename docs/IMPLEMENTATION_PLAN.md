@@ -1,7 +1,7 @@
 # bobine — Consolidated Implementation Plan
 
 **Status:** v0.1.0 · dual-licensed (Apache-2.0 OR MIT) · `https://github.com/opticsWolf/bobine`
-**Last updated:** 2026-08-09 · latest commit `709d31a` (formula OCR vendored, dep tree modernised)
+**Last updated:** 2026-08-09 · latest commit `5154ba2` (real-backend verification, API-drift fixes)
 
 ---
 
@@ -35,12 +35,13 @@ OKFgraph itself is **not modified**; it keeps importing its own
 | Orchestration (single + batch) | ✅ new (`pipeline`) |
 | Formula OCR (SURGICAL mode) | ✅ **vendored** `rapid_latex_ocr` with numpy-2 fix; verified live on numpy 2.5.1 / py3.13 / onnxruntime 1.28 |
 | Dependency tree | ✅ modernised + `uv.lock` (single numpy-2 lineage); `office_oxide` finally declared |
-| Unit tests (fake pdf_oxide, no deps) | ✅ **104 passed**, 5 integration |
-| Coverage | ✅ **78%** (converter 76%, pipeline 87%, assets 92%; `_vendor` excluded) |
+| Unit tests (fake pdf_oxide, no deps) | ✅ **116 passed**, 6 integration |
+| Coverage | ✅ **83%** (engine 82% — was 43%, converter 76%, assets 92%; `_vendor` excluded) |
 | Lint / format (ruff) | ✅ clean |
 | CI (GitHub Actions) | ✅ core matrix 3.10–3.13 + integration job |
 | Git / remote | ✅ `main` on GitHub, clean tree |
-| Real-backend verification | 🟡 formula path verified live; **PDF/Office/RapidAI runtime verification still pending** |
+| Real-backend verification | ✅ **done (2026-08-09)**: pdf_oxide 0.3.77 + office_oxide + all four ONNX stacks installed & run end-to-end (SURGICAL + ALWAYS); engine adapters updated for rapidocr/layout/table 3.x dataclass returns |
+| Table/formula-page recognition corpus | ⬜ pending (roadmap #2) |
 
 ---
 
@@ -68,7 +69,7 @@ bobine/
 │   │                         #   ingest_document / convert_directory
 │   └── _vendor/              # third-party code, vendored with licenses
 │       └── rapid_latex_ocr/  # formula OCR (MIT (c) 2023 RapidAI, numpy-2 fixed)
-└── tests/                    # 13 files, 104 unit + 5 integration tests
+└── tests/                    # 13 files, 116 unit + 6 integration tests
     └── fixtures/             # formula_sample.png etc.
 ```
 
@@ -146,6 +147,17 @@ bobine/
 - Version pinned to **0.1.0** (pyproject + `__version__` + dist metadata).
 
 ### Phase 4 — Dependency modernisation & formula OCR (done, `709d31a`)
+
+### Phase 5 — Real-backend verification (done, `2026-08-09`)
+- Installed `[pdf-ingest]` on py3.13/numpy 2.5.1: `rapidocr==3.9.2`, `rapid_layout==1.2.1`, `rapid_table==3.0.2`, `pdf_oxide==0.3.77`, `office_oxide==0.1.8` — all 12 packages resolved and installed cleanly.
+- **Integration suite now green end-to-end**: 6/6 (formula recognition ×2, pdf_oxide NEVER-mode conversion, page count, missing-file, office docx) + full suite **116 passed**.
+- **API drift found & fixed** (the `# VERIFY` gamble paid off):
+  - `RapidOCR()` takes **no kwargs** in 3.x — dropped `use_angle_cls`/`*_use_cuda` (defaults = onnxruntime/CPU/use_cls=True).
+  - `rapid_layout` 1.2.1 and `rapid_table` 3.0.2 return **dataclasses** (`RapidLayoutOutput`, `RapidTableOutput`), not tuples — added normalization branches (with legacy fallbacks).
+  - pdf_oxide 0.3.77 is an API **rewrite** (render/within/extract_chars on the doc; Page proxies `markdown`/`render`/`chars`) — the converter's duck-typed surface still lands: `page.render(dpi=…) → bytes → PIL` verified.
+- **ALWAYS-mode smoke test**: all four ONNX models download + load + run on a rendered page (rapidocr PP-OCRv6 det/cls/rec, layout_cdla); OCR det ran (empty on the synthetic page — expected).
+- Unit coverage for the new dataclass branches added (engine 43% → **82%**; total 78% → **83%**).
+- Also fixed: tests that clobbered `bobine.converter.PdfDocument` to `None` (monkeypatch now); the missing-backend unit test is env-agnostic (real pdf_oxide raises `OSError` on an invalid PDF).
 - **Dep-tree audit** found the tree was broken: `rapidocr==1.5.2` and
   `rapid_latex_ocr==1.0.13` **don't exist on PyPI** (install of
   `[pdf-ingest]` would fail), and `office_oxide` (imported by the converter)
@@ -174,9 +186,9 @@ bobine/
 
 | # | Item | Effort | Why |
 |---|---|---|---|
-| 1 | **PDF/Office runtime verification**: `pip install -e ".[pdf-ingest]"`, run `pytest -m integration`; confirm rapidocr/layout/table (3.9.2/1.2.1/3.0.2) + pdf_oxide 0.3.x + office_oxide 0.1.8 actually work with the converter's `# VERIFY`-flagged calls | S | Only remaining unverified backends (formula path already proven live) |
-| 2 | **Test-PDF corpus** (reportlab-generated at test time): digital text, math formulas, GFM tables, embedded images, scanned page — exercise SURGICAL/ALWAYS + table/formula/image paths against real pdf_oxide | M | Fake tests prove logic, not pdf_oxide output fidelity |
-| 3 | **Raise coverage** 78% → ≥85%: converter guard/fallback lines, `engine.py` lazy-loaders (43% — only reachable with real RapidAI or tighter engine fakes) | M | Confidence in degradation paths |
+| 1 | ~~PDF/Office runtime verification~~ ✅ **done (2026-08-09)** — pins installed, integration suite green, drift fixed; see Phase 5 | — | — |
+| 2 | **Test-PDF corpus** (reportlab-generated at test time): digital text, math formulas, GFM tables, embedded images, scanned page — exercise SURGICAL/ALWAYS + table/formula/image paths against real pdf_oxide | M | End-to-end run only proved the models *load and run*; real recognition (layout → OCR/table/formula) on realistic pages is still unproven |
+| 3 | **Raise coverage** 83% → ≥85%: converter guard/fallback lines (76%), remaining engine lines (82%) | M | Confidence in degradation paths |
 | 4 | **Parity check** ported tests vs OKFgraph originals; document any behavioural drift | S | Keep the two codebases honest |
 | 5 | **`slow` GPU job** in CI (onnxruntime CUDA) — optional | L | GPU provider path (`ort_providers`) untested |
 | 6 | **PyPI publish** (0.1.0 or 0.2.0): `uv build`/twine, long description, classifiers | S | Distribution |
@@ -210,8 +222,8 @@ uv lock --check
 
 ## 8. Acceptance Criteria (definition of done for v1.0)
 
-- [ ] **104+** unit tests pass on a bare install (no optional deps)
-- [ ] Integration suite green on a runner with `bobine[pdf-ingest]` + `bobine[formula]` installed
+- [ ] **116+** unit tests pass on a bare install (no optional deps)
+- [ ] Integration suite green on a runner with `bobine[pdf-ingest]` + `bobine[formula]` installed (**demonstrated locally 2026-08-09**)
 - [ ] Coverage ≥ 85% on `bobine/converter.py` + `bobine/pipeline.py`
 - [ ] CI green on Python 3.10–3.13 (lint, format, unit, coverage)
 - [ ] Test-PDF corpus committed under `tests/fixtures/` (or generated at test

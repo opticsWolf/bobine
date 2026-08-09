@@ -618,7 +618,7 @@ class HybridConverter:
             if md and md.strip():
                 self.log(f"   🧠 page {index + 1} → ONNX layout+OCR (full pipeline)")
                 return md
-            self.log(f"   ⚠️  page {index + 1}: render unavailable; using fast path.")
+            self.log(f"   ⚠️  page {index + 1}: ONNX pipeline produced no output; using fast path.")
         return self._fast_page_markdown(page)
 
     # ------------------------------------------------------------------

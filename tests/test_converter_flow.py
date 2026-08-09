@@ -44,7 +44,7 @@ class TestFastPath:
         assert _conv()._fast_page_markdown(p2) in ("attr text", "")
         assert _conv()._fast_page_markdown(p3) == ""
 
-    def test_convert_pdf_never_mode(self, tmp_path):
+    def test_convert_pdf_never_mode(self, tmp_path, monkeypatch):
         doc = FakePdfDocument(
             pages=[
                 FakePage.from_text("Page one.", index=0),
@@ -57,24 +57,21 @@ class TestFastPath:
         # Route through convert_pdf by writing a fake path + patching PdfDocument
         import bobine.converter as conv_mod
 
-        conv_mod.PdfDocument = lambda _path: doc  # used as context manager
+        monkeypatch.setattr(conv_mod, "PdfDocument", lambda _path: doc)  # context manager
         pdf = tmp_path / "doc.pdf"
         pdf.write_bytes(b"%PDF-1.4 fake")
-        try:
-            md = conv.convert_pdf(
-                pdf,
-                tmp_path / "work",
-                should_continue=lambda: True,
-                on_page=lambda i, n: None,
-            )
-        finally:
-            conv_mod.PdfDocument = None
+        md = conv.convert_pdf(
+            pdf,
+            tmp_path / "work",
+            should_continue=lambda: True,
+            on_page=lambda i, n: None,
+        )
 
         assert "Page one." in md
         assert "Page two." in md
         assert "---" in md  # page separator
 
-    def test_should_continue_stops_early(self, tmp_path):
+    def test_should_continue_stops_early(self, tmp_path, monkeypatch):
         doc = FakePdfDocument(
             pages=[
                 FakePage.from_text("A", index=0),
@@ -86,36 +83,30 @@ class TestFastPath:
         conv = _conv(cfg)
         import bobine.converter as conv_mod
 
-        conv_mod.PdfDocument = lambda _path: doc
+        monkeypatch.setattr(conv_mod, "PdfDocument", lambda _path: doc)
         pdf = tmp_path / "doc.pdf"
         pdf.write_bytes(b"%PDF-1.4 fake")
         seen = []
-        try:
-            md = conv.convert_pdf(
-                pdf,
-                tmp_path / "work",
-                should_continue=lambda: len(seen) < 2,
-                on_page=lambda i, n: seen.append((i, n)),
-            )
-        finally:
-            conv_mod.PdfDocument = None
+        md = conv.convert_pdf(
+            pdf,
+            tmp_path / "work",
+            should_continue=lambda: len(seen) < 2,
+            on_page=lambda i, n: seen.append((i, n)),
+        )
 
         assert "A" in md and "B" in md and "C" not in md
         assert seen == [(0, 3), (1, 3)]
 
-    def test_on_page_receives_totals(self, tmp_path):
+    def test_on_page_receives_totals(self, tmp_path, monkeypatch):
         doc = FakePdfDocument(pages=[FakePage(index=0), FakePage(index=1), FakePage(index=2)])
         conv = _conv(ConverterConfig(routing_mode=RoutingMode.NEVER, use_onnx=False))
         import bobine.converter as conv_mod
 
-        conv_mod.PdfDocument = lambda _path: doc
+        monkeypatch.setattr(conv_mod, "PdfDocument", lambda _path: doc)
         pdf = tmp_path / "d.pdf"
         pdf.write_bytes(b"%PDF-1.4 fake")
         seen = []
-        try:
-            conv.convert_pdf(pdf, tmp_path / "w", lambda: True, lambda i, n: seen.append((i, n)))
-        finally:
-            conv_mod.PdfDocument = None
+        conv.convert_pdf(pdf, tmp_path / "w", lambda: True, lambda i, n: seen.append((i, n)))
         assert seen == [(0, 3), (1, 3), (2, 3)]
 
 
@@ -270,7 +261,7 @@ class TestImageExtraction:
         paths = _conv()._extract_page_images(DocNoExtract(), FakePage(), 0, tmp_path)
         assert paths == []
 
-    def test_gallery_appended_for_unreferenced(self, tmp_path):
+    def test_gallery_appended_for_unreferenced(self, tmp_path, monkeypatch):
         work = tmp_path / "work"
         work.mkdir()
         doc = FakePdfDocument(pages=[FakePage.from_text("no images referenced", index=0)])
@@ -279,13 +270,10 @@ class TestImageExtraction:
         conv = _conv(cfg)
         import bobine.converter as conv_mod
 
-        conv_mod.PdfDocument = lambda _p: doc
+        monkeypatch.setattr(conv_mod, "PdfDocument", lambda _p: doc)
         pdf = tmp_path / "g.pdf"
         pdf.write_bytes(b"%PDF-1.4 fake")
-        try:
-            md = conv.convert_pdf(pdf, work, lambda: True, lambda i, n: None)
-        finally:
-            conv_mod.PdfDocument = None
+        md = conv.convert_pdf(pdf, work, lambda: True, lambda i, n: None)
         assert "![](p0_img0.png)" in md
 
 

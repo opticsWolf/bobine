@@ -1,11 +1,15 @@
 """OnnxRapidEngine — all ONNX heavy passes behind lazy loaders (package ``bobine``).
 
-Wraps RapidAI family packages (rapid_latex_ocr, rapidocr, rapid_layout,
-rapid_table) so models are loaded on first use. A clean born-digital paper
-loads only the tiny formula model, never the OCR/layout/table stack.
+Wraps the vendored RapidLaTeXOCR and the RapidAI family packages (rapidocr,
+rapid_layout, rapid_table) so models are loaded on first use. A clean
+born-digital paper loads only the tiny formula model, never the OCR/layout/
+table stack.
 
-Every version-sensitive RapidAI call is flagged ``# VERIFY`` because the
-packages move fast and their call signatures differ across minor versions.
+Version-sensitive RapidAI calls are flagged ``# VERIFY``. Verified against
+rapidocr 3.9.2 / rapid_layout 1.2.1 / rapid_table 3.0.2 (2026-08-09): the 3.x
+line returns dataclasses (RapidOCROutput / RapidLayoutOutput /
+RapidTableOutput) instead of tuples, and RapidOCR() takes no kwargs — the
+normalization branches below handle both shapes.
 """
 
 from __future__ import annotations
@@ -79,12 +83,7 @@ class OnnxRapidEngine:
         if self._ocr is None and RapidOCR is not None:
             self.log("⚙️  Loading RapidOCR (text det+rec)…")
             try:
-                self._ocr = RapidOCR(
-                    use_angle_cls=True,
-                    cls_use_cuda=False,
-                    det_use_cuda=False,
-                    rec_use_cuda=False,
-                )  # VERIFY: RapidOCR(providers=self.ort_providers) in some builds
+                self._ocr = RapidOCR()  # rapidocr>=3: defaults = onnxruntime/CPU, use_cls=True
             except Exception as e:
                 self.log(f"⚠️  Could not load RapidOCR: {e}")
                 return None
@@ -183,7 +182,13 @@ class OnnxRapidEngine:
         if eng is None:
             return []
         try:
-            boxes, scores, labels, _elapse = eng(img)  # VERIFY: 4-tuple, order may vary
+            out = eng(img)  # VERIFY: v1.2+ → RapidLayoutOutput dataclass; older → 4-tuple
+            if hasattr(out, "boxes"):
+                boxes = getattr(out, "boxes", None) or []
+                labels = getattr(out, "class_names", None) or []
+                scores = getattr(out, "scores", None) or []
+                return list(zip(boxes, labels, scores, strict=False))
+            boxes, scores, labels, _elapse = out
             return list(zip(boxes, labels, scores, strict=False))
         except Exception as e:
             self.log(f"   ⚠️  layout failed: {e}")
@@ -203,8 +208,11 @@ class OnnxRapidEngine:
             return None
         try:
             ocr_res = self.ocr_lines(crop_img)
-            out = eng(crop_img, ocr_res)  # VERIFY: (html, cell_bboxes, elapse) OR obj.html
-            if isinstance(out, tuple):
+            out = eng(crop_img, ocr_res)  # VERIFY: v3 → RapidTableOutput.pred_htmls; older → tuple
+            if hasattr(out, "pred_htmls"):
+                htmls = getattr(out, "pred_htmls", None) or []
+                html = htmls[0] if htmls else None
+            elif isinstance(out, tuple):
                 html = out[0]
             else:
                 html = getattr(out, "pred_html", None) or getattr(out, "html", None)

@@ -30,10 +30,13 @@ log = logging.getLogger(__name__)
 
 # ── Known-good version ranges ──────────────────────────────────────────────
 # Each entry: (package_name, exact_version_or_range, display_name)
-# The "exact" field is the version that the code is written against (verified
-# to resolve on PyPI; runtime verification against a real install is tracked
-# in docs/IMPLEMENTATION_PLAN.md, open item #1). We allow ±1 patch version as
-# a tolerance band.
+# The "exact" field is the version the code is written against. Runtime
+# verification (2026-08-09): rapidocr 3.9.2 / rapid_layout 1.2.1 /
+# rapid_table 3.0.2 / pdf_oxide 0.3.77 installed and exercised end-to-end on
+# py3.13/numpy 2.5.1 (engine adapters updated for the 3.x dataclass returns;
+# real table/formula-page recognition still pending a test corpus — see
+# docs/IMPLEMENTATION_PLAN.md item #2). We allow ±1 patch version as a
+# tolerance band.
 #
 # NOTE: rapid_latex_ocr is NOT listed — it is vendored into
 # bobine/_vendor/rapid_latex_ocr (MIT, with the numpy-2 fix), so it is never
