@@ -531,7 +531,9 @@ class HybridConverter:
         blocks = []
         for box, label, _score in self._reading_order(regions):
             crop = self._crop_pil(img, box, page_h, self.cfg.render_dpi)
-            crop_np = np.asarray(crop) if crop else None
+            if crop is None:
+                continue  # degenerate/off-page box
+            crop_np = np.asarray(crop)
             lab = (label or "").lower()
 
             if lab in ("table",):

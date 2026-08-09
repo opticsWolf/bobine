@@ -1,5 +1,7 @@
 """Tests for OnnxRapidEngine graceful degradation without RapidAI installed."""
 
+import pytest
+
 from bobine.engine import OnnxRapidEngine
 
 
@@ -83,6 +85,22 @@ class TestEngineResponseNormalization:
             ([0, 0, 10, 10], "hello", 0.95),
             ([20, 0, 30, 10], "world", 0.8),
         ]
+
+    def test_ocr_lines_handles_ndarray_boxes(self):
+        """RapidOCROutput.boxes is an ndarray; `or` on it raises (numpy-2)."""
+        np = pytest.importorskip("numpy")
+
+        def fake_ocr(img):
+            return _OCRResult(
+                boxes=np.array([[0, 0, 10, 10], [20, 0, 30, 10]]),
+                txts=("hello", "world"),
+                scores=(0.95, 0.8),
+            )
+
+        eng = self._eng_with(ocr=fake_ocr)
+        out = eng.ocr_lines("ignored")
+        assert [b for b, _t, _s in out] == [[0, 0, 10, 10], [20, 0, 30, 10]]
+        assert [t for _b, t, _s in out] == ["hello", "world"]
 
     def test_ocr_lines_normalizes_legacy_list(self):
         def fake_ocr(img):

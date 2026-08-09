@@ -47,6 +47,7 @@ markdown = [
 ]
 dev = [
     "pytest>=8.0",
+    "reportlab>=4.0",  # scanned-page corpus generator (tests/fixtures/generate_corpus.py)
 ]
 
 [tool.setuptools.packages.find]

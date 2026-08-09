@@ -125,7 +125,7 @@ embedding and storage (in OKFgraph that is `OKFRouter.import_bundle`).
 # converter's routing/splice/ONNX-assembly paths)
 pytest
 
-# integration suite (requires bobine[pdf-ingest] installed)
+# integration suite (requires bobine[pdf-ingest] + bobine[formula])
 pytest -m integration
 
 # coverage + lint
@@ -133,7 +133,20 @@ pytest --cov=bobine --cov-report=term-missing
 ruff check . && ruff format --check .
 ```
 
-Markers: `integration` (real pdf_oxide/office_oxide/RapidAI) and `slow`
+Markers: `integration` (real pdf_oxide/office_oxide/RapidAI + the PDF corpus)
+and `slow` (ONNX runs over real pages)
+
+### Test-PDF corpus
+
+`tests/fixtures/pdf/` holds **trimmed page ranges** from three CC BY 4.0
+arXiv papers (solitons physics, splitting-methods math, trust-ML tables) plus
+a generated scanned page — see `tests/fixtures/SOURCES.md` for provenance and
+attribution. The full untrimmed PDFs are git-ignored under
+`tests/fixtures/full_pdfs/` for local tests. The scanned page is regenerable:
+
+```bash
+uv run --with reportlab python tests/fixtures/generate_corpus.py
+```
 (heavy). The integration tests self-skip when backends are missing, so the
 bare install always stays green. CI (`.github/workflows/ci.yml`) runs the
 core suite on Python 3.10–3.13 plus an integration job.

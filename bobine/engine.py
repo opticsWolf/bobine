@@ -18,6 +18,12 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
+# numpy is optional (needed only to adapt OCR boxes for rapid_table >=3)
+try:
+    import numpy as _np
+except ImportError:  # pragma: no cover
+    _np = None
+
 # -- lazy imports: all guarded so the module loads without RapidAI installed --
 
 try:
@@ -161,7 +167,10 @@ class OnnxRapidEngine:
         #   v3 -> result.boxes / .txts / .scores
         #   older -> list of [box, text, score]
         if hasattr(result, "txts"):  # VERIFY
-            boxes = getattr(result, "boxes", None) or []
+            boxes = getattr(result, "boxes", None)
+            if hasattr(boxes, "tolist"):  # RapidOCROutput.boxes is an ndarray
+                boxes = boxes.tolist()
+            boxes = boxes or []
             txts = getattr(result, "txts", None) or []
             scores = getattr(result, "scores", None) or []
             return list(zip(boxes, txts, scores, strict=False))
@@ -207,7 +216,15 @@ class OnnxRapidEngine:
         if eng is None:
             return None
         try:
-            ocr_res = self.ocr_lines(crop_img)
+            lines = self.ocr_lines(crop_img)
+            # rapid_table>=3 expects per-image [boxes_array, txts_tuple, scores_tuple]
+            if lines and _np is not None:
+                boxes = _np.array([b for b, _t, _s in lines], dtype=_np.float32)
+                ocr_res = [
+                    [boxes, tuple(t for _b, t, _s in lines), tuple(float(s) for _b, _t, s in lines)]
+                ]
+            else:
+                ocr_res = None
             out = eng(crop_img, ocr_res)  # VERIFY: v3 → RapidTableOutput.pred_htmls; older → tuple
             if hasattr(out, "pred_htmls"):
                 htmls = getattr(out, "pred_htmls", None) or []

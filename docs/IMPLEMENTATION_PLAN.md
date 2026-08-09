@@ -1,7 +1,7 @@
 # bobine — Consolidated Implementation Plan
 
 **Status:** v0.1.0 · dual-licensed (Apache-2.0 OR MIT) · `https://github.com/opticsWolf/bobine`
-**Last updated:** 2026-08-09 · latest commit `5154ba2` (real-backend verification, API-drift fixes)
+**Last updated:** 2026-08-09 · latest commit pending (test-PDF corpus + ONNX bugfixes)
 
 ---
 
@@ -35,13 +35,13 @@ OKFgraph itself is **not modified**; it keeps importing its own
 | Orchestration (single + batch) | ✅ new (`pipeline`) |
 | Formula OCR (SURGICAL mode) | ✅ **vendored** `rapid_latex_ocr` with numpy-2 fix; verified live on numpy 2.5.1 / py3.13 / onnxruntime 1.28 |
 | Dependency tree | ✅ modernised + `uv.lock` (single numpy-2 lineage); `office_oxide` finally declared |
-| Unit tests (fake pdf_oxide, no deps) | ✅ **116 passed**, 6 integration |
+| Unit tests (fake pdf_oxide, no deps) | ✅ **122 passed**, 11 integration |
 | Coverage | ✅ **83%** (engine 82% — was 43%, converter 76%, assets 92%; `_vendor` excluded) |
 | Lint / format (ruff) | ✅ clean |
 | CI (GitHub Actions) | ✅ core matrix 3.10–3.13 + integration job |
 | Git / remote | ✅ `main` on GitHub, clean tree |
 | Real-backend verification | ✅ **done (2026-08-09)**: pdf_oxide 0.3.77 + office_oxide + all four ONNX stacks installed & run end-to-end (SURGICAL + ALWAYS); engine adapters updated for rapidocr/layout/table 3.x dataclass returns |
-| Table/formula-page recognition corpus | ⬜ pending (roadmap #2) |
+| Test-PDF corpus | ✅ **done (2026-08-09)**: 3 CC BY 4.0 arXiv papers (trimmed, attributed) + generated scanned page; corpus caught 2 real bugs (ndarray `or` crash, rapid_table ocr_results format) |
 
 ---
 
@@ -149,6 +149,33 @@ bobine/
 ### Phase 4 — Dependency modernisation & formula OCR (done, `709d31a`)
 
 ### Phase 5 — Real-backend verification (done, `2026-08-09`)
+
+### Phase 6 — Test-PDF corpus (done, `2026-08-09`)
+- **Sources**: 3 arXiv papers verified **CC BY 4.0** on their abstract pages
+  (the search-UI license filter is leaky — verification is per-paper):
+  `2608.06342` solitons (physics, equation-dense), `2608.05540` splitting
+  methods (math), `2608.06377` trust-ML (big tables + figures).
+- **License compliance**: CC BY 4.0 requires attribution + modification
+  notice → `tests/fixtures/SOURCES.md` records title/authors/arXiv ID/license
+  and the page ranges we trimmed. Full PDFs stay **git-ignored** in
+  `tests/fixtures/full_pdfs/` for local tests (user requirement).
+- **Scanned page**: reportlab-generated raster page with **no text layer**
+  (`tests/fixtures/generate_corpus.py`, deterministic, committed) — exercises
+  the `_is_scanned` → layout+OCR path that born-digital arXiv PDFs cannot.
+- **Empirical results on real documents** (all four ONNX stacks verified):
+  - NEVER: full text extraction (titles, 20k+ chars/page-set) ✓
+  - SURGICAL: **real formula detection + LaTeX recognition** per page ✓
+    (splice lands at page end when the math-box merge spans the page —
+    in-place replacement needs finer math-box detection; quality note)
+  - scanned SURGICAL: OCR reads the raster back ✓ (741 chars, real words)
+  - ALWAYS on the ML paper: layout → rapid_table HTML ✓ + figures staged
+    as `okf-asset://` (26 assets) ✓
+- **Bugs the corpus caught & fixed**: `getattr(.., 'boxes', None) or []`
+  crashes on real OCR results (ndarray truthiness — numpy-2); rapid_table
+  3.x needs per-image `[boxes_array, txts_tuple, scores_tuple]`; unguarded
+  `crop=None` fed NoneType to OCR/formula saves.
+- Tests: `tests/test_pdf_corpus.py` (5 integration+slow), full suite
+  **122 passed**; reportlab added to `[dev]` (generator-only).
 - Installed `[pdf-ingest]` on py3.13/numpy 2.5.1: `rapidocr==3.9.2`, `rapid_layout==1.2.1`, `rapid_table==3.0.2`, `pdf_oxide==0.3.77`, `office_oxide==0.1.8` — all 12 packages resolved and installed cleanly.
 - **Integration suite now green end-to-end**: 6/6 (formula recognition ×2, pdf_oxide NEVER-mode conversion, page count, missing-file, office docx) + full suite **116 passed**.
 - **API drift found & fixed** (the `# VERIFY` gamble paid off):
@@ -187,7 +214,8 @@ bobine/
 | # | Item | Effort | Why |
 |---|---|---|---|
 | 1 | ~~PDF/Office runtime verification~~ ✅ **done (2026-08-09)** — pins installed, integration suite green, drift fixed; see Phase 5 | — | — |
-| 2 | **Test-PDF corpus** (reportlab-generated at test time): digital text, math formulas, GFM tables, embedded images, scanned page — exercise SURGICAL/ALWAYS + table/formula/image paths against real pdf_oxide | M | End-to-end run only proved the models *load and run*; real recognition (layout → OCR/table/formula) on realistic pages is still unproven |
+| 2 | ~~Test-PDF corpus~~ ✅ **done (2026-08-09)** — 3 CC BY arXiv papers + generated scanned page; see Phase 6 | — | — |
+| 2a | **Formula splice placement**: math-box detection merges whole pages on some papers → recognized LaTeX lands at page end instead of in place; needs finer math-region splitting (or fall back to layout `equation` boxes) | M | Quality: in-place formula replacement |
 | 3 | **Raise coverage** 83% → ≥85%: converter guard/fallback lines (76%), remaining engine lines (82%) | M | Confidence in degradation paths |
 | 4 | **Parity check** ported tests vs OKFgraph originals; document any behavioural drift | S | Keep the two codebases honest |
 | 5 | **`slow` GPU job** in CI (onnxruntime CUDA) — optional | L | GPU provider path (`ort_providers`) untested |
@@ -222,12 +250,12 @@ uv lock --check
 
 ## 8. Acceptance Criteria (definition of done for v1.0)
 
-- [ ] **116+** unit tests pass on a bare install (no optional deps)
+- [ ] **122+** unit tests pass on a bare install (no optional deps)
 - [ ] Integration suite green on a runner with `bobine[pdf-ingest]` + `bobine[formula]` installed (**demonstrated locally 2026-08-09**)
 - [ ] Coverage ≥ 85% on `bobine/converter.py` + `bobine/pipeline.py`
 - [ ] CI green on Python 3.10–3.13 (lint, format, unit, coverage)
-- [ ] Test-PDF corpus committed under `tests/fixtures/` (or generated at test
-      time with reportlab)
+- [x] Test-PDF corpus committed under `tests/fixtures/` — 3 CC BY 4.0 arXiv
+      papers (trimmed, `SOURCES.md` attribution) + generated scanned page
 - [ ] RapidAI version pins (`versions.py`) match `pyproject.toml` **and** pass
       a real-install runtime smoke test
 - [ ] `display_formula` / `inline_formula` routed to the formula recognizer

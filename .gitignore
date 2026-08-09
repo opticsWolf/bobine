@@ -11,3 +11,9 @@ htmlcov/
 
 # Vendored RapidLaTeXOCR models (~179 MB, auto-downloaded on first use)
 bobine/_vendor/rapid_latex_ocr/models/
+
+# Full arXiv PDFs (CC BY, kept local only) + scratch conversion output
+# The trimmed fixtures in tests/fixtures/pdf/ ARE tracked; the full sources
+# and any ad-hoc work dirs are not.
+tests/fixtures/full_pdfs/
+work/

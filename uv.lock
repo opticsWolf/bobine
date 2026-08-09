@@ -38,6 +38,7 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "reportlab" },
 ]
 formula = [
     { name = "chardet" },
@@ -81,6 +82,7 @@ requires-dist = [
     { name = "rapid-layout", marker = "extra == 'pdf-ingest'", specifier = "==1.2.1" },
     { name = "rapid-table", marker = "extra == 'pdf-ingest'", specifier = "==3.0.2" },
     { name = "rapidocr", marker = "extra == 'pdf-ingest'", specifier = "==3.9.2" },
+    { name = "reportlab", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "requests", marker = "extra == 'formula'", specifier = ">=2.28" },
     { name = "tokenizers", marker = "extra == 'formula'", specifier = ">=0.13.2" },
 ]
@@ -1097,6 +1099,19 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/55/ed/0ee9b9281986974be9d2406ae0134c8d7c91d2fc613f16ffda9701eeda6f/rapidocr-3.9.2-py3-none-any.whl", hash = "sha256:04d6b8d151f823d930bd91910555f57bea897c0c44fa6794267b94cf9c1ef9a0", size = 27275208, upload-time = "2026-07-21T10:59:01.599Z" },
+]
+
+[[package]]
+name = "reportlab"
+version = "5.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "charset-normalizer" },
+    { name = "pillow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/41/d6/4b7b0cf56880eb96533e607967be6a939e344675601e033d113a0bfa1f4e/reportlab-5.0.0.tar.gz", hash = "sha256:e4494a0c6623ae213bb856fba523171b2b54a7bf629fda02d5e525a7b899a784", size = 3701928, upload-time = "2026-06-18T11:34:31.145Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/07/70085c17a369605f15e301d10ab902115019b1126c7253d964afc230c7d6/reportlab-5.0.0-py3-none-any.whl", hash = "sha256:9d5a3affa84919e1111ede580031266a570e93b1ce388219621347965ff1d93c", size = 1956710, upload-time = "2026-06-18T11:34:29.07Z" },
 ]
 
 [[package]]
