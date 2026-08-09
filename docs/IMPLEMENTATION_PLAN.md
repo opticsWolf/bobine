@@ -35,7 +35,7 @@ OKFgraph itself is **not modified**; it keeps importing its own
 | Orchestration (single + batch) | ✅ new (`pipeline`) |
 | Formula OCR (SURGICAL mode) | ✅ **vendored** `rapid_latex_ocr` with numpy-2 fix; verified live on numpy 2.5.1 / py3.13 / onnxruntime 1.28 |
 | Dependency tree | ✅ modernised + `uv.lock` (single numpy-2 lineage); `office_oxide` finally declared |
-| Unit tests (fake pdf_oxide, no deps) | ✅ **122 passed**, 11 integration |
+| Unit tests (fake pdf_oxide, no deps) | ✅ **126 passed**, 11 integration |
 | Coverage | ✅ **83%** (engine 82% — was 43%, converter 76%, assets 92%; `_vendor` excluded) |
 | Lint / format (ruff) | ✅ clean |
 | CI (GitHub Actions) | ✅ core matrix 3.10–3.13 + integration job |
@@ -151,6 +151,31 @@ bobine/
 ### Phase 5 — Real-backend verification (done, `2026-08-09`)
 
 ### Phase 6 — Test-PDF corpus (done, `2026-08-09`)
+
+### Phase 7 — Formula-box detection fix (done, `…`)
+- Corpus exposed roadmap #2a's root cause as **two real bugs** (not a
+  tuning issue):
+  1. `"cmr10"` was in `_MATH_FONT_KEYWORDS` — CMR10 is Computer Modern
+     **Roman**, the LaTeX body font; 3,103 of 5,308 chars (58%) on a real
+     paper page were flagged as math. Removed.
+  2. pdf_oxide >=0.3 reports `TextChar.bbox` as `(x, y, w, h)`, the merge
+     assumed `(x0, y0, x1, y1)` — width/height were compared against x/y,
+     so `_overlaps()` was true for nearly every pair → one page-spanning
+     box. Added `_bbox_to_xyxy()` (format-agnostic) used by
+     `_math_boxes_from_chars` + `_region_text`.
+- Result on real papers: 1 page-spanning box → **tight equation-sized
+  boxes** (display equations ~205×31pt, stacked fractions 164×136pt);
+  prose-only page 1 → 0 boxes; formulas now splice **in place** (mid-
+  document, not appended at page end); 30 recognized formula blocks across
+  5 pages of splitting_methods.pdf in ~60s.
+- Tuning: `min_formula_math_chars` default 3 → 5 (skips tiny fragments;
+  63 → 44 boxes on the 4-page physics fixture).
+- Regression tests: cmr10/cmbx12 body text NOT math; (x,y,w,h) + legacy
+  bbox formats both yield tight boxes; full suite **126 passed**.
+- Remaining quality gap (roadmap #2a): multi-line display equations are
+  split per line (VGAP=8pt < 11pt line pitch) → per-line crops reduce
+  recognition fidelity; layout-equation fallback (P2) remains the
+  font-agnostic upgrade path.
 - **Sources**: 3 arXiv papers verified **CC BY 4.0** on their abstract pages
   (the search-UI license filter is leaky — verification is per-paper):
   `2608.06342` solitons (physics, equation-dense), `2608.05540` splitting
@@ -215,7 +240,7 @@ bobine/
 |---|---|---|---|
 | 1 | ~~PDF/Office runtime verification~~ ✅ **done (2026-08-09)** — pins installed, integration suite green, drift fixed; see Phase 5 | — | — |
 | 2 | ~~Test-PDF corpus~~ ✅ **done (2026-08-09)** — 3 CC BY arXiv papers + generated scanned page; see Phase 6 | — | — |
-| 2a | **Formula splice placement**: math-box detection merges whole pages on some papers → recognized LaTeX lands at page end instead of in place; needs finer math-region splitting (or fall back to layout `equation` boxes) | M | Quality: in-place formula replacement |
+| 2a | **Formula splice placement** ✅ **done (2026-08-09)** — root cause was two real bugs (cmr10 body-font false positive; bbox `(x,y,w,h)` vs `(x0,y0,x1,y1)` drift), fixed + tuned; formulas splice in place. Remaining: multi-line equations split per line (VGAP vs line pitch) → per-line recognition fidelity; layout-`equation`-box fallback (P2) as font-agnostic upgrade | M | Quality |
 | 3 | **Raise coverage** 83% → ≥85%: converter guard/fallback lines (76%), remaining engine lines (82%) | M | Confidence in degradation paths |
 | 4 | **Parity check** ported tests vs OKFgraph originals; document any behavioural drift | S | Keep the two codebases honest |
 | 5 | **`slow` GPU job** in CI (onnxruntime CUDA) — optional | L | GPU provider path (`ort_providers`) untested |
@@ -250,7 +275,7 @@ uv lock --check
 
 ## 8. Acceptance Criteria (definition of done for v1.0)
 
-- [ ] **122+** unit tests pass on a bare install (no optional deps)
+- [ ] **126+** unit tests pass on a bare install (no optional deps)
 - [ ] Integration suite green on a runner with `bobine[pdf-ingest]` + `bobine[formula]` installed (**demonstrated locally 2026-08-09**)
 - [ ] Coverage ≥ 85% on `bobine/converter.py` + `bobine/pipeline.py`
 - [ ] CI green on Python 3.10–3.13 (lint, format, unit, coverage)

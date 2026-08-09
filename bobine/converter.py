@@ -65,8 +65,26 @@ _MATH_FONT_KEYWORDS = (
     "xits",
     "asana",
     "euclid",
-    "cmr10",
+    # NOTE: do NOT add cmr/cmbx/cmss etc. — those are Computer Modern
+    # ROMAN (body text) fonts; flagging them makes every LaTeX paper's
+    # prose look like math. Only cmmi/cmsy/cmex (italic/symbols/extensions)
+    # are math fonts.
 )
+
+
+def _bbox_to_xyxy(bbox) -> tuple[float, float, float, float]:
+    """Normalize a char bbox to (x0, y0, x1, y1).
+
+    pdf_oxide >=0.3 reports ``(x, y, width, height)``; older versions and the
+    test fakes report ``(x0, y0, x1, y1)``. A width smaller than the x
+    coordinate is unambiguous — treat that form as (x, y, w, h).
+    """
+    x0, y0, x1, y1 = bbox[0], bbox[1], bbox[2], bbox[3]
+    if x1 <= x0 or y1 <= y0:  # (x, y, w, h) form
+        x1 = x0 + x1
+        y1 = y0 + y1
+    return min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)
+
 
 _MATH_UNICODE_RANGES = (
     (0x0370, 0x03FF),  # Greek
@@ -335,8 +353,8 @@ class HybridConverter:
             fn = (getattr(c, "font_name", "") or "").lower()
             ch = getattr(c, "char", "") or ""
             if any(k in fn for k in _MATH_FONT_KEYWORDS) or (ch and _is_math_unicode(ch)):
-                x0, y0, x1, y1 = bbox[0], bbox[1], bbox[2], bbox[3]
-                raw.append([min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1), 1])
+                x0, y0, x1, y1 = _bbox_to_xyxy(bbox)
+                raw.append([x0, y0, x1, y1, 1])
         if not raw:
             return []
 
@@ -421,8 +439,9 @@ class HybridConverter:
                 bb = getattr(c, "bbox", None)
                 if not bb or len(bb) < 4:
                     continue
-                cx = (bb[0] + bb[2]) / 2.0
-                cy = (bb[1] + bb[3]) / 2.0
+                x0c, y0c, x1c, y1c = _bbox_to_xyxy(bb)
+                cx = (x0c + x1c) / 2.0
+                cy = (y0c + y1c) / 2.0
                 if x0 <= cx <= x1 and y0 <= cy <= y1:
                     items.append((round(cy, 1), cx, getattr(c, "char", "") or ""))
             items.sort(key=lambda t: (-t[0], t[1]))

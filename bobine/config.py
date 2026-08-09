@@ -58,7 +58,7 @@ class ConverterConfig:
     # -- SURGICAL formula pass ----------------------------------------------
     formula_batch_size: int = 8
     formula_pad_pts: float = 4.0
-    min_formula_math_chars: int = 3
+    min_formula_math_chars: int = 5
 
     # -- inline vs display LaTeX threshold ----------------------------------
     formula_inline_max_width_pts: float = 220.0
