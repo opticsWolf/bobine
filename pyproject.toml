@@ -61,7 +61,7 @@ markers = [
 
 [tool.coverage.run]
 source = ["bobine"]
-omit = ["bobine/__init__.py"]
+omit = ["bobine/__init__.py", "bobine/_vendor/*"]
 
 [tool.coverage.report]
 show_missing = true

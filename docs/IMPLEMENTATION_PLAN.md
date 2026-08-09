@@ -1,7 +1,7 @@
 # bobine — Consolidated Implementation Plan
 
 **Status:** v0.1.0 · dual-licensed (Apache-2.0 OR MIT) · `https://github.com/opticsWolf/bobine`
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-09 · latest commit `709d31a` (formula OCR vendored, dep tree modernised)
 
 ---
 
@@ -30,15 +30,17 @@ OKFgraph itself is **not modified**; it keeps importing its own
 |---|---|
 | PDF/Office → Markdown pipeline | ✅ extracted (`config`, `engine`, `converter`, `tables`) |
 | Image staging (`okf-asset://`) | ✅ extracted (`assets`) |
-| Version pinning / runtime check | ✅ extracted (`versions`) |
+| Version pinning / runtime check | ✅ extracted (`versions`), pins refreshed to resolvable set |
 | Text-type document model + lint | ✅ new (`documents`, `markdown`) |
 | Orchestration (single + batch) | ✅ new (`pipeline`) |
-| Unit tests (fake pdf_oxide, no deps) | ✅ **99 passed**, 3 integration skipped |
-| Coverage | ✅ **78%** (converter 76%, engine 43%, pipeline 87%) |
+| Formula OCR (SURGICAL mode) | ✅ **vendored** `rapid_latex_ocr` with numpy-2 fix; verified live on numpy 2.5.1 / py3.13 / onnxruntime 1.28 |
+| Dependency tree | ✅ modernised + `uv.lock` (single numpy-2 lineage); `office_oxide` finally declared |
+| Unit tests (fake pdf_oxide, no deps) | ✅ **104 passed**, 5 integration |
+| Coverage | ✅ **78%** (converter 76%, pipeline 87%, assets 92%; `_vendor` excluded) |
 | Lint / format (ruff) | ✅ clean |
 | CI (GitHub Actions) | ✅ core matrix 3.10–3.13 + integration job |
 | Git / remote | ✅ `main` on GitHub, clean tree |
-| Real-backend verification | ⬜ pending (needs `bobine[pdf-ingest]` install) |
+| Real-backend verification | 🟡 formula path verified live; **PDF/Office/RapidAI runtime verification still pending** |
 
 ---
 
@@ -47,6 +49,7 @@ OKFgraph itself is **not modified**; it keeps importing its own
 ```
 bobine/
 ├── pyproject.toml            # deps, extras, pytest/coverage/ruff config
+├── uv.lock                   # universal lockfile (uv)
 ├── README.md                 # usage, output contract, testing
 ├── LICENSE                   # dual-license pointer (choose either)
 ├── LICENSES/                 # Apache-2.0.txt, MIT.txt
@@ -66,6 +69,7 @@ bobine/
 │   └── _vendor/              # third-party code, vendored with licenses
 │       └── rapid_latex_ocr/  # formula OCR (MIT (c) 2023 RapidAI, numpy-2 fixed)
 └── tests/                    # 13 files, 104 unit + 5 integration tests
+    └── fixtures/             # formula_sample.png etc.
 ```
 
 ### Extras (all optional — the package imports with zero dependencies)
@@ -74,7 +78,7 @@ bobine/
 |---|---|
 | *(core)* | `Pillow` |
 | `[pdf-ingest]` | `pdf_oxide`, `office_oxide`, `rapidocr==3.9.2`, `rapid_layout==1.2.1`, `rapid_table==3.0.2`, `numpy>=2` |
-| `[formula]` | vendored formula OCR runtime: `onnxruntime`, `tokenizers`, `opencv-python`, `chardet`, `requests`, `pyyaml` (models ~179 MB auto-download) |
+| `[formula]` | vendored formula OCR runtime: `onnxruntime`, `tokenizers`, `opencv-python`, `chardet`, `requests`, `pyyaml` (models ~179 MB auto-download on first use) |
 | `[markdown]` | `mordant`, `python-frontmatter`, `pyyaml` |
 | `[dev]` | `pytest` |
 
@@ -99,7 +103,11 @@ bobine/
 5. **Version pinning.** `check_rapid_versions()` warns on drift from the
    known-good RapidAI list at import time (`BOBINE_INGEST_ALLOW_UNPINNED=1`
    silences; legacy `OKFGRAPH_INGEST_ALLOW_UNPINNED` honoured).
-6. **Dual license.** `Apache-2.0 OR MIT` (SPDX) — pointer `LICENSE` +
+6. **Vendoring over forking.** Dead-but-essential third-party code is
+   **vendored** (`bobine/_vendor/`) with the original license preserved and
+   patches applied in-tree (see Phase 4), rather than maintained as a
+   separate fork. `ruff` and coverage both exclude `_vendor/`.
+7. **Dual license.** `Apache-2.0 OR MIT` (SPDX) — pointer `LICENSE` +
    full texts in `LICENSES/`, mirroring OKFgraph's convention.
 
 ---
@@ -137,20 +145,44 @@ bobine/
   `LICENSE` (MIT) merged and upgraded to dual Apache-2.0 OR MIT.
 - Version pinned to **0.1.0** (pyproject + `__version__` + dist metadata).
 
+### Phase 4 — Dependency modernisation & formula OCR (done, `709d31a`)
+- **Dep-tree audit** found the tree was broken: `rapidocr==1.5.2` and
+  `rapid_latex_ocr==1.0.13` **don't exist on PyPI** (install of
+  `[pdf-ingest]` would fail), and `office_oxide` (imported by the converter)
+  was **undeclared**.
+- **Modern pins** (verified to resolve): `rapidocr==3.9.2`,
+  `rapid_layout==1.2.1`, `rapid_table==3.0.2`, `pdf_oxide>=0.2.1`,
+  `office_oxide>=0.1.8`, `numpy>=2`. `uv.lock` generated (single numpy-2
+  lineage — the old numpy-1 `[formula]` fork is gone).
+- **Successor research** (no maintained RapidAI successor exists):
+  upstream dormant since 2024-11; all 41 forks 0-star; `RapidLatex` is a
+  translation tool, not OCR; `TexTeller` (80M pairs, Apache-2.0) is the
+  ecosystem quality upgrade but pulls the torch stack (~2.5 GB).
+- **Vendored `rapid_latex_ocr`** into `bobine/_vendor/` (MIT (c) 2023
+  RapidAI, license preserved) and fixed the **numpy-2 breaking bug** upstream
+  never addressed: `int(np.argmax(...))` on a `(1, 21)` ONNX output →
+  `.item()`. Verified live: formula crop → LaTeX in 0.49 s on
+  numpy 2.5.1 / py3.13 / onnxruntime 1.28. Both `LaTeXOCR` (upstream) and
+  legacy `LatexOCR` (what bobine's engine imported) names exposed.
+- `[formula]` extra now declares the vendored runtime deps; models (~179 MB)
+  auto-download on first use from the (still-alive) RapidAI release and are
+  git-ignored.
+
 ---
 
 ## 6. Open Work — Prioritized Roadmap
 
 | # | Item | Effort | Why |
 |---|---|---|---|
-| 1 | **Verify against real backends**: `pip install -e ".[pdf-ingest]"`, run `pytest -m integration`; validate RapidAI version pins (`versions.py`) against the real installed stack | S | Biggest open risk: PDF integration tests never executed; rapidocr/layout/table pins (3.9.2/1.2.1/3.0.2) verified to resolve but not run |
+| 1 | **PDF/Office runtime verification**: `pip install -e ".[pdf-ingest]"`, run `pytest -m integration`; confirm rapidocr/layout/table (3.9.2/1.2.1/3.0.2) + pdf_oxide 0.3.x + office_oxide 0.1.8 actually work with the converter's `# VERIFY`-flagged calls | S | Only remaining unverified backends (formula path already proven live) |
 | 2 | **Test-PDF corpus** (reportlab-generated at test time): digital text, math formulas, GFM tables, embedded images, scanned page — exercise SURGICAL/ALWAYS + table/formula/image paths against real pdf_oxide | M | Fake tests prove logic, not pdf_oxide output fidelity |
 | 3 | **Raise coverage** 78% → ≥85%: converter guard/fallback lines, `engine.py` lazy-loaders (43% — only reachable with real RapidAI or tighter engine fakes) | M | Confidence in degradation paths |
 | 4 | **Parity check** ported tests vs OKFgraph originals; document any behavioural drift | S | Keep the two codebases honest |
 | 5 | **`slow` GPU job** in CI (onnxruntime CUDA) — optional | L | GPU provider path (`ort_providers`) untested |
-| 6 | **PyPI publish** (0.1.0 or 0.2.0): twine/uv build, `README`/long_description, classifiers | S | Distribution |
+| 6 | **PyPI publish** (0.1.0 or 0.2.0): `uv build`/twine, long description, classifiers | S | Distribution |
 | 7 | **Consume from OKFgraph** (optional follow-up, per user constraint OKFgraph stays untouched for now): re-export shim or refactor of `cli.py`/`components/ingest.py` | M | Remove duplication, single source of truth |
-| 8 | **Formula OCR modernization (optional)**: TexTeller (80M pairs, better accuracy) or pix2tex-ONNX as an alternative recognizer behind `OnnxRapidEngine.recognize_formula`; also add `display_formula`/`inline_formula` (pp_doc_layoutv3) to the converter's formula-label tuple | M | Vendored RapidLaTeXOCR is modernized but accuracy is the 100K-pair ceiling |
+| 8 | **Converter label fix**: add `display_formula`/`inline_formula` (pp_doc_layoutv3) to the formula-label tuple in `_full_structure_page_markdown` so layout-detected formulas route to the recognizer instead of OCR-as-text | S | Cheap, makes RapidLayout 1.2.1 formula detection usable |
+| 9 | **Formula accuracy upgrade (optional)**: TexTeller (80M pairs) or pix2tex-ONNX as an alternative recognizer behind `OnnxRapidEngine.recognize_formula` | M | Vendored model is the 100K-pair accuracy ceiling |
 
 **Legend:** S = < 1 day · M = 2–3 days · L = 1+ week
 
@@ -165,24 +197,27 @@ uv venv .venv && uv pip install --python .venv/Scripts/python.exe -e ".[dev,mark
 # unit suite (no native backends needed)
 .venv/Scripts/python.exe -m pytest
 
-# integration suite (requires bobine[pdf-ingest])
+# integration suite (formula: needs bobine[formula]; PDF/Office: bobine[pdf-ingest])
 .venv/Scripts/python.exe -m pytest -m integration
 
-# coverage + lint
+# coverage + lint + lockfile
 .venv/Scripts/python.exe -m pytest --cov=bobine --cov-report=term-missing
 .venv/Scripts/ruff check . && .venv/Scripts/ruff format --check .
+uv lock --check
 ```
 
 ---
 
 ## 8. Acceptance Criteria (definition of done for v1.0)
 
-- [ ] 99+ unit tests pass on a bare install (no optional deps)
-- [ ] Integration suite green on a runner with `bobine[pdf-ingest]` installed
+- [ ] **104+** unit tests pass on a bare install (no optional deps)
+- [ ] Integration suite green on a runner with `bobine[pdf-ingest]` + `bobine[formula]` installed
 - [ ] Coverage ≥ 85% on `bobine/converter.py` + `bobine/pipeline.py`
 - [ ] CI green on Python 3.10–3.13 (lint, format, unit, coverage)
 - [ ] Test-PDF corpus committed under `tests/fixtures/` (or generated at test
       time with reportlab)
-- [ ] Version pins in `versions.py` validated against the pinned RapidAI
-      versions in `pyproject.toml`
-- [ ] Dual license metadata correct (`Apache-2.0 OR MIT`) and buildable wheel
+- [ ] RapidAI version pins (`versions.py`) match `pyproject.toml` **and** pass
+      a real-install runtime smoke test
+- [ ] `display_formula` / `inline_formula` routed to the formula recognizer
+- [ ] Dual license metadata correct (`Apache-2.0 OR MIT`), vendored MIT notice
+      intact, buildable wheel (`uv build` + `pip install` the wheel)
