@@ -55,7 +55,7 @@ from bobine.pipeline import (
 from bobine.tables import html_tables_to_gfm
 from bobine.versions import check_rapid_versions
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "ASSET_STORE_DIRNAME",

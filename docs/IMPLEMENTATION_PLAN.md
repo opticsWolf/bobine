@@ -1,6 +1,6 @@
 # bobine — Consolidated Implementation Plan
 
-**Status:** v0.1.0 · dual-licensed (Apache-2.0 OR MIT) · `https://github.com/opticsWolf/bobine`
+**Status:** v0.2.0 · dual-licensed (Apache-2.0 OR MIT) · `https://github.com/opticsWolf/bobine`
 **Last updated:** 2026-08-09 · latest commit pending (docs: quickref + architecture)
 
 **Docs:** [quickref.md](quickref.md) · [architecture.md](architecture.md) · [PARITY.md](PARITY.md)
@@ -146,7 +146,7 @@ bobine/
 ### Phase 3 — Repository & release hygiene (done)
 - Git repo created, `main` pushed to GitHub; GitHub's auto-initialized
   `LICENSE` (MIT) merged and upgraded to dual Apache-2.0 OR MIT.
-- Version pinned to **0.1.0** (pyproject + `__version__` + dist metadata).
+- Version pinned to **0.1.0** → **0.2.0** (2026-08-09) (pyproject + `__version__` + dist metadata).
 
 ### Phase 4 — Dependency modernisation & formula OCR (done, `709d31a`)
 
@@ -309,7 +309,7 @@ bobine/
 | 3 | ~~Raise coverage~~ ✅ **done (2026-08-09)** — **92%** total (converter 91%, engine 93%, pipeline 97%); 33 new fake/monkeypatch tests; see Phase 10 | — | — |
 | 4 | ~~Parity check~~ ✅ **done (2026-08-09)** — OKFgraph's 35 pure-pipeline tests pass against bobine via shim; all code drift intentional; see `docs/PARITY.md` | — | — |
 | 5 | **`slow` GPU job** in CI (onnxruntime CUDA) — optional | L | GPU provider path (`ort_providers`) untested |
-| 6 | **PyPI publish** (0.1.0 or 0.2.0): `uv build`/twine, long description, classifiers | S | Distribution |
+| 6 | **PyPI publish** (0.2.0): `uv build`/twine, long description, classifiers | S | Distribution |
 | 7 | **Consume from OKFgraph** (optional follow-up, per user constraint OKFgraph stays untouched for now): re-export shim or refactor of `cli.py`/`components/ingest.py` | M | Remove duplication, single source of truth |
 | 8 | ~~Converter label fix~~ ✅ **done (2026-08-09, Phase 8)** — `_MATH_LAYOUT_LABELS` = equation/display_formula/inline_formula/isolate_formula/formula, used by both the full-structure path and the P2 fallback (was `("formula", "equation", "isolate_formula")`) | — | — |
 | 9 | **Formula accuracy upgrade (optional)**: TexTeller (80M pairs) or pix2tex-ONNX as an alternative recognizer behind `OnnxRapidEngine.recognize_formula` | M | Vendored model is the 100K-pair accuracy ceiling |
