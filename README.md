@@ -103,6 +103,26 @@ bobine/
 `bobine` never embeds, indexes, or writes to a database. The consumer owns
 embedding and storage (in OKFgraph that is `OKFRouter.import_bundle`).
 
+## Testing
+
+```bash
+# unit suite (no native backends needed — fake pdf_oxide objects drive the
+# converter's routing/splice/ONNX-assembly paths)
+pytest
+
+# integration suite (requires bobine[pdf-ingest] installed)
+pytest -m integration
+
+# coverage + lint
+pytest --cov=bobine --cov-report=term-missing
+ruff check . && ruff format --check .
+```
+
+Markers: `integration` (real pdf_oxide/office_oxide/RapidAI) and `slow`
+(heavy). The integration tests self-skip when backends are missing, so the
+bare install always stays green. CI (`.github/workflows/ci.yml`) runs the
+core suite on Python 3.10–3.13 plus an integration job.
+
 ## Version pinning
 
 RapidAI packages move fast; `check_rapid_versions()` warns on first import if
