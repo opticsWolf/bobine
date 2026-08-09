@@ -113,6 +113,18 @@ def _is_math_unicode(ch: str) -> bool:
     return any(lo <= cp <= hi for lo, hi in _MATH_UNICODE_RANGES)
 
 
+# Math-ish region labels emitted by RapidLayout family models (varies by
+# model: pp_layout_cdla uses "equation"; pp_doc_layoutv3 uses
+# display_formula/inline_formula/isolate_formula).
+_MATH_LAYOUT_LABELS = (
+    "equation",
+    "display_formula",
+    "inline_formula",
+    "isolate_formula",
+    "formula",
+)
+
+
 def _is_mono_font(font_name: str) -> bool:
     fn = font_name.lower()
     return any(k in fn for k in _MONO_FONT_KEYWORDS)
@@ -341,11 +353,18 @@ class HybridConverter:
     # ------------------------------------------------------------------
 
     def _math_boxes_from_chars(self, page) -> list[tuple[float, float, float, float]]:
-        """Detect formula regions from pdf_oxide character geometry."""
+        """Detect formula regions from pdf_oxide character geometry.
+
+        Line-aware algorithm: flagged chars are grouped into lines (same
+        baseline), merged horizontally within each line, then adjacent lines
+        are merged vertically ONLY if they horizontally overlap and the gap
+        fits normal line spacing — so a multi-line display equation becomes
+        ONE box while separate equations, columns, and prose stay separate.
+        """
         chars = getattr(page, "chars", None)
         if not chars:
             return []
-        raw: list[list[float]] = []
+        items: list[tuple[float, float, float, float]] = []
         for c in chars:
             bbox = getattr(c, "bbox", None)
             if not bbox or len(bbox) < 4:
@@ -353,51 +372,106 @@ class HybridConverter:
             fn = (getattr(c, "font_name", "") or "").lower()
             ch = getattr(c, "char", "") or ""
             if any(k in fn for k in _MATH_FONT_KEYWORDS) or (ch and _is_math_unicode(ch)):
-                x0, y0, x1, y1 = _bbox_to_xyxy(bbox)
-                raw.append([x0, y0, x1, y1, 1])
-        if not raw:
+                items.append(_bbox_to_xyxy(bbox))
+        if not items:
             return []
 
-        HGAP, VGAP = 14.0, 8.0
+        heights = sorted(y1 - y0 for _x0, y0, _x1, y1 in items)
+        med_h = heights[len(heights) // 2] or 10.0
+        line_tol = 0.8 * med_h  # chars within this (by center) share a line
+        hgap = 1.5 * med_h  # horizontal merge gap
+        vgap_max = 1.5 * med_h  # vertical merge gap between lines
+        page_h = float(getattr(page, "height", 0) or 0)
+        max_box_h = 0.4 * page_h if page_h else float("inf")
 
-        def _overlaps(a, b):
-            return not (
-                b[2] < a[0] - HGAP or b[0] > a[2] + HGAP or b[3] < a[1] - VGAP or b[1] > a[3] + VGAP
-            )
-
-        def _merge_into(dst, b):
-            dst[0] = min(dst[0], b[0])
-            dst[1] = min(dst[1], b[1])
-            dst[2] = max(dst[2], b[2])
-            dst[3] = max(dst[3], b[3])
-            dst[4] += b[4]
-
-        raw.sort(key=lambda b: (b[1], b[0]))
-        boxes: list[list[float]] = []
-        for b in raw:
-            for u in boxes:
-                if _overlaps(u, b):
-                    _merge_into(u, b)
-                    break
+        # 1) group flagged chars into lines (greedy sweep by vertical center)
+        ordered = sorted(items, key=lambda b: (b[1] + b[3]) / 2.0)
+        lines: list[list[tuple[float, float, float, float]]] = []
+        for b in ordered:
+            if (
+                lines
+                and abs((lines[-1][0][1] + lines[-1][0][3]) / 2.0 - (b[1] + b[3]) / 2.0) <= line_tol
+            ):
+                lines[-1].append(b)
             else:
-                boxes.append(list(b))
+                lines.append([b])
 
-        # Coalesce boxes that became adjacent after the first greedy pass
+        # 2) per line: merge horizontally into runs
+        boxes: list[list[float]] = []  # [x0, y0, x1, y1, n_chars]
+        for ln in lines:
+            ln = sorted(ln, key=lambda b: (b[0] + b[2]) / 2.0)
+            runs: list[list[float]] = []
+            for b in ln:
+                for r in runs:
+                    if b[0] <= r[2] + hgap and b[2] >= r[0] - hgap:
+                        r[0] = min(r[0], b[0])
+                        r[1] = min(r[1], b[1])
+                        r[2] = max(r[2], b[2])
+                        r[3] = max(r[3], b[3])
+                        r[4] += 1
+                        break
+                else:
+                    runs.append([b[0], b[1], b[2], b[3], 1])
+            boxes.extend(runs)
+
+        # 3) merge adjacent lines vertically (multi-line equations) when they
+        #    horizontally overlap, the gap fits line spacing, and the result
+        #    stays within a sane fraction of the page (anti-snowball).
+        boxes.sort(key=lambda b: (b[1], b[0]))
         changed = True
         while changed:
             changed = False
             out: list[list[float]] = []
             for b in boxes:
                 for u in out:
-                    if _overlaps(u, b):
-                        _merge_into(u, b)
-                        changed = True
-                        break
+                    hx = not (b[0] > u[2] + hgap or b[2] < u[0] - hgap)
+                    if not hx:
+                        continue
+                    gap = max(0.0, b[1] - u[3], u[1] - b[3])
+                    if gap > vgap_max:
+                        continue
+                    nh = max(u[3], b[3]) - min(u[1], b[1])
+                    if nh > max_box_h:
+                        continue
+                    u[0] = min(u[0], b[0])
+                    u[1] = min(u[1], b[1])
+                    u[2] = max(u[2], b[2])
+                    u[3] = max(u[3], b[3])
+                    u[4] += b[4]
+                    changed = True
+                    break
                 else:
-                    out.append(b)
+                    out.append(list(b))
             boxes = out
 
         return [(b[0], b[1], b[2], b[3]) for b in boxes if b[4] >= self.cfg.min_formula_math_chars]
+
+    def _layout_equation_boxes(
+        self, doc, page, index: int
+    ) -> list[tuple[float, float, float, float]]:
+        """P2 fallback: equation regions from the layout model (point space).
+
+        Runs RapidLayout on the rendered page and returns the math-labelled
+        regions converted from render-pixel space to PDF point space (the
+        space ``_crop_pil`` expects). Only used when
+        ``ConverterConfig.formula_layout_fallback`` is enabled and the
+        text-layer detector found nothing.
+        """
+        if np is None:
+            return []
+        rendered = self._render_page_to_pil(doc, page, index, self.cfg.render_dpi)
+        if rendered is None:
+            return []
+        img, _w, _h = rendered
+        scale = self.cfg.render_dpi / 72.0  # layout boxes are render pixels
+        boxes: list[tuple[float, float, float, float]] = []
+        try:
+            for box, label, _score in self.rapid.layout_regions(np.asarray(img)):
+                if (label or "").lower() in _MATH_LAYOUT_LABELS:
+                    boxes.append((box[0] / scale, box[1] / scale, box[2] / scale, box[3] / scale))
+        except Exception as e:
+            self.log(f"   ⚠️  layout equation fallback failed: {e}")
+        return boxes
 
     def _crop_pil(self, img, box, page_h: float, dpi: int):
         """Crop a PIL image to a point-space box."""
@@ -469,6 +543,11 @@ class HybridConverter:
             return fast_md
 
         boxes = self._math_boxes_from_chars(page)
+        if not boxes and self.cfg.formula_layout_fallback:
+            # P2 fallback: text-layer-hostile PDFs (Word/InDesign/OCR output
+            # without TeX math fonts) — ask the layout model for equation
+            # regions instead. Off by default; see ConverterConfig.
+            boxes = self._layout_equation_boxes(doc, page, index)
         if not boxes:
             return fast_md
 
@@ -547,8 +626,10 @@ class HybridConverter:
             lines = self.rapid.ocr_lines(page_np)
             return "\n\n".join(t for _b, t, _s in self._reading_order(lines)) or None
 
+        scale = self.cfg.render_dpi / 72.0  # layout boxes are render pixels → points
         blocks = []
         for box, label, _score in self._reading_order(regions):
+            box = (box[0] / scale, box[1] / scale, box[2] / scale, box[3] / scale)
             crop = self._crop_pil(img, box, page_h, self.cfg.render_dpi)
             if crop is None:
                 continue  # degenerate/off-page box
@@ -561,7 +642,7 @@ class HybridConverter:
                     blocks.append(
                         html_tables_to_gfm(html) if self.cfg.convert_html_tables else html
                     )
-            elif lab in ("formula", "equation", "isolate_formula"):
+            elif lab in _MATH_LAYOUT_LABELS:
                 p = work_dir / f"_reg_f_{len(blocks)}.png"
                 crop.save(str(p))
                 latex = self.rapid.recognize_formula(str(p))

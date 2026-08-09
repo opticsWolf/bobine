@@ -108,6 +108,13 @@ addressed — no external package needed. Runtime deps come from the
 `github.com/RapidAI/RapidLaTeXOCR/releases/download/v0.0.0/` into
 `bobine/_vendor/rapid_latex_ocr/models/` (git-ignored).
 
+Formula regions come from the text layer (TeX math fonts / unicode math
+chars), merged **line-aware** so multi-line display equations become one
+crop. For text-layer-hostile PDFs (Word/InDesign/OCR output without math
+fonts), set `ConverterConfig(formula_layout_fallback=True)` to ask the
+layout model for equation regions instead (pulls the `rapid_layout` stack
+into SURGICAL mode — off by default).
+
 ## Output contract
 
 `ingest_document` produces a directory that a graph/import layer can consume:

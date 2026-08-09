@@ -35,7 +35,7 @@ OKFgraph itself is **not modified**; it keeps importing its own
 | Orchestration (single + batch) | ✅ new (`pipeline`) |
 | Formula OCR (SURGICAL mode) | ✅ **vendored** `rapid_latex_ocr` with numpy-2 fix; verified live on numpy 2.5.1 / py3.13 / onnxruntime 1.28 |
 | Dependency tree | ✅ modernised + `uv.lock` (single numpy-2 lineage); `office_oxide` finally declared |
-| Unit tests (fake pdf_oxide, no deps) | ✅ **126 passed**, 11 integration |
+| Unit tests (fake pdf_oxide, no deps) | ✅ **133 passed**, 11 integration |
 | Coverage | ✅ **83%** (engine 82% — was 43%, converter 76%, assets 92%; `_vendor` excluded) |
 | Lint / format (ruff) | ✅ clean |
 | CI (GitHub Actions) | ✅ core matrix 3.10–3.13 + integration job |
@@ -176,6 +176,35 @@ bobine/
   split per line (VGAP=8pt < 11pt line pitch) → per-line crops reduce
   recognition fidelity; layout-equation fallback (P2) remains the
   font-agnostic upgrade path.
+
+### Phase 8 — Line-aware merge (P1) + layout-equation fallback (P2) (done, `…`)
+- **P1 — line-aware merge** in `_math_boxes_from_chars`: flagged chars are
+  grouped into lines (baseline tolerance), merged horizontally per line,
+  then adjacent lines merge vertically ONLY if they horizontally overlap,
+  the gap fits ≤1.5× median line height, and the result stays ≤40% of page
+  height. A 2-line display equation is now ONE box (1 crop, 1 recognition);
+  separate equations, columns and prose stay separate. Verified on
+  splitting_methods.pdf.
+- **P2 — optional layout fallback** (off by default):
+  `ConverterConfig.formula_layout_fallback=False`; when enabled and the
+  text-layer detector finds nothing, `_layout_equation_boxes()` runs
+  RapidLayout and uses math-labelled regions (`_MATH_LAYOUT_LABELS` =
+  equation/display_formula/inline_formula/isolate_formula/formula).
+  Empirically: cdla detects ~0 equation regions on the physics/math corpus
+  (inline math is text to it), so P2 is a genuine edge-case path for
+  text-layer-hostile PDFs, not a replacement.
+- **Latent scaling bug fixed**: RapidLayout returns boxes in render-PIXEL
+  space; `_crop_pil` expects points. The ALWAYS full-structure path passed
+  pixels through as points (≈2× oversized crops that only worked by luck);
+  both the full-structure path and P2 now convert pixels→points
+  (÷(dpi/72)). Corpus ALWAYS test now exercises the corrected geometry at
+  the design-default 300dpi (tests had been under-driving it at 150dpi).
+- **New quality finding (roadmap)**: slanet-plus collapses the two-column
+  trust_ml table to a single row (1 tr × 2 td) — a structure-recognition
+  limitation on layout boxes spanning both columns, not a regression; the
+  OCR'd content still survives (GFM or raw HTML).
+- Tests: 6 new unit tests (line-aware merge ×3, P2 pixel→point + label
+  filter + surgical on/off wiring); full suite **133 passed**.
 - **Sources**: 3 arXiv papers verified **CC BY 4.0** on their abstract pages
   (the search-UI license filter is leaky — verification is per-paper):
   `2608.06342` solitons (physics, equation-dense), `2608.05540` splitting
@@ -240,7 +269,8 @@ bobine/
 |---|---|---|---|
 | 1 | ~~PDF/Office runtime verification~~ ✅ **done (2026-08-09)** — pins installed, integration suite green, drift fixed; see Phase 5 | — | — |
 | 2 | ~~Test-PDF corpus~~ ✅ **done (2026-08-09)** — 3 CC BY arXiv papers + generated scanned page; see Phase 6 | — | — |
-| 2a | **Formula splice placement** ✅ **done (2026-08-09)** — root cause was two real bugs (cmr10 body-font false positive; bbox `(x,y,w,h)` vs `(x0,y0,x1,y1)` drift), fixed + tuned; formulas splice in place. Remaining: multi-line equations split per line (VGAP vs line pitch) → per-line recognition fidelity; layout-`equation`-box fallback (P2) as font-agnostic upgrade | M | Quality |
+| 2a | **Formula splice placement** ✅ **done (2026-08-09)** — root cause was two real bugs (cmr10 body-font false positive; bbox `(x,y,w,h)` vs `(x0,y0,x1,y1)` drift), fixed + tuned; formulas splice in place. **P1 line-aware merge** (multi-line equations = 1 box) and **P2 layout fallback** (`formula_layout_fallback`, off by default) implemented in Phase 8 | — | — |
+| 2b | **Table structure quality**: slanet-plus collapses the two-column trust_ml table to 1 tr × 2 td (layout box spans both columns) — try per-column table boxes or a higher-res structure pass | M | Table fidelity |
 | 3 | **Raise coverage** 83% → ≥85%: converter guard/fallback lines (76%), remaining engine lines (82%) | M | Confidence in degradation paths |
 | 4 | **Parity check** ported tests vs OKFgraph originals; document any behavioural drift | S | Keep the two codebases honest |
 | 5 | **`slow` GPU job** in CI (onnxruntime CUDA) — optional | L | GPU provider path (`ort_providers`) untested |
@@ -275,7 +305,7 @@ uv lock --check
 
 ## 8. Acceptance Criteria (definition of done for v1.0)
 
-- [ ] **126+** unit tests pass on a bare install (no optional deps)
+- [ ] **133+** unit tests pass on a bare install (no optional deps)
 - [ ] Integration suite green on a runner with `bobine[pdf-ingest]` + `bobine[formula]` installed (**demonstrated locally 2026-08-09**)
 - [ ] Coverage ≥ 85% on `bobine/converter.py` + `bobine/pipeline.py`
 - [ ] CI green on Python 3.10–3.13 (lint, format, unit, coverage)

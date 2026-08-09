@@ -59,6 +59,12 @@ class ConverterConfig:
     formula_batch_size: int = 8
     formula_pad_pts: float = 4.0
     min_formula_math_chars: int = 5
+    # P2 fallback: when the text-layer formula detector finds nothing (PDFs
+    # without TeX math fonts — Word/InDesign/OCR output), ask the layout
+    # model for equation regions instead. Off by default: it pulls the
+    # rapid_layout stack into SURGICAL mode and only detects display
+    # equations (inline math is lost). Enable for text-layer-hostile docs.
+    formula_layout_fallback: bool = False
 
     # -- inline vs display LaTeX threshold ----------------------------------
     formula_inline_max_width_pts: float = 220.0
