@@ -162,3 +162,68 @@ class TestConvertDirectory:
         # "ok" text doc converts; the PDF failure is logged, batch continues
         assert len(results) == 1
         assert results[0].md_path.name == "a.md"
+
+
+class TestPipelineCoverage:
+    def test_unsupported_extension_raises(self, tmp_path):
+        from bobine import convert_to_markdown
+
+        p = tmp_path / "doc.xyz"
+        p.write_text("hi")
+        with pytest.raises(ValueError):
+            convert_to_markdown(p, ConverterConfig(), tmp_path / "w")
+
+    def test_convert_directory_skips_non_files(self, tmp_path):
+        from bobine import convert_directory
+
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "a.md").write_text("# A", encoding="utf-8")
+        (tmp_path / "sub" / "b.md").write_text("# B", encoding="utf-8")
+        results = convert_directory(tmp_path, tmp_path / "out")
+        assert len(results) == 2  # both files converted, no dir entries
+
+
+class TestPipelineCoverage2:
+    def test_office_backend_missing_runtime_error(self, tmp_path, monkeypatch):
+        import bobine.pipeline as pmod
+        from bobine import convert_to_markdown
+
+        p = tmp_path / "x.docx"
+        p.write_bytes(b"PK\x03\x04")
+        monkeypatch.setattr(pmod, "OfficeDocument", None)
+        with pytest.raises(RuntimeError):
+            convert_to_markdown(p, ConverterConfig(), tmp_path / "w")
+
+    def test_page_count_failure_defaults_zero(self, tmp_path, monkeypatch):
+        import bobine.pipeline as pmod
+        from bobine import ingest_document
+
+        class BadDoc:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def __len__(self):
+                raise ValueError("boom")
+
+            def page_count(self):
+                raise RuntimeError("boom")
+
+        monkeypatch.setattr(pmod, "PdfDocument", BadDoc)
+        # conversion still uses the real converter backend; only the
+        # page-count probe is faked
+        from test_integration import _synthetic_pdf
+
+        src = _synthetic_pdf(tmp_path / "paper.pdf")
+        result = ingest_document(
+            src, tmp_path / "out", config=ConverterConfig(use_onnx=False), lint=False
+        )
+        assert result.page_count == 0
+
+    def test_convert_directory_missing_source(self, tmp_path):
+        from bobine import convert_directory
+
+        with pytest.raises(NotADirectoryError):
+            convert_directory(tmp_path / "nope", tmp_path / "out")

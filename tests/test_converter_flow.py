@@ -438,3 +438,48 @@ class TestRoutePage:
         conv.rapid.ocr_lines = lambda img: [((0, 0, 1, 1), "scan text", 0.9)]
         md = conv._route_page(FakePdfDocument(), page, 0, tmp_path)
         assert "scan text" in md
+
+
+class TestRoutingCoverage:
+    """Remaining routing branches (coverage #3)."""
+
+    def test_route_auto_no_paddle_fast_path(self, tmp_path):
+        from bobine import ConverterConfig, RoutingMode
+
+        page = FakePage(text="plain text, no math here", chars=[])
+        conv = _conv(ConverterConfig(routing_mode=RoutingMode.AUTO, use_onnx=True))
+        conv.rapid._ocr = object()  # engine present
+        md = conv._route_page(None, page, 0, tmp_path)
+        assert md == "plain text, no math here"
+
+    def test_convert_pdf_falls_back_to_page_count(self, tmp_path, monkeypatch):
+        import bobine.converter as conv_mod
+        from bobine import ConverterConfig, RoutingMode
+
+        class NoLenDoc:
+            def __init__(self, path=""):
+                self.page = FakePage.from_text("hello", index=0)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def page_count(self):
+                return 1
+
+            def __iter__(self):
+                return iter([self.page])
+
+        monkeypatch.setattr(conv_mod, "PdfDocument", NoLenDoc)
+        conv = _conv(ConverterConfig(routing_mode=RoutingMode.NEVER, use_onnx=False))
+        seen = []
+        md = conv.convert_pdf(
+            tmp_path / "x.pdf",
+            tmp_path / "w",
+            should_continue=lambda: True,
+            on_page=lambda i, n: seen.append((i, n)),
+        )
+        assert "hello" in md
+        assert seen == [(0, 1)]  # page_count() fallback used

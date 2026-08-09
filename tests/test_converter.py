@@ -240,3 +240,239 @@ class TestMathBoxDetection:
             # real backend → the invalid file surfaces pdf_oxide's own error
             with pytest.raises((OSError, RuntimeError)):
                 convert_to_markdown(pdf, cfg, tmp_path / "work")
+
+
+class TestCoverageHelpers:
+    """Guard/fallback branches driven with fakes (coverage #3)."""
+
+    def test_page_math_signal_from_spans(self):
+        from bobine.converter import HybridConverter
+
+        class Span:
+            def __init__(self, text, font_name):
+                self.text = text
+                self.font_name = font_name
+
+        page = type(
+            "P", (), {"text": "", "spans": [Span("ab", "CMMI10"), Span("cd", "Helvetica")]}
+        )()
+        conv = HybridConverter(ConverterConfig())
+        math, total = conv._page_math_signal(page)
+        assert math == 2 and total == 0
+
+    def test_is_scanned_false_when_chars_raise(self):
+        from bobine.converter import HybridConverter
+
+        class BadPage:
+            @property
+            def chars(self):
+                raise RuntimeError("boom")
+
+        assert HybridConverter(ConverterConfig())._is_scanned(BadPage()) is False
+
+    def test_needs_paddle_exception_logs_and_falls_back(self):
+        from bobine.converter import HybridConverter
+
+        logs = []
+        conv = HybridConverter(ConverterConfig(routing_mode=RoutingMode.AUTO), log=logs.append)
+
+        class BadPage:
+            @property
+            def chars(self):
+                raise RuntimeError("boom")
+
+        assert conv._needs_paddle(BadPage()) is False
+        assert any("routing heuristic failed" in m for m in logs)
+
+    def test_needs_paddle_auto_math_signal(self):
+        from bobine.converter import HybridConverter
+
+        # text-layer math signal exceeds threshold → full pipeline in AUTO
+        page = FakePage(text="∑" * 40, chars=[], width=612.0, height=792.0)
+        conv = HybridConverter(
+            ConverterConfig(routing_mode=RoutingMode.AUTO, math_char_threshold=30)
+        )
+        assert conv._needs_paddle(page) is True
+
+    def test_crop_pil_degenerate_box(self):
+        from bobine.converter import HybridConverter
+
+        conv = HybridConverter(ConverterConfig())
+        assert conv._crop_pil(None, (0, 0, 1, 1), 100.0, 150) is None
+
+    def test_ws_replace_no_match_and_tolerant(self):
+        from bobine.converter import HybridConverter
+
+        conv = HybridConverter(ConverterConfig())
+        assert conv._ws_replace("hello world here", "nope nope", "X") is None
+        out = conv._ws_replace("hello   world\nhere", "hello world", "X")
+        assert out == "X\nhere"
+
+    def test_obj_to_pil_variants(self, monkeypatch):
+        from PIL import Image
+
+        import bobine.converter as conv_mod
+        from bobine.converter import HybridConverter
+
+        conv = HybridConverter(ConverterConfig())
+        img = Image.new("RGB", (4, 4))
+        assert conv._obj_to_pil(img) is img  # PIL passthrough
+        import io as _io
+
+        buf = _io.BytesIO()
+        img.save(buf, format="PNG")
+        assert conv._obj_to_pil({"data": buf.getvalue()}) is not None  # dict
+        assert conv._obj_to_pil(b"\x89PNG") is None  # corrupt bytes
+        monkeypatch.setattr(conv_mod, "PILImage", None)
+        assert conv._obj_to_pil(img) is None  # PIL unavailable
+
+    def test_render_page_to_png_variants(self, tmp_path, monkeypatch):
+        from PIL import Image
+
+        import bobine.converter as conv_mod
+        from bobine.converter import HybridConverter
+
+        conv = HybridConverter(ConverterConfig())
+        out = tmp_path / "p.png"
+        assert conv._render_page_to_png(None, None, 0, out, dpi=72) is False  # no obj
+        conv._render_raw = lambda *a, **k: {"data": b"not-an-image"}
+        assert conv._render_page_to_png(None, None, 0, out, dpi=72) is True  # dict bytes written
+        img = Image.new("RGB", (4, 4))
+        conv._render_raw = lambda *a, **k: img
+        assert conv._render_page_to_png(None, None, 0, out, dpi=72) is True  # PIL save
+        # ndarray obj + PIL unavailable → False (numpy-optional branch)
+        np_mod = pytest.importorskip("numpy")
+        monkeypatch.setattr(conv_mod, "PILImage", None)
+        conv._render_raw = lambda *a, **k: np_mod.zeros((4, 4), dtype=np_mod.uint8)
+        assert conv._render_page_to_png(None, None, 0, out, dpi=72) is False  # PIL gone
+
+    def test_extract_page_images_variants(self, tmp_path):
+        from bobine.converter import HybridConverter
+
+        conv = HybridConverter(ConverterConfig())
+
+        class AttrImage:
+            data = b"\x89PNG\r\n\x1a\nrest"
+            format = "png"
+
+        class NoData:
+            pass
+
+        # dict-style + attr-style + no-data skip
+        doc = type(
+            "D",
+            (),
+            {
+                "extract_image_bytes": lambda self, i: [
+                    {"data": b"\x89PNG\r\n\x1a\nx", "format": ".PNG"},
+                    NoData(),
+                    AttrImage(),
+                ]
+            },
+        )()
+        paths = conv._extract_page_images(doc, None, 0, tmp_path)
+        assert len(paths) == 2  # dict + attr images written, NoData skipped
+        assert all(p.exists() for p in paths)
+
+        # backend raises → logged, empty list
+        logs = []
+        conv.log = logs.append
+        bad = type(
+            "B",
+            (),
+            {"extract_image_bytes": lambda self, i: (_ for _ in ()).throw(RuntimeError("x"))},
+        )()
+        assert conv._extract_page_images(bad, None, 0, tmp_path) == []
+        assert any("image extraction failed" in m for m in logs)
+
+    def test_layout_equation_boxes_np_missing(self, monkeypatch):
+        import bobine.converter as conv_mod
+        from bobine.converter import HybridConverter
+
+        monkeypatch.setattr(conv_mod, "np", None)
+        conv = HybridConverter(ConverterConfig(formula_layout_fallback=True))
+        assert conv._layout_equation_boxes(None, None, 0) == []
+
+    def test_layout_equation_boxes_render_missing(self, monkeypatch):
+        from bobine.converter import HybridConverter
+
+        conv = HybridConverter(ConverterConfig(formula_layout_fallback=True))
+        monkeypatch.setattr(conv, "_render_page_to_pil", lambda *a, **k: None)
+        assert conv._layout_equation_boxes(None, None, 0) == []
+
+    def test_full_structure_render_missing(self, tmp_path):
+        from bobine.converter import HybridConverter
+
+        conv = HybridConverter(ConverterConfig(routing_mode=RoutingMode.ALWAYS))
+        monkeypatch = __import__("pytest").MonkeyPatch()
+        monkeypatch.setattr(conv, "_render_page_to_pil", lambda *a, **k: None)
+        try:
+            assert conv._full_structure_page_markdown(None, FakePage(), 0, tmp_path) is None
+        finally:
+            monkeypatch.undo()
+
+    def test_full_structure_np_missing(self, tmp_path, monkeypatch):
+        from PIL import Image
+
+        import bobine.converter as conv_mod
+        from bobine.converter import HybridConverter
+
+        logs = []
+        conv = HybridConverter(ConverterConfig(routing_mode=RoutingMode.ALWAYS), log=logs.append)
+        img = Image.new("RGB", (100, 100))
+        monkeypatch.setattr(conv, "_render_page_to_pil", lambda *a, **k: (img, 612.0, 792.0))
+        monkeypatch.setattr(conv_mod, "np", None)
+        assert conv._full_structure_page_markdown(None, FakePage(), 0, tmp_path) is None
+        assert any("numpy not available" in m for m in logs)
+
+    def test_surgical_render_unavailable(self, tmp_path):
+        from bobine.converter import HybridConverter
+
+        logs = []
+        conv = HybridConverter(ConverterConfig(routing_mode=RoutingMode.SURGICAL), log=logs.append)
+        conv.rapid._formula = object()
+        page = FakePage(
+            text="x",
+            chars=[FakeChar("x", font_name="CMMI10", bbox=(100.0, 700.0, 108.0, 712.0))] * 6,
+        )
+        monkeypatch = __import__("pytest").MonkeyPatch()
+        monkeypatch.setattr(conv, "_render_page_to_pil", lambda *a, **k: None)
+        try:
+            md = conv._surgical_page_markdown(None, page, 0, tmp_path)
+            assert md == "x"
+            assert any("render unavailable" in m for m in logs)
+        finally:
+            monkeypatch.undo()
+
+    def test_convert_office_missing_backend(self, monkeypatch):
+        import bobine.converter as conv_mod
+        from bobine.converter import HybridConverter
+
+        monkeypatch.setattr(conv_mod, "OfficeDocument", None)
+        with pytest.raises(RuntimeError):
+            HybridConverter(ConverterConfig()).convert_office("x.docx")
+
+    def test_convert_office_success(self, monkeypatch):
+        import bobine.converter as conv_mod
+        from bobine.converter import HybridConverter
+
+        class FakeOffice:
+            def __init__(self, path):
+                pass
+
+            @classmethod
+            def open(cls, path):
+                return cls(path)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def to_markdown(self):
+                return "# from office"
+
+        monkeypatch.setattr(conv_mod, "OfficeDocument", FakeOffice)
+        assert HybridConverter(ConverterConfig()).convert_office("x.docx") == "# from office"
+        assert HybridConverter(ConverterConfig()).convert_office("x.docx") == "# from office"

@@ -52,3 +52,20 @@ class TestVersionChecking:
         monkeypatch.delenv("BOBINE_INGEST_ALLOW_UNPINNED", raising=False)
         monkeypatch.delenv("OKFGRAPH_INGEST_ALLOW_UNPINNED", raising=False)
         assert isinstance(check_rapid_versions(), list)
+
+
+class TestVersionEdgeCases:
+    def test_parse_version_non_numeric_component(self):
+        from bobine.versions import _parse_version
+
+        assert _parse_version("1.2.dev0") == (1, 2, 0)  # ValueError → break + pad
+        assert _parse_version("1") == (1, 0, 0)
+
+    def test_check_drift_warns_without_logging(self, monkeypatch):
+        import bobine.versions as vmod
+        from bobine.versions import check_rapid_versions
+
+        monkeypatch.setattr(vmod, "_pkg_version", lambda key: "9.9.9")
+        warnings = check_rapid_versions(warn=False)
+        assert warnings  # drift detected
+        assert any("9.9.9" in w for w in warnings)

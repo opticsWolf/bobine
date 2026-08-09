@@ -1,7 +1,7 @@
 # bobine — Consolidated Implementation Plan
 
 **Status:** v0.1.0 · dual-licensed (Apache-2.0 OR MIT) · `https://github.com/opticsWolf/bobine`
-**Last updated:** 2026-08-09 · latest commit pending (test-PDF corpus + ONNX bugfixes)
+**Last updated:** 2026-08-09 · latest commit pending (coverage 92%)
 
 ---
 
@@ -35,8 +35,8 @@ OKFgraph itself is **not modified**; it keeps importing its own
 | Orchestration (single + batch) | ✅ new (`pipeline`) |
 | Formula OCR (SURGICAL mode) | ✅ **vendored** `rapid_latex_ocr` with numpy-2 fix; verified live on numpy 2.5.1 / py3.13 / onnxruntime 1.28 |
 | Dependency tree | ✅ modernised + `uv.lock` (single numpy-2 lineage); `office_oxide` finally declared |
-| Unit tests (fake pdf_oxide, no deps) | ✅ **136 passed**, 11 integration |
-| Coverage | ✅ **83%** (engine 82% — was 43%, converter 76%, assets 92%; `_vendor` excluded) |
+| Unit tests (fake pdf_oxide, no deps) | ✅ **169 passed**, 11 integration |
+| Coverage | ✅ **92%** (converter 91%, engine 93%, pipeline 97%; `_vendor` excluded) |
 | Lint / format (ruff) | ✅ clean |
 | CI (GitHub Actions) | ✅ core matrix 3.10–3.13 + integration job |
 | Git / remote | ✅ `main` on GitHub, clean tree |
@@ -206,7 +206,25 @@ bobine/
 - Tests: 6 new unit tests (line-aware merge ×3, P2 pixel→point + label
   filter + surgical on/off wiring); full suite **133 passed**.
 
-### Phase 9 — Table quality: text-layer-first on born-digital pages (done, `…`)
+### Phase 9 — Table quality: text-layer-first on born-digital pages (done, `dc394b3`)
+
+### Phase 10 — Coverage 83% → 92% (done, `…`)
+- Roadmap #3 closed: TOTAL **92%** (target ≥85%); converter 91%, engine 93%,
+  pipeline 97%, versions 93%, tables/markdown/assets ≥92%.
+- 33 new tests, all via fakes/monkeypatch — no new runtime deps:
+  - engine: 4 lazy-loader failure branches (constructor raises → log +
+    degrade), recognize_formula failure/blank/no-engine, legacy OCR short
+    rows (score defaults 1.0), table no-engine/empty-htmls.
+  - converter: spans-based math signal, `_is_scanned`/`_needs_paddle`
+    exception paths, degenerate `_crop_pil`, `_ws_replace` no-match +
+    tolerant match, `_obj_to_pil`/`_render_page_to_png` branch matrix,
+    `_extract_page_images` attr/dict/no-data/error paths, np-None guards,
+    render-None paths, `convert_office` missing/success.
+  - flow/pipeline/versions: AUTO-no-paddle routing, page_count fallback,
+    office backend missing in `convert_to_markdown`, unsupported extension,
+    directory non-file skip + missing-dir, version parse edge cases,
+    drift-warning without logging.
+- Full suite **169 passed**.
 - **Diagnosis of roadmap #2b** (slanet 1×2 collapse on trust_ml): the
   layout model was the problem, not slanet — `layout_cdla` labels a
   two-column PROSE block as `table` and the real results table as `text`.
@@ -286,7 +304,7 @@ bobine/
 | 2 | ~~Test-PDF corpus~~ ✅ **done (2026-08-09)** — 3 CC BY arXiv papers + generated scanned page; see Phase 6 | — | — |
 | 2a | **Formula splice placement** ✅ **done (2026-08-09)** — root cause was two real bugs (cmr10 body-font false positive; bbox `(x,y,w,h)` vs `(x0,y0,x1,y1)` drift), fixed + tuned; formulas splice in place. **P1 line-aware merge** (multi-line equations = 1 box) and **P2 layout fallback** (`formula_layout_fallback`, off by default) implemented in Phase 8 | — | — |
 | 2b | **Table structure quality** ✅ **done (2026-08-09)** — root cause: layout model mislabels two-column pages (prose→table, real table→text); v3 model no better; fixed via text-layer-first on born-digital pages (lossless, 7× faster). Slanet HTML still used for scans | — | — |
-| 3 | **Raise coverage** 83% → ≥85%: converter guard/fallback lines (76%), remaining engine lines (82%) | M | Confidence in degradation paths |
+| 3 | ~~Raise coverage~~ ✅ **done (2026-08-09)** — **92%** total (converter 91%, engine 93%, pipeline 97%); 33 new fake/monkeypatch tests; see Phase 10 | — | — |
 | 4 | **Parity check** ported tests vs OKFgraph originals; document any behavioural drift | S | Keep the two codebases honest |
 | 5 | **`slow` GPU job** in CI (onnxruntime CUDA) — optional | L | GPU provider path (`ort_providers`) untested |
 | 6 | **PyPI publish** (0.1.0 or 0.2.0): `uv build`/twine, long description, classifiers | S | Distribution |
@@ -320,9 +338,9 @@ uv lock --check
 
 ## 8. Acceptance Criteria (definition of done for v1.0)
 
-- [ ] **136+** unit tests pass on a bare install (no optional deps)
+- [x] **169+** unit tests pass on a bare install (no optional deps)
 - [ ] Integration suite green on a runner with `bobine[pdf-ingest]` + `bobine[formula]` installed (**demonstrated locally 2026-08-09**)
-- [ ] Coverage ≥ 85% on `bobine/converter.py` + `bobine/pipeline.py`
+- [x] Coverage ≥ 85% on `bobine/converter.py` + `bobine/pipeline.py` (**92%** total, converter 91%, pipeline 97%)
 - [ ] CI green on Python 3.10–3.13 (lint, format, unit, coverage)
 - [x] Test-PDF corpus committed under `tests/fixtures/` — 3 CC BY 4.0 arXiv
       papers (trimmed, `SOURCES.md` attribution) + generated scanned page

@@ -164,3 +164,86 @@ class TestEngineResponseNormalization:
 
         eng = self._eng_with(table=fake_table)
         assert eng.table_html("ignored") is None
+
+
+class TestLoaderFailureDegradation:
+    """Lazy loaders log and degrade when constructors raise (coverage #3)."""
+
+    def _engine(self):
+        return OnnxRapidEngine(log_fn=lambda *a, **k: None)
+
+    def test_formula_loader_failure(self, monkeypatch):
+        import bobine.engine as eng_mod
+
+        class Bad:
+            def __init__(self):
+                raise RuntimeError("broken")
+
+        monkeypatch.setattr(eng_mod, "LatexOCR", Bad)
+        assert self._engine().formula() is None
+
+    def test_ocr_loader_failure(self, monkeypatch):
+        import bobine.engine as eng_mod
+
+        class Bad:
+            def __init__(self):
+                raise RuntimeError("broken")
+
+        monkeypatch.setattr(eng_mod, "RapidOCR", Bad)
+        assert self._engine().ocr() is None
+
+    def test_layout_loader_failure(self, monkeypatch):
+        import bobine.engine as eng_mod
+
+        class Bad:
+            def __init__(self):
+                raise RuntimeError("broken")
+
+        monkeypatch.setattr(eng_mod, "RapidLayout", Bad)
+        assert self._engine().layout() is None
+
+    def test_table_loader_failure(self, monkeypatch):
+        import bobine.engine as eng_mod
+
+        class Bad:
+            def __init__(self):
+                raise RuntimeError("broken")
+
+        monkeypatch.setattr(eng_mod, "RapidTable", Bad)
+        assert self._engine().table() is None
+
+    def test_recognize_formula_failure_and_empty(self):
+        eng = self._engine()
+
+        def bad(data):
+            raise RuntimeError("boom")
+
+        eng._formula = bad
+        assert eng.recognize_formula("whatever.png") is None
+
+        def empty(data):
+            return ("   ", 1.0)  # blank latex → None
+
+        eng._formula = empty
+        assert eng.recognize_formula("whatever.png") is None
+
+    def test_recognize_formula_no_engine(self):
+        assert self._engine().recognize_formula("x.png") is None
+
+    def test_ocr_legacy_short_row_defaults_score(self):
+        def fake_ocr(img):
+            return [[[0, 0, 1, 1], "short"]]
+
+        eng = self._engine()
+        eng._ocr = fake_ocr
+        assert eng.ocr_lines("x") == [([0, 0, 1, 1], "short", 1.0)]
+
+    def test_table_html_no_engine_and_empty(self):
+        eng = self._engine()
+        assert eng.table_html("x") is None
+
+        def fake_table(img, ocr_res):
+            return _TableResult(pred_htmls=[])
+
+        eng._table = fake_table
+        assert eng.table_html("x") is None
