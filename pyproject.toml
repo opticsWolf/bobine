@@ -70,6 +70,8 @@ markdown = [
 ]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.9",
     "reportlab>=4.0",  # scanned-page corpus generator (tests/fixtures/generate_corpus.py)
 ]
 
