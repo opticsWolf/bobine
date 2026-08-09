@@ -1,16 +1,39 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]  # >=77: PEP 639 license-expression support
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "bobine"
 version = "0.2.0"
 description = "Standalone PDF / Office / text → Markdown ingestion engine (extracted from OKFgraph)"
+readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0 OR MIT"
+license-files = ["LICENSE", "LICENSES/*.txt"]
+authors = [
+    { name = "opticsWolf", email = "opticswolf@protonmail.com" },
+]
+keywords = ["pdf", "markdown", "ocr", "onnx", "latex", "ingestion", "rapidocr", "pdf-oxide"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Text Processing :: Markup :: LaTeX",
+]
 dependencies = [
     "Pillow>=10.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/opticsWolf/bobine"
+Repository = "https://github.com/opticsWolf/bobine"
+Documentation = "https://github.com/opticsWolf/bobine/blob/main/README.md"
 
 [project.optional-dependencies]
 # Heavy conversion backends (all optional; the package imports without them).
