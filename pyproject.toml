@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bobine"
+version = "0.1.0"
+description = "Standalone PDF / Office / text → Markdown ingestion engine (extracted from OKFgraph)"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+dependencies = [
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+# Heavy conversion backends (all optional; the package imports without them).
+pdf-ingest = [
+    "pdf_oxide>=0.2.1",
+    "rapidocr==1.5.2",
+    "rapid_latex_ocr==1.0.13",
+    "rapid_layout==0.2.0",
+    "rapid_table==1.0.3",
+    "numpy>=1.24",
+]
+# Text-type document handling (markdown linting + frontmatter).
+markdown = [
+    "mordant>=0.8",
+    "python-frontmatter>=1.0",
+    "pyyaml>=6.0",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["bobine*"]
+
+[tool.pytest]
+addopts = ["-v", "--tb=short"]
+markers = [
+    "integration: requires optional native backends (bobine[pdf-ingest])",
+    "slow: GPU-heavy or large-batch tests",
+]
+
+[tool.coverage.run]
+source = ["bobine"]
+omit = ["bobine/__init__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "RUF001", "RUF002", "RUF003", "W291"]  # asserts + intentional unicode/PDF-byte test content
