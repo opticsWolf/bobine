@@ -1,0 +1,120 @@
+# Release workflow: build bobine, verify it, and publish to PyPI.
+#
+# Triggers on version tags, e.g. `git tag v0.2.0 && git push origin v0.2.0`.
+#
+# Publishing uses PyPI **trusted publishing** (OpenID Connect) — no API
+# tokens stored in secrets. One-time setup on PyPI:
+#   1. https://pypi.org/manage/account/publishing/ → "Add a new publisher"
+#   2. Project: bobine · Workflow: release.yml · Environment: pypi
+#      (use the TestPyPI equivalent for the `testpypi` variant below).
+#
+# Job layout:
+#   build          → lint + unit tests (bare install) + `uv build` + wheel
+#                    smoke test (zero-dependency import) + artifact upload
+#   publish-pypi   → trusted publish of the sdist + wheel to PyPI
+#   github-release → draft a GitHub Release with the artifacts attached
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build & verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install (bare + dev)
+        run: |
+          uv sync --extra dev --extra markdown --frozen
+
+      - name: Lint + format
+        run: uv run ruff check . && uv run ruff format --check .
+
+      - name: Unit tests (no native backends)
+        run: uv run pytest -m "not integration" -q
+
+      - name: Tag/version consistency
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          pkg="$(uv run python -c 'import bobine; print(bobine.__version__)')"
+          echo "tag=$tag pkg=$pkg"
+          test "$tag" = "$pkg"
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Wheel smoke test (zero-dependency import)
+        run: |
+          python -m venv /tmp/wheelcheck
+          /tmp/wheelcheck/bin/pip install --no-deps dist/bobine-*.whl
+          /tmp/wheelcheck/bin/python -c \
+            "import bobine; print('wheel ok:', bobine.__version__)"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-pypi:
+    name: publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # trusted publishing (OIDC) — no token secret
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  # Optional companion: draft a GitHub Release with the artifacts. Remove
+  # this job (and the `contents: write` permission it declares) if you only
+  # want PyPI.
+  github-release:
+    name: draft GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/**
+
+  # Publish to TestPyPI instead (dry run): swap `environment` to `testpypi`
+  # and the publish step's repository to testpypi, e.g.:
+  #   environment: testpypi
+  #   uses: pypa/gh-action-pypi-publish@release/v1
+  #   with:
+  #     packages-dir: dist/
+  #     repository-url: https://test.pypi.org/legacy/
