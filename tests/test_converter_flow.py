@@ -295,6 +295,42 @@ class TestFullStructurePage:
         md = conv._full_structure_page_markdown(FakePdfDocument(), page, 0, tmp_path)
         assert md is not None and "Hello from OCR" in md
 
+    def test_text_region_prefers_text_layer(self, tmp_path):
+        """Born-digital pages: text layer is lossless — OCR must not run."""
+        page, conv = self._page_and_conv(tmp_path)
+        doc = FakePdfDocument()
+        doc.region_texts[0] = "Born digital text layer content"
+        conv.rapid.layout_regions = lambda img: [([50, 600, 300, 700], "text", 0.9)]
+        conv.rapid.ocr_lines = lambda img: [((0, 0, 1, 1), "GARBAGE OCR", 0.5)]
+        md = conv._full_structure_page_markdown(doc, page, 0, tmp_path)
+        assert md is not None and "Born digital text layer content" in md
+        assert "GARBAGE OCR" not in md
+
+    def test_table_region_prefers_text_layer(self, tmp_path):
+        """Degenerate slanet output is bypassed when the text layer has the
+        real content (the two-column mislabel case from the corpus)."""
+        page, conv = self._page_and_conv(tmp_path)
+        doc = FakePdfDocument()
+        doc.region_texts[0] = "Model Clean Acc Misleading Acc SC2W"
+        conv.rapid.layout_regions = lambda img: [([50, 600, 300, 700], "table", 0.9)]
+        conv.rapid.table_html = lambda img: (
+            "<table><tr><td>degenerate</td><td>garbage</td></tr></table>"
+        )
+        md = conv._full_structure_page_markdown(doc, page, 0, tmp_path)
+        assert md is not None and "Model Clean Acc Misleading Acc SC2W" in md
+        assert "<table" not in md
+
+    def test_scanned_table_region_still_uses_slanet(self, tmp_path):
+        """No text layer → slanet HTML is the only option (kept)."""
+        page, conv = self._page_and_conv(tmp_path)
+        conv.rapid.layout_regions = lambda img: [([50, 600, 300, 700], "table", 0.9)]
+        conv.rapid.table_html = lambda img: (
+            "<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>"
+        )
+        conv.rapid.ocr_lines = lambda img: []
+        md = conv._full_structure_page_markdown(FakePdfDocument(), page, 0, tmp_path)
+        assert md is not None and "| A | B |" in md
+
     def test_title_region_becomes_heading(self, tmp_path):
         page, conv = self._page_and_conv(tmp_path)
         conv.rapid.layout_regions = lambda img: [([50, 600, 300, 700], "title", 0.9)]

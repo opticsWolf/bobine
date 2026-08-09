@@ -35,7 +35,7 @@ OKFgraph itself is **not modified**; it keeps importing its own
 | Orchestration (single + batch) | ✅ new (`pipeline`) |
 | Formula OCR (SURGICAL mode) | ✅ **vendored** `rapid_latex_ocr` with numpy-2 fix; verified live on numpy 2.5.1 / py3.13 / onnxruntime 1.28 |
 | Dependency tree | ✅ modernised + `uv.lock` (single numpy-2 lineage); `office_oxide` finally declared |
-| Unit tests (fake pdf_oxide, no deps) | ✅ **133 passed**, 11 integration |
+| Unit tests (fake pdf_oxide, no deps) | ✅ **136 passed**, 11 integration |
 | Coverage | ✅ **83%** (engine 82% — was 43%, converter 76%, assets 92%; `_vendor` excluded) |
 | Lint / format (ruff) | ✅ clean |
 | CI (GitHub Actions) | ✅ core matrix 3.10–3.13 + integration job |
@@ -205,6 +205,21 @@ bobine/
   OCR'd content still survives (GFM or raw HTML).
 - Tests: 6 new unit tests (line-aware merge ×3, P2 pixel→point + label
   filter + surgical on/off wiring); full suite **133 passed**.
+
+### Phase 9 — Table quality: text-layer-first on born-digital pages (done, `…`)
+- **Diagnosis of roadmap #2b** (slanet 1×2 collapse on trust_ml): the
+  layout model was the problem, not slanet — `layout_cdla` labels a
+  two-column PROSE block as `table` and the real results table as `text`.
+  Tried `pp_doc_layoutv3` (124 MB, newer): same mislabels. So no model swap
+  fixes it.
+- **Fix**: in `_full_structure_page_markdown`, prefer the **text layer** for
+  `text` and `table` regions on born-digital pages (lossless); OCR / slanet
+  run only when the text layer is empty (scans). Result on trust_ml ALWAYS:
+  real table text lossless ("Model Clean Acc.↑ Misleading Acc.↑ Seed 1.8
+  93.3±0.8…"), no garbage HTML, 26 assets staged, **16.7s → 2.3s**.
+- Tests: 3 new unit tests (text layer preferred over OCR; degenerate table
+  output bypassed when text layer has content; slanet kept when no text
+  layer). Full suite **136 passed**; corpus suite ~1 min faster.
 - **Sources**: 3 arXiv papers verified **CC BY 4.0** on their abstract pages
   (the search-UI license filter is leaky — verification is per-paper):
   `2608.06342` solitons (physics, equation-dense), `2608.05540` splitting
@@ -270,7 +285,7 @@ bobine/
 | 1 | ~~PDF/Office runtime verification~~ ✅ **done (2026-08-09)** — pins installed, integration suite green, drift fixed; see Phase 5 | — | — |
 | 2 | ~~Test-PDF corpus~~ ✅ **done (2026-08-09)** — 3 CC BY arXiv papers + generated scanned page; see Phase 6 | — | — |
 | 2a | **Formula splice placement** ✅ **done (2026-08-09)** — root cause was two real bugs (cmr10 body-font false positive; bbox `(x,y,w,h)` vs `(x0,y0,x1,y1)` drift), fixed + tuned; formulas splice in place. **P1 line-aware merge** (multi-line equations = 1 box) and **P2 layout fallback** (`formula_layout_fallback`, off by default) implemented in Phase 8 | — | — |
-| 2b | **Table structure quality**: slanet-plus collapses the two-column trust_ml table to 1 tr × 2 td (layout box spans both columns) — try per-column table boxes or a higher-res structure pass | M | Table fidelity |
+| 2b | **Table structure quality** ✅ **done (2026-08-09)** — root cause: layout model mislabels two-column pages (prose→table, real table→text); v3 model no better; fixed via text-layer-first on born-digital pages (lossless, 7× faster). Slanet HTML still used for scans | — | — |
 | 3 | **Raise coverage** 83% → ≥85%: converter guard/fallback lines (76%), remaining engine lines (82%) | M | Confidence in degradation paths |
 | 4 | **Parity check** ported tests vs OKFgraph originals; document any behavioural drift | S | Keep the two codebases honest |
 | 5 | **`slow` GPU job** in CI (onnxruntime CUDA) — optional | L | GPU provider path (`ort_providers`) untested |
@@ -305,7 +320,7 @@ uv lock --check
 
 ## 8. Acceptance Criteria (definition of done for v1.0)
 
-- [ ] **133+** unit tests pass on a bare install (no optional deps)
+- [ ] **136+** unit tests pass on a bare install (no optional deps)
 - [ ] Integration suite green on a runner with `bobine[pdf-ingest]` + `bobine[formula]` installed (**demonstrated locally 2026-08-09**)
 - [ ] Coverage ≥ 85% on `bobine/converter.py` + `bobine/pipeline.py`
 - [ ] CI green on Python 3.10–3.13 (lint, format, unit, coverage)

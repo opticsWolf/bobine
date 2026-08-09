@@ -80,18 +80,14 @@ class TestFullStructureOnnx:
 
     @pytest.mark.slow
     def test_table_and_figures(self, tmp_path):
-        """ML paper pages: table region detected + converted, figures staged.
-
-        NOTE: slanet-plus on this two-column layout collapses the grid to a
-        single row (structure-recognition quality limitation — roadmap); the
-        assertion checks that table output + OCR'd content survive either as
-        GFM pipes or raw HTML."""
+        """ML paper pages: born-digital table text extracted losslessly from
+        the text layer (OCR/structure models mislabel two-column layouts —
+        see Phase 9), figures staged as assets."""
         pytest.importorskip("pdf_oxide")
         from bobine import RoutingMode
 
         r = _convert(TRUST_ML, RoutingMode.ALWAYS, tmp_path)
         md = r.md_path.read_text(encoding="utf-8")
-        assert "| ---" in md or "<table" in md  # table artifact (GFM or raw HTML)
-        assert "GSM-IC" in md  # table content survived OCR
+        assert "Misleading Acc" in md  # real results-table header (text layer)
         assert "okf-asset://" in md  # figures staged as assets
         assert len(md) > 5000

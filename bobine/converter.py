@@ -637,6 +637,13 @@ class HybridConverter:
             lab = (label or "").lower()
 
             if lab in ("table",):
+                # Born-digital pages: the text layer is lossless — prefer it
+                # over OCR+structure models (which mislabel/mis-structure on
+                # two-column layouts). Scans have no text layer → slanet HTML.
+                text = self._region_text(doc, page, index, box)
+                if text:
+                    blocks.append(text)
+                    continue
                 html = self.rapid.table_html(crop_np)
                 if html:
                     blocks.append(
@@ -653,8 +660,12 @@ class HybridConverter:
                 crop.save(str(p))
                 blocks.append(f"![]({p.name})")
             else:
-                lines = self.rapid.ocr_lines(crop_np)
-                text = " ".join(t for _b, t, _s in lines).strip()
+                # Prefer the text layer on born-digital pages (lossless);
+                # OCR is the fallback for scanned regions.
+                text = self._region_text(doc, page, index, box)
+                if not text:
+                    lines = self.rapid.ocr_lines(crop_np)
+                    text = " ".join(t for _b, t, _s in lines).strip()
                 if lab == "title":
                     text = f"## {text}"
                 if text:
