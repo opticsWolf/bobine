@@ -28,6 +28,8 @@ class TestVendoredImport:
         assert LatexOCR is None or callable(LatexOCR)
 
     def test_vendored_package_importable(self):
+        pytest.importorskip("cv2")  # vendored package imports cv2/numpy at module level
+        pytest.importorskip("numpy")
         from bobine._vendor.rapid_latex_ocr import LaTeXOCR, LatexOCR
 
         assert LatexOCR is LaTeXOCR  # legacy alias preserved

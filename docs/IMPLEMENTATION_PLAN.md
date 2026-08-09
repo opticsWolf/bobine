@@ -322,9 +322,10 @@ bobine/
 
 ```bash
 cd D:/User/Documents/Python/bobine
-uv venv .venv && uv pip install --python .venv/Scripts/python.exe -e ".[dev,markdown]"
+uv sync --extra dev --extra markdown --extra pdf-ingest --extra formula --frozen
+# (or, for a minimal env: uv venv .venv && uv pip install -e ".[dev,markdown]")
 
-# unit suite (no native backends needed)
+# unit suite (no native backends needed — numpy is in [dev] for the fake-ONNX paths)
 .venv/Scripts/python.exe -m pytest
 
 # integration suite (formula: needs bobine[formula]; PDF/Office: bobine[pdf-ingest])

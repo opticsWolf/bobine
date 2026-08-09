@@ -37,6 +37,9 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "reportlab" },
@@ -71,6 +74,7 @@ pdf-ingest = [
 requires-dist = [
     { name = "chardet", marker = "extra == 'formula'", specifier = ">=5.0" },
     { name = "mordant", marker = "extra == 'markdown'", specifier = ">=0.8" },
+    { name = "numpy", marker = "extra == 'dev'", specifier = ">=2.0" },
     { name = "numpy", marker = "extra == 'pdf-ingest'", specifier = ">=2.0" },
     { name = "office-oxide", marker = "extra == 'pdf-ingest'", specifier = ">=0.1.8" },
     { name = "onnxruntime", marker = "extra == 'formula'", specifier = ">=1.17" },

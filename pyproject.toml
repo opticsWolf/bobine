@@ -73,6 +73,7 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.9",
     "reportlab>=4.0",  # scanned-page corpus generator (tests/fixtures/generate_corpus.py)
+    "numpy>=2.0",  # unit tests exercise the ONNX assembly paths with fakes
 ]
 
 [tool.setuptools.packages.find]

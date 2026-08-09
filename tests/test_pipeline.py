@@ -195,10 +195,39 @@ class TestPipelineCoverage2:
             convert_to_markdown(p, ConverterConfig(), tmp_path / "w")
 
     def test_page_count_failure_defaults_zero(self, tmp_path, monkeypatch):
+        from conftest import FakePage
+
+        import bobine.converter as cmod
         import bobine.pipeline as pmod
         from bobine import ingest_document
 
+        class FakeConvDoc:
+            """Minimal converter backend doc (no real pdf_oxide needed)."""
+
+            def __init__(self, path=""):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def __len__(self):
+                return 1
+
+            def __iter__(self):
+                return iter([FakePage.from_text("hello", index=0)])
+
+            def page_count(self):
+                return 1
+
+            def extract_image_bytes(self, i):
+                return []
+
         class BadDoc:
+            """Page-count probe fails (ValueError in len, RuntimeError in page_count)."""
+
             def __enter__(self):
                 return self
 
@@ -211,12 +240,10 @@ class TestPipelineCoverage2:
             def page_count(self):
                 raise RuntimeError("boom")
 
-        monkeypatch.setattr(pmod, "PdfDocument", BadDoc)
-        # conversion still uses the real converter backend; only the
-        # page-count probe is faked
-        from test_integration import _synthetic_pdf
-
-        src = _synthetic_pdf(tmp_path / "paper.pdf")
+        monkeypatch.setattr(cmod, "PdfDocument", FakeConvDoc)  # conversion path
+        monkeypatch.setattr(pmod, "PdfDocument", BadDoc)  # page-count probe
+        src = tmp_path / "paper.pdf"
+        src.write_bytes(b"%PDF-1.4 fake")
         result = ingest_document(
             src, tmp_path / "out", config=ConverterConfig(use_onnx=False), lint=False
         )
