@@ -96,11 +96,15 @@ jobs:
     permissions:
       id-token: write  # trusted publishing (OIDC) — no token secret
     steps:
-      - name: Collect artifacts from all platforms
+      - name: Collect artifact
+        # The wheel is py3-none-any and byte-identical across the whole
+        # build matrix (the matrix is pure per-OS/per-version verification),
+        # so take one verified copy. merge-multiple:true is avoided here:
+        # merging 12 artifacts with identical paths is known to corrupt
+        # the zip central directory (BadZipFile on the wheel).
         uses: actions/download-artifact@v4
         with:
-          pattern: dist-*
-          merge-multiple: true
+          name: dist-ubuntu-latest-py3.13
           path: dist/
 
       - name: Publish to PyPI
@@ -118,11 +122,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Collect artifacts from all platforms
+      - name: Collect artifact
+        # Single verified copy — see publish-pypi for why merge-multiple
+        # is avoided (identical paths across 12 artifacts corrupt zips).
         uses: actions/download-artifact@v4
         with:
-          pattern: dist-*
-          merge-multiple: true
+          name: dist-ubuntu-latest-py3.13
           path: dist/
 
       - name: Draft release
