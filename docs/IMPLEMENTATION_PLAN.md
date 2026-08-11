@@ -40,8 +40,9 @@ OKFgraph itself is **not modified**; it keeps importing its own
 | Unit tests (fake pdf_oxide, no deps) | ✅ **169 passed**, 11 integration |
 | Coverage | ✅ **92%** (converter 91%, engine 93%, pipeline 97%; `_vendor` excluded) |
 | Lint / format (ruff) | ✅ clean |
-| CI (GitHub Actions) | ✅ core matrix 3.10–3.13 + integration job |
-| Git / remote | ✅ `main` on GitHub, clean tree |
+| CI (GitHub Actions) | ✅ core matrix 3.10–3.13 (lint, format, unit, coverage) + integration job (installs `[pdf-ingest,formula,markdown,dev]`) — green on `main` |
+| Release workflow (tag `v*`) | ✅ **verified end-to-end (2026-08-09)**: 12/12 build-verify jobs green (3 OS × py3.10–3.13, incl. zero-dep wheel smoke + `twine check`), GitHub release draft created; publish job is the only remaining step (needs PyPI trusted publisher) |
+| Git / remote | ✅ `main` on GitHub, clean tree; tag `v0.2.0` tracks `main` |
 | Real-backend verification | ✅ **done (2026-08-09)**: pdf_oxide 0.3.77 + office_oxide + all four ONNX stacks installed & run end-to-end (SURGICAL + ALWAYS); engine adapters updated for rapidocr/layout/table 3.x dataclass returns |
 | Test-PDF corpus | ✅ **done (2026-08-09)**: 3 CC BY 4.0 arXiv papers (trimmed, attributed) + generated scanned page; corpus caught 2 real bugs (ndarray `or` crash, rapid_table ocr_results format) |
 
@@ -309,7 +310,7 @@ bobine/
 | 3 | ~~Raise coverage~~ ✅ **done (2026-08-09)** — **92%** total (converter 91%, engine 93%, pipeline 97%); 33 new fake/monkeypatch tests; see Phase 10 | — | — |
 | 4 | ~~Parity check~~ ✅ **done (2026-08-09)** — OKFgraph's 35 pure-pipeline tests pass against bobine via shim; all code drift intentional; see `docs/PARITY.md` | — | — |
 | 5 | **`slow` GPU job** in CI (onnxruntime CUDA) — optional | L | GPU provider path (`ort_providers`) untested |
-| 6 | **PyPI publish** (0.2.0): workflow `.github/workflows/release.yml` ready (tag `v*` → build + trusted publish + GH release draft); remaining: configure the PyPI trusted publisher + push the tag | S | Distribution |
+| 6 | **PyPI publish** (0.2.0): workflow `.github/workflows/release.yml` has been **exercised end-to-end** — tag `v*` → 12-job build/verify matrix (3 OS × py3.10–3.13) + zero-dep wheel smoke + `twine check` + trusted publish + GH release draft. All build/verify jobs green and the release draft exists. **Four workflow bugs found & fixed during the dry runs**: ruff missing from `[dev]` (7639412); bare-install unit-suite incompatibilities (1d7332b, numpy in `[dev]`, fully-faked page-count test); Windows venv python path `bin/python` vs `Scripts/python.exe` (b239a5b); `download-artifact` `merge-multiple` corrupting the identical wheel across 12 artifacts (`BadZipFile`, fixed by downloading one verified copy — 425b4ea). **Remaining: configure the PyPI trusted publisher** (Project `bobine` · Workflow `release.yml` · Environment `pypi`) and re-run `publish-pypi` | S | Distribution |
 | 7 | **Consume from OKFgraph** (optional follow-up, per user constraint OKFgraph stays untouched for now): re-export shim or refactor of `cli.py`/`components/ingest.py` | M | Remove duplication, single source of truth |
 | 8 | ~~Converter label fix~~ ✅ **done (2026-08-09, Phase 8)** — `_MATH_LAYOUT_LABELS` = equation/display_formula/inline_formula/isolate_formula/formula, used by both the full-structure path and the P2 fallback (was `("formula", "equation", "isolate_formula")`) | — | — |
 | 9 | **Formula accuracy upgrade (optional)**: TexTeller (80M pairs) or pix2tex-ONNX as an alternative recognizer behind `OnnxRapidEngine.recognize_formula` | M | Vendored model is the 100K-pair accuracy ceiling |
@@ -342,13 +343,15 @@ uv lock --check
 ## 8. Acceptance Criteria (definition of done for v1.0)
 
 - [x] **169+** unit tests pass on a bare install (no optional deps)
-- [ ] Integration suite green on a runner with `bobine[pdf-ingest]` + `bobine[formula]` installed (**demonstrated locally 2026-08-09**)
+- [x] Integration suite green on a runner with `bobine[pdf-ingest]` + `bobine[formula]` installed (**CI integration job, green on `main`** — incl. the `[formula]`-extra fix `1fbf710`)
 - [x] Coverage ≥ 85% on `bobine/converter.py` + `bobine/pipeline.py` (**92%** total, converter 91%, pipeline 97%)
-- [ ] CI green on Python 3.10–3.13 (lint, format, unit, coverage)
+- [x] CI green on Python 3.10–3.13 (lint, format, unit, coverage) (**ci.yml matrix, green on `main`**)
 - [x] Test-PDF corpus committed under `tests/fixtures/` — 3 CC BY 4.0 arXiv
       papers (trimmed, `SOURCES.md` attribution) + generated scanned page
-- [ ] RapidAI version pins (`versions.py`) match `pyproject.toml` **and** pass
-      a real-install runtime smoke test
-- [ ] `display_formula` / `inline_formula` routed to the formula recognizer
-- [ ] Dual license metadata correct (`Apache-2.0 OR MIT`), vendored MIT notice
-      intact, buildable wheel (`uv build` + `pip install` the wheel)
+- [x] RapidAI version pins (`versions.py`) match `pyproject.toml` **and** pass
+      a real-install runtime smoke test (**Phase 5, verified live**)
+- [x] `display_formula` / `inline_formula` routed to the formula recognizer
+      (**Phase 8 / roadmap #8**: `_MATH_LAYOUT_LABELS`)
+- [x] Dual license metadata correct (`Apache-2.0 OR MIT`), vendored MIT notice
+      intact, buildable wheel (**packaging audit `12a6a23`; `twine check` PASSED**
+      on a fresh `uv build`, wheel + sdist)
