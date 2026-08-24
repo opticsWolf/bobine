@@ -187,7 +187,7 @@ impl OnnxEngine {
             let det = self.ocr_det_path.as_deref().unwrap_or_else(|| Path::new("det.onnx"));
             let rec = self.ocr_rec_path.as_deref().unwrap_or_else(|| Path::new("rec.onnx"));
             info!("Loading RapidOCR from {} and {}...", det.display(), rec.display());
-            let ocr = RapidOcr::load(det, rec, &self.config.ort_providers)?;
+            let ocr = RapidOcr::load(det, rec, &self.config.ocr_lang, &self.config.ort_providers)?;
             self.ocr = Some(ocr);
         }
         Ok(())

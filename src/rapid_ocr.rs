@@ -42,8 +42,27 @@ pub struct RapidOcr {
     characters: Vec<String>,
 }
 
+/// CTC charset fallback when the rec model has no `character` metadata.
+///
+/// Only English/Latin is embedded; other languages rely on the model's
+/// metadata (RapidAI ONNX exports embed their dict) and otherwise degrade
+/// to ASCII with a warning at load time.
+fn fallback_charset(lang: &str) -> Vec<String> {
+    match lang.to_lowercase().as_str() {
+        "en" | "latin" | "" => (b' '..=b'~').map(|b| String::from(b as char)).collect(),
+        other => {
+            tracing::warn!(
+                lang = other,
+                "no embedded charset for this language; \
+                 relying on rec-model metadata (falling back to ASCII if absent)"
+            );
+            (b' '..=b'~').map(|b| String::from(b as char)).collect()
+        }
+    }
+}
+
 impl RapidOcr {
-    pub fn load(det_model: &Path, rec_model: &Path, providers: &[String]) -> Result<Self> {
+    pub fn load(det_model: &Path, rec_model: &Path, ocr_lang: &str, providers: &[String]) -> Result<Self> {
         info!("Loading RapidOCR det from {}", det_model.display());
         let det_session = crate::engine::apply_providers(
             Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
@@ -60,16 +79,13 @@ impl RapidOcr {
         .commit_from_file(rec_model)
         .map_err(|e| BobineError::Ort(e.to_string()))?;
 
-        // Try to read character list from rec model metadata
+        // Charset: model metadata first, then language fallback
         let characters: Vec<String> = rec_session
             .metadata()
             .ok()
             .and_then(|m| m.custom("character"))
             .map(|c| c.lines().map(|s| s.to_string()).collect())
-            .unwrap_or_else(|| {
-                // Default: ASCII printable
-                (b' '..=b'~').map(|b| String::from(b as char)).collect()
-            });
+            .unwrap_or_else(|| fallback_charset(ocr_lang));
 
         info!(
             num_chars = characters.len(),

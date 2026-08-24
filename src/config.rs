@@ -88,6 +88,13 @@ pub struct ConverterConfig {
 
     /// Fewer chars than this + has images → scanned page.
     pub scanned_text_threshold: usize,
+
+    /// OCR recognition language hint (e.g. "en", "ch", "ja", "latin").
+    ///
+    /// Used to select a CTC charset fallback when the rec model carries no
+    /// `character` metadata. Models loaded via explicit paths usually embed
+    /// their charset, making this a no-op for them.
+    pub ocr_lang: String,
 }
 
 impl Default for ConverterConfig {
@@ -111,6 +118,7 @@ impl Default for ConverterConfig {
             formula_layout_fallback: false,
             math_char_threshold: 30,
             scanned_text_threshold: 50,
+            ocr_lang: "en".to_string(),
         }
     }
 }

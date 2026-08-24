@@ -30,9 +30,10 @@ Python ML dependencies, distributed as `bobine` on PyPI.
 | PyO3 bindings (`import bobine`, maturin, .pyi stubs) | ✅ done |
 | Docs (architecture, quickref, this file) | ✅ done |
 | Tests: 38 unit + 7 integration, 0 failures | ✅ done |
-| Pipeline layer (assets/documents/pipeline modules) | ❌ Phase 2 |
+| Pipeline layer (assets/documents/pipeline modules) | ✅ Phase 2 done (`82d36bd`) |
+| Markdown linting | ⚠️ partial — callback hook only, no native rules (see Known Gaps) |
 | Scanned-table recognition (RapidTable) | ❌ Phase 3 |
-| CI on branch + release workflow | ❌ Phase 4 |
+| CI on branch + release workflow | ❌ Phase 4 (CI triggers fixed during merge prep) |
 | Coverage fakes (converter logic without real PDFs) | ❌ Phase 5 |
 
 ## 3. Repository Layout
@@ -92,6 +93,14 @@ Legend: **S** < 1 day · **M** 2–3 days · **L** 1+ week
 | 5.1 | **Fake-pdf_oxide unit layer** — injectable page/doc trait so routing/splice/gallery logic is testable without fixture PDFs (mirrors legacy conftest.py fakes that got Python to 92%) | L | Function coverage 22 % → target ≥ 70 % on converter.rs |
 | 5.2 | **Corpus regression assertions** — golden-file tests over the arXiv fixtures (formula count per page, heading presence, table round-trip) | M | Catches silent quality drift in detection heuristics |
 | 5.3 | **GPU CI job** (optional) — onnxruntime-gpu runner, exercises CUDA provider path | L | Legacy roadmap #5 |
+
+### Deferred (by design — not gaps)
+
+### Known Gaps
+
+| Gap | State | Closure path |
+|---|---|---|
+| **Native markdown lint** — legacy ran mordant's linter (fix MD009/MD012/MD047; detect MD001/MD031/MD033). The Rust core currently ships only the `LintFn` callback hook (`pipeline.rs`); consumers must bring their own linter (e.g. a Python callable wrapping mordant-py) or skip linting entirely. | Partial — hook exists since `82d36bd`, zero native rule implementations | Blocked on **mordant landing on crates.io**: the real linter lives in mordant-py's `src/linter.rs` (2,205 lines, AST-based via rushdown types), currently unpublished and unpublishable as-is. Once a `mordant`/`rushdown` lib crate is published, add an optional bobine feature that depends on it and swap `lint_markdown()` internals behind the existing signature. A minimal self-contained port of the six rules remains possible as a stopgap if the crate dependency is unacceptable long-term. |
 
 ### Deferred (by design — not gaps)
 

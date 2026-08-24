@@ -64,6 +64,7 @@ impl PyConverterConfig {
         formula_layout_fallback = false,
         math_char_threshold = 30usize,
         scanned_text_threshold = 50usize,
+        ocr_lang = "en".to_string(),
     ))]
     fn new(
         extract_images: bool,
@@ -83,6 +84,7 @@ impl PyConverterConfig {
         formula_layout_fallback: bool,
         math_char_threshold: usize,
         scanned_text_threshold: usize,
+        ocr_lang: String,
     ) -> Self {
         PyConverterConfig {
             inner: ConverterConfig {
@@ -98,12 +100,14 @@ impl PyConverterConfig {
                 detect_code_blocks, min_formula_math_chars,
                 formula_inline_max_width_pts, formula_pad_pts,
                 formula_layout_fallback, math_char_threshold, scanned_text_threshold,
+                ocr_lang,
             },
         }
     }
 
     #[getter] fn extract_images(&self) -> bool { self.inner.extract_images }
     #[getter] fn routing_mode(&self) -> PyRoutingMode { self.inner.routing_mode.into() }
+    #[getter] fn ocr_lang(&self) -> String { self.inner.ocr_lang.clone() }
     #[getter] fn model_precision(&self) -> PyModelPrecision {
         match self.inner.model_precision {
             ModelPrecision::Fp32 => PyModelPrecision::Fp32,
