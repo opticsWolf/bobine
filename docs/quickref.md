@@ -75,7 +75,7 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `routing_mode` | `Auto` | See table above |
 | `formula_backend` | `TexTeller` | Formula recognizer |
 | `model_precision` | `Fp32` | Selects `*_fp16.onnx` when `Fp16` |
-| `model_quantization` | `Fp32` | Formula weights: `Int8` = 4x smaller RAM (onnx-community export), same speed, minor typographic drift possible |
+| `model_quantization` | `Int8` | Formula weights: `Int8` (default) = 4x smaller RAM, same CPU speed; `Fp32` = exact + KV-cache decode |
 | `render_dpi` | `300` | Renders for scanned-page OCR / layout |
 | `formula_dpi` | `200` | Renders for formula crops |
 | `detect_headings` | `True` | `#` headings from fast path |

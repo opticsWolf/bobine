@@ -35,10 +35,11 @@ pub enum ModelPrecision {
 /// Weight quantization for the formula recognizer (TexTeller) — the
 /// accuracy/memory trade-off knob.
 ///
-/// * `Fp32` (default): full-precision weights + KV-cache decode. Exact
-///   output and the fastest decode; ~1.25 GB of model files.
-/// * `Int8`: onnx-community quantized exports (`decoder_model_int8.onnx`
-///   etc., 316 MB total). Equal speed, one quarter the memory, with
+/// * `Int8` (default): onnx-community quantized exports
+///   (`decoder_model_int8.onnx` etc., 316 MB total — one quarter the
+///   download/RAM of fp32 at equal speed).
+/// * `Fp32`: full-precision weights + KV-cache decode. Exact output;
+///   ~1.25 GB of model files. Also carries
 ///   occasional *typographic* drift in the emitted LaTeX (lost `\mathbf`
 ///   bold, `\epsilon` vs `arepsilon`); math content is unaffected in
 ///   tests. The int8 export has no KV-cache inputs and decodes by
@@ -129,7 +130,7 @@ impl Default for ConverterConfig {
             routing_mode: RoutingMode::Auto,
             formula_backend: FormulaBackend::TexTeller,
             model_precision: ModelPrecision::Fp32,
-            model_quantization: ModelQuantization::Fp32,
+            model_quantization: ModelQuantization::Int8,
             ort_providers: vec!["CPUExecutionProvider".into()],
             render_dpi: 300,
             formula_dpi: 200,

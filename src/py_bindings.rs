@@ -59,7 +59,7 @@ impl PyConverterConfig {
         routing_mode = PyRoutingMode::Auto,
         _formula_backend = PyFormulaBackend::TexTeller,
         model_precision = PyModelPrecision::Fp32,
-        model_quantization = PyModelQuantization::Fp32,
+        model_quantization = PyModelQuantization::Int8,
         render_dpi = 300u32,
         formula_dpi = 200u32,
         detect_headings = true,

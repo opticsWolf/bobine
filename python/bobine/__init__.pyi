@@ -34,7 +34,7 @@ class ConverterConfig:
         routing_mode: RoutingMode = RoutingMode.Auto,
         _formula_backend: FormulaBackend = FormulaBackend.TexTeller,
         model_precision: ModelPrecision = ModelPrecision.Fp32,
-        model_quantization: ModelQuantization = ModelQuantization.Fp32,
+        model_quantization: ModelQuantization = ModelQuantization.Int8,
         render_dpi: int = 300,
         formula_dpi: int = 200,
         detect_headings: bool = True,
