@@ -140,4 +140,4 @@ python -c "import bobine; print(bobine.__doc__)"
 
 # rebuild graph index after refactors
 codegraph init   # idempotent; auto-sync watches files
-```| FP16 model generation & benchmarking | Decoder: no compatible export exists (onnx-community lacks KV-cache; converters break on merged If-graph). Encoder: `Ji-Ha/TexTeller3-ONNX-dynamic` ships `encoder_model_fp16.onnx` — MEASURED and REJECTED (CPU 353 ms vs int8 176 ms; CUDA 90 ms vs fp32 38 ms; cast overhead dominates, ORT CUDA EP has no fused fp16 kernels for this ViT). `ModelPrecision::Fp16` stays a bring-your-own-files knob |
+```| FP16 model generation & benchmarking | Decoder: no compatible export exists (onnx-community lacks KV-cache; converters break on merged If-graph). Encoder: MEASURED and REJECTED, both sources — Ji-Ha true-f16 export (CPU 353 ms vs int8 176 ms; CUDA 90 ms vs fp32 38 ms) AND self-downcast of the fp32 graph via onnxconverter-common keep_io_types (CPU 268 ms vs 224 ms; CUDA 54.6 ms vs 36.3 ms). ORT's CUDA EP gains nothing from f16 weights alone: without fused fp16 attention kernels the inserted Cast nodes only fragment execution.
