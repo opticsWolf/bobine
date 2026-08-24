@@ -1,122 +1,131 @@
-# bobine_rs — Rust Implementation Plan
+# bobine_rs — Consolidated Status, Gaps & Implementation Plan
 
-## Architecture
+> Rust-first rewrite of bobine. Template: `legacy/docs/IMPLEMENTATION_PLAN.md`
+> (pure-Python v0.2.0). This file is the single source of truth for what is
+> done, what is missing, and in which order it will be built.
+>
+> Last updated: rust_dev @ `2eaadf8` (docs: architecture + quickref).
+
+---
+
+## 1. Goal
+
+Parity with legacy Python bobine's **user-facing surface** — one-liner
+ingestion (`ingest_document`, `convert_directory`), staged asset store,
+document model, lint hook — on a pure-Rust core with PyO3 bindings, no
+Python ML dependencies, distributed as `bobine` on PyPI.
+
+## 2. Status Summary
+
+| Layer | State |
+|---|---|
+| PDF fast path (pdf_oxide → markdown) | ✅ done |
+| Routing NEVER / AUTO / SURGICAL / ALWAYS | ✅ done |
+| Formula box detection (font+unicode heuristics, line-aware merge) | ✅ done |
+| TexTeller ONNX formula OCR (hf-hub download, ort inference) | ✅ done |
+| RapidLayout (DocLayout-YOLO) + full-structure page pipeline | ✅ done |
+| RapidOCR (DBNet det + CRNN rec, CTC) | ✅ minimal port done |
+| Office conversion (office_oxide auto-detect) | ✅ done |
+| HTML → GFM tables | ✅ done |
+| PyO3 bindings (`import bobine`, maturin, .pyi stubs) | ✅ done |
+| Docs (architecture, quickref, this file) | ✅ done |
+| Tests: 38 unit + 7 integration, 0 failures | ✅ done |
+| Pipeline layer (assets/documents/pipeline modules) | ❌ Phase 2 |
+| Scanned-table recognition (RapidTable) | ❌ Phase 3 |
+| CI on branch + release workflow | ❌ Phase 4 |
+| Coverage fakes (converter logic without real PDFs) | ❌ Phase 5 |
+
+## 3. Repository Layout
 
 ```
-bobine_rs (Rust crate + PyO3 bindings)
-│
-├── src/
-│   ├── lib.rs              # crate root + PyO3 module init
-│   ├── config.rs           # ✅ ConverterConfig, RoutingMode, FormulaBackend, ModelPrecision
-│   ├── error.rs            # ✅ BobineError
-│   ├── tex_teller.rs       # ✅ TexTeller ONNX pipeline (hf-hub download + ort inference)
-│   ├── engine.rs           # 🔧 OnnxEngine (TexTeller only; needs RapidOCR/Layout/Table)
-│   ├── converter.rs        # ❌ HybridConverter core (20+ methods missing)
-│   ├── tables.rs           # ❌ HTML→GFM pipe-table converter
-│   ├── assets.rs           # ❌ okf-asset:// staging, image dedup
-│   ├── documents.rs        # ❌ Document model, frontmatter
-│   ├── pipeline.rs         # ❌ ingest_document, convert_directory
-│   └── py_bindings.rs      # ❌ PyO3 #[pyclass] / #[pyfunction] exports
-│
-├── python/
-│   └── bobine_rs/
-│       ├── __init__.py     # Re-exports from native module
-│       └── py.typed        # PEP 561 marker
-│
-├── Cargo.toml
-├── pyproject.toml          # maturin build config
-└── tests/
-    └── test_bindings.py    # Python-side integration tests
+├── src/                Rust core (10 modules, ~2 300 LOC)
+├── python/bobine/      PyO3 shim + type stubs        (import bobine)
+├── tests/              cargo integration tests + CC BY 4.0 fixtures
+├── docs/               architecture.md · quickref.md · IMPLEMENTATION_PLAN.md
+├── Cargo.toml          workspace (cdylib + rlib)
+├── pyproject.toml      maturin; dist name = bobine 0.3.0
+└── legacy/             frozen pure-Python bobine v0.2.0 (reference)
 ```
 
-## Phase 1 — Core Converter (pdf_oxide fast path + SURGICAL formula)
+## 4. Open Work — Prioritized Roadmap
 
-### 1.1 converter.rs — HybridConverter methods
-- [x] `HybridConverter` struct
-- [ ] `_fast_page_markdown(page) -> String`
-- [ ] `_extract_page_images(doc, page, index, img_dir) -> Vec<PathBuf>`
-- [ ] `image::DynamicImage` ↔ PIL equivalent helpers
-- [ ] `_render_page_to_image(doc, page, index, dpi) -> Option<DynamicImage>`
-- [ ] `_page_math_signal(page) -> (usize, usize)` — math char count
-- [ ] `_is_scanned(page) -> bool`
-- [ ] `_needs_onnx(page) -> bool` — routing decision
-- [ ] `_math_boxes_from_chars(page) -> Vec<Rect>` — **line-aware merging** (complex)
-- [ ] `_crop_image(img, box, page_h, dpi) -> Option<DynamicImage>` — coordinate flip
-- [ ] `_region_text(doc, page, index, box) -> String`
-- [ ] `_latex_wrap(latex, box, line_height) -> String` — inline vs display
-- [ ] `_ws_replace(md, needle, block) -> Option<String>` — whitespace-tolerant
-- [ ] `_splice(md, replacements) -> String`
-- [ ] `_surgical_page_markdown(doc, page, index, work_dir) -> String`
-- [ ] `_route_page(doc, page, index, work_dir) -> String`
-- [ ] `convert_pdf(path, work_dir, progress_cb) -> String`
-- [ ] `convert_office(path) -> String`
-- [ ] `convert(path, work_dir) -> String` — dispatch by extension
+Legend: **S** < 1 day · **M** 2–3 days · **L** 1+ week
 
-### 1.2 engine.rs — RapidOCR/Layout/Table lazy loaders
-- [ ] `ocr()` / `ocr_lines(img) -> Vec<(Rect, String, f32)>` — RapidOCR ONNX
-- [ ] `layout()` / `layout_regions(img) -> Vec<(Rect, String, f32)>` — RapidLayout ONNX
-- [ ] `table()` / `table_html(crop, ocr_results) -> Option<String>` — RapidTable ONNX
-- [ ] `_full_structure_page_markdown(doc, page, index, work_dir) -> String`
+### Phase 1 — Quick wins & wiring (S)
 
-### 1.3 tables.rs
-- [ ] `html_tables_to_gfm(md: &str) -> String`
-- [ ] Simple HTML table parser (no rowspan/colspan → bail to raw HTML)
+| # | Item | Effort | Why |
+|---|---|---|---|
+| 1.1 | **Wire `wrap_code_blocks` into the fast path** — currently dead code; call from `route_page` when `detect_code_blocks`, splice fenced blocks like Python does | S | Config knob exists but does nothing |
+| 1.2 | **CI triggers on `rust_dev`**: add branch to `.github/workflows/CI.yml` push list; add `ORT_DYLIB_PATH` setup step (download onnxruntime release asset or pip install into venv and export path); skip-or-env for PDF tests | S | Zero CI runs today — regressions ship silently |
+| 1.3 | **Expose `ort_providers` through to `ort::Session` builder** (`config.ort_providers` field already exists but is ignored by every session constructor); add `device` config sugar mapping cuda→CUDAExecutionProvider | S | GPU path untested otherwise (legacy roadmap #5) |
 
-### 1.4 code block detection
-- [ ] `_wrap_code_blocks(page) -> Vec<String>` — monospace font detection
+### Phase 2 — Pipeline layer (M) — restores legacy one-liner UX
 
-## Phase 2 — Python Bindings
+| # | Item | Effort | Why |
+|---|---|---|---|
+| 2.1 | **`assets.rs`** — `stage_images_as_okf_assets`: SHA-256 content-hash ids (`img_<16hex>`), copy bytes into `_assets/`, rewrite `![](local)` → `![](okf-asset://<id>)`, skip http/data/already-staged links. Port of `assets.py` (~100 LOC Python → ~150 Rust, `sha2` + `regex`) | M | Core of the ingest contract |
+| 2.2 | **`documents.rs`** — `Document{id,title,description,body,type,tags,metadata}`, frontmatter parse/dump (minimal YAML subset or `serde_yaml`), `load_markdown_document()`, `wrap_thoughts()` | M | Legacy documents.py parity |
+| 2.3 | **`pipeline.rs`** — `ingest_document(path, output_dir, config, lint)` → `ConvertedDocument`; `convert_directory()` batch; expose both via PyO3 so Python gets `bobine.ingest_document(...)` one-liners back | M | The main missing UX |
+| 2.4 | **Progress & cancellation callbacks** in PyO3: pass Python callables for `on_page(idx,total)` / `should_continue()`; check between pages inside `convert_pdf` | S | Legacy convert_to_markdown signature parity; long conversions are currently uncancellable/silent |
+| 2.5 | **`markdown.rs` lint hook** — optional: accept any Python object with `.lint(content)/fix(content)` (mordant) behind a callback instead of a Rust linter re-write | S | Keeps Rust core lean; mordant stays Python-side |
 
-### 2.1 py_bindings.rs
-- [ ] `#[pyclass] ConverterConfig` — all fields with defaults
-- [ ] `#[pyclass] RoutingMode`, `FormulaBackend`, `ModelPrecision` enums
-- [ ] `#[pyclass] HybridConverter` — `convert()`, `convert_pdf()`, `recognize_formula()`
-- [ ] `#[pyfunction] convert_to_markdown(path, config, work_dir) -> String`
-- [ ] `#[pyfunction] ingest_document(path, output_dir, ...) -> ConvertedDocument`
-- [ ] `#[pyclass] ConvertedDocument` — `md_path`, `md_text`, `image_count`, `page_count`
+### Phase 3 — Scanned tables & OCR quality (M–L)
 
-### 2.2 pyproject.toml (maturin)
-- [ ] `[build-system]` with maturin
-- [ ] `[project]` metadata
-- [ ] `[tool.maturin]` — bindings = "pyo3", python-source = "python"
+| # | Item | Effort | Why |
+|---|---|---|---|
+| 3.1 | **RapidTable (slanet-plus)** — table structure ONNX: load model slot #4 in engine, feed crop + OCR lines, emit HTML → existing GFM converter. Replaces `[table: label]` placeholder on scans | L | Last missing recognizer of the four-model stack |
+| 3.2 | **OCR det post-processing upgrade** — replace flood-fill bounding boxes with proper DB unclip (polygon offsetting) or at minimum min-area-rect rotation handling; improves multi-column scan reading order | M | Current contour boxes are axis-aligned only; rotated text degrades |
+| 3.3 | **`ocr_lang` config** — plumb language-specific rec model selection | S | Legacy parity (currently en-only charset default) |
 
-### 2.3 Build & test
-- [ ] `maturin develop` — installs editable
-- [ ] `import bobine_rs` from Python
-- [ ] Verify pdf_oxide fast path round-trip
-- [ ] Verify TexTeller formula recognition round-trip
+### Phase 4 — Distribution (S)
 
-## Phase 3 — Pipeline Layer
+| # | Item | Effort | Why |
+|---|---|---|---|
+| 4.1 | **Release workflow**: tag `v*` → maturin build matrix (3 OS × py3.10–3.13), wheel smoke test, trusted publish to PyPI as `bobine`. Reuse lessons from legacy release.yml (merge-multiple artifact corruption fix applies verbatim) | S | Legacy roadmap #6 carried over |
+| 4.2 | **PyPI trusted publisher** (user-side): Project `bobine` · Workflow `release.yml` · Environment `pypi` | S | Blocks 4.1 final step |
+| 4.3 | **Merge `rust_dev` → `main`** once Phases 1–2 land; legacy/ stays frozen in-tree | S | Single-branch simplicity going forward |
 
-### 3.1 assets.rs
-- [ ] `stage_images_as_okf_assets(md, image_dir, source_path, out_dir, concept_stem) -> (String, usize)`
-- [ ] SHA-256 content-addressed asset IDs
-- [ ] Image link regex rewrite: `![](local)` → `![](okf-asset://<id>)`
+### Phase 5 — Quality (ongoing)
 
-### 3.2 documents.rs
-- [ ] `Document` struct with serde
-- [ ] `parse_frontmatter(content) -> (body, metadata)`
-- [ ] `load_markdown_document(path, ...) -> Document`
-- [ ] `to_okf_markdown() -> String`
+| # | Item | Effort | Why |
+|---|---|---|---|
+| 5.1 | **Fake-pdf_oxide unit layer** — injectable page/doc trait so routing/splice/gallery logic is testable without fixture PDFs (mirrors legacy conftest.py fakes that got Python to 92%) | L | Function coverage 22 % → target ≥ 70 % on converter.rs |
+| 5.2 | **Corpus regression assertions** — golden-file tests over the arXiv fixtures (formula count per page, heading presence, table round-trip) | M | Catches silent quality drift in detection heuristics |
+| 5.3 | **GPU CI job** (optional) — onnxruntime-gpu runner, exercises CUDA provider path | L | Legacy roadmap #5 |
 
-### 3.3 pipeline.rs
-- [ ] `convert_to_markdown(path, config, work_dir, log) -> String`
-- [ ] `ingest_document(path, output_dir, ...) -> ConvertedDocument`
-- [ ] `stage_images(md, source_path, out_dir, stem) -> (String, usize)`
-- [ ] `convert_directory(source_dir, output_dir, ...) -> Vec<ConvertedDocument>`
+### Deferred (by design — not gaps)
 
-## Phase 4 — Polish
+| Item | Reason |
+|---|---|
+| FP16 model generation & benchmarking | `ModelPrecision::Fp16` plumbing ready; models themselves deferred |
+| KV-cache decoder (`decoder_with_past_model.onnx`) | optimum KV-state divergence unresolved; merged-decoder greedy is correct |
+| OKFgraph consumption shim (legacy roadmap #7) | Blocked by user constraint — OKFgraph untouched |
+| Formula accuracy alternative (legacy roadmap #9) | Done — TexTeller *is* the upgrade |
+| Vendored RapidLaTeXOCR | Removed by design; TexTeller replaces it |
 
-- [ ] Integration tests against test-PDF corpus
-- [ ] Benchmarks (Rust hot loops vs Python)
-- [ ] CI (cargo test + maturin build + pytest)
-- [ ] Release workflow (maturin publish)
-- [ ] Dual license headers
+## 5. Acceptance Criteria (definition of done for v0.3.0)
 
-## Order of Implementation (this session)
+- [ ] All 45 current tests green; new pipeline-layer unit tests green
+- [ ] `bobine.ingest_document("paper.pdf", "out/")` works end-to-end from Python:
+      markdown on disk, `_assets/` store populated, links rewritten to `okf-asset://`
+- [ ] `bobine.convert_directory("docs/", "out/")` batches without leaking handles
+- [ ] Progress + cancellation callbacks functional (verified by test)
+- [ ] CI green on `rust_dev` (then `main`): fmt + clippy + test matrix with ORT set up
+- [ ] Release workflow builds wheels for 3 OS × py3.10–3.13; `bobine==0.3.0` publishes
+- [ ] Converter function coverage ≥ 70 % (fake layer)
+- [ ] Docs updated same-commit with any API change
 
-1. `converter.rs` — `_fast_page_markdown`, `_page_math_signal`, `_is_scanned`, `_needs_onnx`, `_math_boxes_from_chars`, `_crop_image`, `_region_text`, `_latex_wrap`, `_splice`, `_ws_replace`, `_surgical_page_markdown`, `_route_page`, `convert_pdf`, `convert_office`
-2. `tables.rs` — HTML → GFM
-3. `py_bindings.rs` — PyO3 exports
-4. `pyproject.toml` — maturin config
-5. Build + smoke test
+## 6. How to Run
+
+```bash
+# dev install (Rust toolchain + maturin required)
+maturin develop --release
+
+export ORT_DYLIB_PATH=<venv>/Lib/site-packages/onnxruntime/capi/onnxruntime.dll
+
+cargo test                     # 45 tests
+python -c "import bobine; print(bobine.__doc__)"
+
+# rebuild graph index after refactors
+codegraph init   # idempotent; auto-sync watches files
+```
