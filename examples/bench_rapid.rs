@@ -113,15 +113,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut m = RapidTable::load(&table_path, &providers)?;
         println!("table load: {:?}", t0.elapsed());
         // table crop: use a slice of the page (cells get found via ocr_lines)
-        let crop = page.crop_imm(0, 0, 700, 400);
         let lines = vec![]; // structure-only timing; real cells vary
-        let _ = m.recognize(&crop, &lines)?;
-        let t0 = Instant::now();
-        let reps = 10;
-        for _ in 0..reps {
-            let _ = m.recognize(&crop, &lines)?;
+        for crop_size in [(700u32, 400u32), (1024, 1024)] {
+            let crop = page.crop_imm(0, 0, crop_size.0, crop_size.1);
+            for _ in 0..5 {
+                let _ = m.recognize(&crop, &lines)?; // warmup
+            }
+            let mut total = std::time::Duration::ZERO;
+            let mut best = std::time::Duration::MAX;
+            let reps = 30;
+            for _ in 0..reps {
+                let t0 = Instant::now();
+                let _ = m.recognize(&crop, &lines)?;
+                let d = t0.elapsed();
+                total += d;
+                best = best.min(d);
+            }
+            println!(
+                "table {}x{}: {:?}/run avg, {:?} best over {reps} reps",
+                crop_size.0,
+                crop_size.1,
+                total / reps,
+                best
+            );
         }
-        println!("table 700x400: {:?}/run", t0.elapsed() / reps);
     } else {
         println!("table model missing, skipped");
     }
