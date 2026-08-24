@@ -150,12 +150,17 @@ impl OnnxEngine {
                 "Loading TexTeller ({:?}) from OleehyO/TexTeller...",
                 self.config.model_precision
             );
-            let tt = TexTeller::from_pretrained(
-                "OleehyO/TexTeller",
-                &self.cache_dir,
-                self.config.model_precision,
-                &self.config.ort_providers,
-            )?;
+            let tt = match self.config.model_quantization {
+                crate::config::ModelQuantization::Fp32 => TexTeller::from_pretrained(
+                    "OleehyO/TexTeller",
+                    &self.cache_dir,
+                    self.config.model_precision,
+                    &self.config.ort_providers,
+                )?,
+                crate::config::ModelQuantization::Int8 => {
+                    TexTeller::from_pretrained_int8(&self.cache_dir, &self.config.ort_providers)?
+                }
+            };
             self.tex_teller = Some(tt);
         }
         Ok(())

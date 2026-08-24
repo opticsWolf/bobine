@@ -75,6 +75,7 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `routing_mode` | `Auto` | See table above |
 | `formula_backend` | `TexTeller` | Formula recognizer |
 | `model_precision` | `Fp32` | Selects `*_fp16.onnx` when `Fp16` |
+| `model_quantization` | `Fp32` | Formula weights: `Int8` = 4x smaller RAM (onnx-community export), same speed, minor typographic drift possible |
 | `render_dpi` | `300` | Renders for scanned-page OCR / layout |
 | `formula_dpi` | `200` | Renders for formula crops |
 | `detect_headings` | `True` | `#` headings from fast path |
@@ -102,6 +103,9 @@ bobine.ConverterConfig(routing_mode=bobine.RoutingMode.Surgical,
 
 # FP16 model variants (when present next to the fp32 files)
 bobine.ConverterConfig(model_precision=bobine.ModelPrecision.Fp16)
+
+# compact-memory formula recognition (~316 MB instead of ~1.25 GB):
+bobine.ConverterConfig(model_quantization=bobine.ModelQuantization.Int8)
 
 # ingest with lint + progress + cancellation callbacks
 bobine.ingest_document("paper.pdf", "out/",

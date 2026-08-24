@@ -2,7 +2,7 @@
 
 use pyo3::prelude::*;
 
-use crate::config::{ConverterConfig, FormulaBackend, ModelPrecision, RoutingMode};
+use crate::config::{ConverterConfig, FormulaBackend, ModelPrecision, ModelQuantization, RoutingMode};
 use crate::converter::{HybridConverter, ProgressHooks};
 
 #[pyclass(eq, eq_int, name = "RoutingMode")]
@@ -39,6 +39,12 @@ pub enum PyFormulaBackend { TexTeller }
 #[derive(Clone, PartialEq)]
 pub enum PyModelPrecision { Fp32, Fp16 }
 
+/// Formula-recognizer weight selection: `Fp32` (accurate, default) or
+/// `Int8` (compact memory footprint, minor typographic drift possible).
+#[pyclass(eq, eq_int, name = "ModelQuantization")]
+#[derive(Clone, PartialEq)]
+pub enum PyModelQuantization { Fp32, Int8 }
+
 #[pyclass(name = "ConverterConfig")]
 #[derive(Clone)]
 pub struct PyConverterConfig { inner: ConverterConfig }
@@ -53,6 +59,7 @@ impl PyConverterConfig {
         routing_mode = PyRoutingMode::Auto,
         _formula_backend = PyFormulaBackend::TexTeller,
         model_precision = PyModelPrecision::Fp32,
+        model_quantization = PyModelQuantization::Fp32,
         render_dpi = 300u32,
         formula_dpi = 200u32,
         detect_headings = true,
@@ -73,6 +80,7 @@ impl PyConverterConfig {
         routing_mode: PyRoutingMode,
         _formula_backend: PyFormulaBackend,
         model_precision: PyModelPrecision,
+        model_quantization: PyModelQuantization,
         render_dpi: u32,
         formula_dpi: u32,
         detect_headings: bool,
@@ -95,6 +103,10 @@ impl PyConverterConfig {
                     PyModelPrecision::Fp32 => ModelPrecision::Fp32,
                     PyModelPrecision::Fp16 => ModelPrecision::Fp16,
                 },
+                model_quantization: match model_quantization {
+                    PyModelQuantization::Fp32 => ModelQuantization::Fp32,
+                    PyModelQuantization::Int8 => ModelQuantization::Int8,
+                },
                 ort_providers: vec!["CPUExecutionProvider".into()],
                 render_dpi, formula_dpi, detect_headings, convert_html_tables,
                 detect_code_blocks, min_formula_math_chars,
@@ -112,6 +124,12 @@ impl PyConverterConfig {
         match self.inner.model_precision {
             ModelPrecision::Fp32 => PyModelPrecision::Fp32,
             ModelPrecision::Fp16 => PyModelPrecision::Fp16,
+        }
+    }
+    #[getter] fn model_quantization(&self) -> PyModelQuantization {
+        match self.inner.model_quantization {
+            ModelQuantization::Fp32 => PyModelQuantization::Fp32,
+            ModelQuantization::Int8 => PyModelQuantization::Int8,
         }
     }
     fn __repr__(&self) -> String {

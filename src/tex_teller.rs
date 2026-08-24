@@ -31,6 +31,10 @@ pub struct TexTeller {
     tokenizer: Tokenizer,
     bos_token_id: u32,
     eos_token_id: u32,
+    /// `true` when the decoder export carries past_key_values/use_cache_branch
+    /// inputs (fp32 merged graph); `false` for the int8 community export,
+    /// which decodes by full-sequence recompute.
+    kv_cache: bool,
 }
 
 impl TexTeller {
@@ -83,11 +87,94 @@ impl TexTeller {
         Self::load_from_paths(&encoder_path, &decoder_path, &tokenizer_path, providers)
     }
 
-    /// Load from specific ONNX + tokenizer file paths.
+    /// Load the int8 quantized TexTeller exports from the onnx-community
+    /// repository (~316 MB total). The int8 decoder has no KV-cache inputs;
+    /// decoding falls back to full-sequence recompute.
+    pub fn from_pretrained_int8(cache_dir: &Path, providers: &[String]) -> Result<Self> {
+        const OWNER: &str = "onnx-community";
+        const NAME: &str = "TexTeller-ONNX";
+
+        let client = hf_hub::HFClientSync::new()
+            .map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
+        let repo_api = client.model(OWNER, NAME);
+
+        // hf-hub's single-file + local_dir path never checks the destination;
+        // probe <cache_dir>/<filename> first. The community files live under
+        // an `onnx/` subfolder, mirrored into the cache dir.
+        let mut fetch = |name: String, what: &'static str| -> Result<std::path::PathBuf> {
+            let dest = cache_dir.join(&name);
+            if dest.exists() {
+                info!("TexTeller int8 {what}: using cached {}", dest.display());
+                return Ok(dest);
+            }
+            info!("Downloading TexTeller int8 {what} from {OWNER}/{NAME}...");
+            repo_api
+                .download_file()
+                .filename(name)
+                .local_dir(cache_dir.to_path_buf())
+                .send()
+                .map_err(|e| BobineError::Ort(format!("download int8 {what}: {e}")))
+        };
+
+        // NOTE: the tokenizer MUST come from the same repository variant as
+        // the weights. Fetching plain "tokenizer.json" here would collide
+        // with the OleehyO fp32 tokenizer cached at <cache>/tokenizer.json;
+        // the community export lives under onnx/, which namespaces it.
+        let encoder_path = fetch("onnx/encoder_model_int8.onnx".to_string(), "encoder")?;
+        let decoder_path = fetch("onnx/decoder_model_int8.onnx".to_string(), "decoder")?;
+
+        // The community tokenizer lives at the repository ROOT while the
+        // weights sit under onnx/. Download it via a subfolder-scoped
+        // local_dir so it lands beside the weights as
+        // <cache>/onnx/tokenizer.json instead of colliding with the
+        // OleehyO fp32 tokenizer at <cache>/tokenizer.json.
+        let tok_dest = cache_dir.join("onnx").join("tokenizer.json");
+        let tokenizer_path = if tok_dest.exists() {
+            info!("TexTeller int8 tokenizer: using cached {}", tok_dest.display());
+            tok_dest
+        } else {
+            info!("Downloading TexTeller int8 tokenizer from {OWNER}/{NAME}...");
+            repo_api
+                .download_file()
+                .filename("tokenizer.json".to_string())
+                .local_dir(cache_dir.join("onnx"))
+                .send()
+                .map_err(|e| BobineError::Ort(format!("download int8 tokenizer: {e}")))?
+        };
+
+        Self::load_from_paths_with_cache_mode(
+            &encoder_path,
+            &decoder_path,
+            &tokenizer_path,
+            false,
+            providers,
+        )
+    }
+
+    /// Load from specific ONNX + tokenizer file paths (merged fp32 graph
+    /// with KV-cache support).
     pub fn load_from_paths(
         encoder_path: &Path,
         decoder_path: &Path,
         tokenizer_path: &Path,
+        providers: &[String],
+    ) -> Result<Self> {
+        Self::load_from_paths_with_cache_mode(
+            encoder_path,
+            decoder_path,
+            tokenizer_path,
+            true,
+            providers,
+        )
+    }
+
+    /// Load from explicit paths, selecting whether the decoder carries
+    /// KV-cache inputs.
+    pub fn load_from_paths_with_cache_mode(
+        encoder_path: &Path,
+        decoder_path: &Path,
+        tokenizer_path: &Path,
+        kv_cache: bool,
         providers: &[String],
     ) -> Result<Self> {
         info!("Loading TexTeller encoder from {}", encoder_path.display());
@@ -118,7 +205,7 @@ impl TexTeller {
             "TexTeller ready"
         );
 
-        Ok(Self { encoder, decoder, tokenizer, bos_token_id, eos_token_id })
+        Ok(Self { encoder, decoder, tokenizer, bos_token_id, eos_token_id, kv_cache })
     }
 
     /// Convert a single formula crop image → LaTeX string.
@@ -223,6 +310,76 @@ impl TexTeller {
     // ------------------------------------------------------------------
 
     fn autoregressive_decode(
+        &mut self,
+        encoder_hidden: &ndarray::ArrayD<f32>,
+    ) -> Result<Vec<u32>> {
+        if self.kv_cache {
+            self.autoregressive_decode_kv(encoder_hidden)
+        } else {
+            self.autoregressive_decode_full(encoder_hidden)
+        }
+    }
+
+    /// Full-sequence recompute decode for exports without KV-cache inputs
+    /// (int8 community export): every step re-runs the whole prefix.
+    fn autoregressive_decode_full(
+        &mut self,
+        encoder_hidden: &ndarray::ArrayD<f32>,
+    ) -> Result<Vec<u32>> {
+        use ort::value::Tensor;
+
+        let enc_value = Tensor::from_array(encoder_hidden.clone())
+            .map_err(|e| BobineError::Ort(format!("build encoder states: {e}")))?;
+        let mut token_ids: Vec<i64> = vec![self.bos_token_id as i64];
+
+        for _step in 0..MAX_TOKENS {
+            let ids_value = Tensor::from_array(
+                ndarray::Array2::<i64>::from_shape_vec(
+                    (1, token_ids.len()),
+                    token_ids.clone(),
+                )
+                .map_err(|e| BobineError::Ort(format!("build input_ids: {e}")))?,
+            )
+            .map_err(|e| BobineError::Ort(format!("build input_ids: {e}")))?;
+
+            let outputs = self
+                .decoder
+                .run(vec![
+                    (
+                        "input_ids".to_string(),
+                        ort::session::SessionInputValue::from(ids_value),
+                    ),
+                    (
+                        "encoder_hidden_states".to_string(),
+                        ort::session::SessionInputValue::from(&enc_value),
+                    ),
+                ])
+                .map_err(|e| BobineError::Ort(e.to_string()))?;
+
+            let logits = outputs["logits"]
+                .try_extract_array::<f32>()
+                .map_err(|e| BobineError::Ort(format!("decoder output: {e}")))?;
+            let seq_len = logits.shape()[1];
+            let last = logits.slice(ndarray::s![0, seq_len - 1, ..]);
+            let next_token = last
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(idx, _)| idx as i64)
+                .unwrap_or(self.eos_token_id as i64);
+
+            token_ids.push(next_token);
+            if next_token == self.eos_token_id as i64 {
+                break;
+            }
+        }
+        Ok(token_ids.into_iter().map(|t| t as u32).collect())
+    }
+
+    /// KV-cache decode (fp32 merged graph). See the module comment on
+    /// `autoregressive_decode`'s prefill/true-step split and the pinned
+    /// encoder caches.
+    fn autoregressive_decode_kv(
         &mut self,
         encoder_hidden: &ndarray::ArrayD<f32>,
     ) -> Result<Vec<u32>> {

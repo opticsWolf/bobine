@@ -32,6 +32,26 @@ pub enum ModelPrecision {
     Fp16,
 }
 
+/// Weight quantization for the formula recognizer (TexTeller) — the
+/// accuracy/memory trade-off knob.
+///
+/// * `Fp32` (default): full-precision weights + KV-cache decode. Exact
+///   output and the fastest decode; ~1.25 GB of model files.
+/// * `Int8`: onnx-community quantized exports (`decoder_model_int8.onnx`
+///   etc., 316 MB total). Equal speed, one quarter the memory, with
+///   occasional *typographic* drift in the emitted LaTeX (lost `\mathbf`
+///   bold, `\epsilon` vs `arepsilon`); math content is unaffected in
+///   tests. The int8 export has no KV-cache inputs and decodes by
+///   full-sequence recompute.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelQuantization {
+    /// Full-precision TexTeller (default).
+    Fp32,
+    /// onnx-community int8 exports (compact memory footprint).
+    Int8,
+}
+
 /// Tunable knobs for the HybridConverter pipeline.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConverterConfig {
@@ -52,6 +72,9 @@ pub struct ConverterConfig {
 
     /// Numeric precision for ONNX model weights.
     pub model_precision: ModelPrecision,
+    /// Formula-recognizer weight selection (accuracy vs memory). See
+    /// [`ModelQuantization`].
+    pub model_quantization: ModelQuantization,
 
     /// ONNX Runtime execution providers e.g. ["CPUExecutionProvider"].
     pub ort_providers: Vec<String>,
@@ -106,6 +129,7 @@ impl Default for ConverterConfig {
             routing_mode: RoutingMode::Auto,
             formula_backend: FormulaBackend::TexTeller,
             model_precision: ModelPrecision::Fp32,
+            model_quantization: ModelQuantization::Fp32,
             ort_providers: vec!["CPUExecutionProvider".into()],
             render_dpi: 300,
             formula_dpi: 200,

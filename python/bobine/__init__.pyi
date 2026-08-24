@@ -16,6 +16,15 @@ class ModelPrecision(Enum):
     Fp32 = "fp32"
     Fp16 = "fp16"
 
+class ModelQuantization(Enum):
+    '''Formula-recognizer weight selection.
+    Fp32: exact + fastest (KV-cache decode), ~1.25 GB.
+    Int8: 4x smaller memory footprint, same speed, minor typographic
+    drift possible (lost mathbf bold, epsilon glyph variant).
+    '''
+    Fp32 = "fp32"
+    Int8 = "int8"
+
 class ConverterConfig:
     def __init__(
         self,
@@ -25,6 +34,7 @@ class ConverterConfig:
         routing_mode: RoutingMode = RoutingMode.Auto,
         _formula_backend: FormulaBackend = FormulaBackend.TexTeller,
         model_precision: ModelPrecision = ModelPrecision.Fp32,
+        model_quantization: ModelQuantization = ModelQuantization.Fp32,
         render_dpi: int = 300,
         formula_dpi: int = 200,
         detect_headings: bool = True,
@@ -46,6 +56,8 @@ class ConverterConfig:
     def routing_mode(self) -> RoutingMode: ...
     @property
     def model_precision(self) -> ModelPrecision: ...
+    @property
+    def model_quantization(self) -> ModelQuantization: ...
 
 class HybridConverter:
     def __init__(self, config: ConverterConfig, cache_dir: str) -> None: ...
