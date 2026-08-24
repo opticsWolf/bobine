@@ -50,7 +50,9 @@ impl RapidLayout {
         .map_err(|e| BobineError::Ort(e.to_string()))?;
 
         // Read label list from ONNX model metadata
-        let labels = Self::read_labels(&session).unwrap_or_else(|| {
+        let labels = Self::read_labels(&session)
+            .filter(|l| !l.is_empty())
+            .unwrap_or_else(|| {
             vec![
                 "title".into(),
                 "plain text".into(),
@@ -74,11 +76,42 @@ impl RapidLayout {
         Ok(Self { session, labels })
     }
 
-    /// Read the "character" metadata key from the ONNX model.
+    /// Read the label list from the ONNX model.
+    ///
+    /// Two sources, in order:
+    /// 1. `character` metadata (RapidOCR-style, one label per line).
+    /// 2. Ultralytics YOLO `names` metadata (`"{0: 'title', 1: 'plain text',
+    ///    ...}"`) - how DocLayout-YOLO exports carry their class names.
+    /// Returns None when neither yields a non-empty list, letting the caller
+    /// fall back to the DocStructBench defaults.
     fn read_labels(session: &Session) -> Option<Vec<String>> {
         let meta = session.metadata().ok()?;
-        let chars = meta.custom("character")?;
-        Some(chars.lines().map(|s| s.trim().to_string()).collect())
+        if let Some(chars) = meta.custom("character").filter(|s| !s.is_empty()) {
+            let v: Vec<String> = chars.lines().map(|s| s.trim().to_string()).collect();
+            if !v.is_empty() {
+                return Some(v);
+            }
+        }
+        if let Some(names) = meta.custom("names").filter(|s| !s.is_empty()) {
+            let mut pairs: Vec<(usize, String)> = Vec::new();
+            for part in names.split(',') {
+                let part = part.trim().trim_end_matches('}');
+                let (idx, name) = part.split_once(':')?;
+                let idx: usize = idx.trim().parse().ok()?;
+                let name = name
+                    .trim()
+                    .trim_matches('\'')
+                    .trim_matches('"')
+                    .trim()
+                    .to_string();
+                pairs.push((idx, name));
+            }
+            pairs.sort_by_key(|(i, _)| *i);
+            if !pairs.is_empty() && pairs[0].0 == 0 {
+                return Some(pairs.into_iter().map(|(_, n)| n).collect());
+            }
+        }
+        None
     }
 
     /// Analyze a page image → layout regions.

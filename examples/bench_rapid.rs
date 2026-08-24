@@ -49,7 +49,7 @@ fn synthetic_page(w: u32, h: u32) -> image::DynamicImage {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::WARN)
+        .with_max_level(tracing::Level::INFO)
         .init();
 
     let cache = std::env::temp_dir().join("bobine_test").join("cache");
@@ -67,7 +67,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("providers = {providers:?}");
 
-    let page = synthetic_page(1024, 1024);
+    let page = match std::env::var("BOB_PAGE_IMG") {
+        Ok(p) => image::open(&p)?,
+        Err(_) => synthetic_page(1024, 1024),
+    };
 
     // ---- RapidLayout ----
     if layout_path.exists() {
@@ -75,6 +78,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut m = RapidLayout::load(&layout_path, &providers)?;
         println!("layout load: {:?}", t0.elapsed());
         let warm = m.detect(&page)?;
+        if std::env::var("BOB_DEBUG_LABELS").is_ok() {
+            for r in &warm {
+                println!(
+                    "  region {:?} conf={:.2} x={:.0} y={:.0} w={:.0} h={:.0}",
+                    r.label, r.confidence, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0
+                );
+            }
+        }
         let regions = warm.len();
         let t0 = Instant::now();
         let reps = 5;
