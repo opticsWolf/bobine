@@ -58,26 +58,27 @@ impl TexTeller {
             ModelPrecision::Fp32 => "",
         };
 
-        info!("Downloading TexTeller models from {repo}...");
+        // hf-hub's single-file + local_dir path always re-downloads (it never
+        // checks the destination), so probe for an existing copy first.
+        // Files land flat: <cache_dir>/<filename>.
+        let mut fetch = |name: String, what: &'static str| -> Result<std::path::PathBuf> {
+            let dest = cache_dir.join(&name);
+            if dest.exists() {
+                info!("TexTeller {what}: using cached {}", dest.display());
+                return Ok(dest);
+            }
+            info!("Downloading TexTeller {what} from {repo}...");
+            repo_api
+                .download_file()
+                .filename(name)
+                .local_dir(cache_dir.to_path_buf())
+                .send()
+                .map_err(|e| BobineError::Ort(format!("download {what}: {e}")))
+        };
 
-        let encoder_path = repo_api
-            .download_file()
-            .filename(format!("encoder_model{suffix}.onnx"))
-            .local_dir(cache_dir.to_path_buf())
-            .send()
-            .map_err(|e| BobineError::Ort(format!("download encoder: {e}")))?;
-        let decoder_path = repo_api
-            .download_file()
-            .filename(format!("decoder_model_merged{suffix}.onnx"))
-            .local_dir(cache_dir.to_path_buf())
-            .send()
-            .map_err(|e| BobineError::Ort(format!("download decoder: {e}")))?;
-        let tokenizer_path = repo_api
-            .download_file()
-            .filename("tokenizer.json".to_string())
-            .local_dir(cache_dir.to_path_buf())
-            .send()
-            .map_err(|e| BobineError::Ort(format!("download tokenizer: {e}")))?;
+        let encoder_path = fetch(format!("encoder_model{suffix}.onnx"), "encoder")?;
+        let decoder_path = fetch(format!("decoder_model_merged{suffix}.onnx"), "decoder")?;
+        let tokenizer_path = fetch("tokenizer.json".to_string(), "tokenizer")?;
 
         Self::load_from_paths(&encoder_path, &decoder_path, &tokenizer_path, providers)
     }
