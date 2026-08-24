@@ -116,6 +116,10 @@ bobine.ConverterConfig(
     model_quantization=bobine.ModelQuantization.Fp32,
     ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
 
+# do NOT combine Int8 with CUDA: quantized ops lack GPU kernels and the
+# graph splits across devices (~2x slower than plain-CPU Int8). bobine
+# logs a warning when it sees this combination.
+
 # or offload only the ViT encoder to the GPU and keep the autoregressive
 # decoder on CPU (~20% faster than all-CPU):
 bobine.ConverterConfig(

@@ -165,6 +165,26 @@ impl OnnxEngine {
                 "Loading TexTeller ({:?}) from OleehyO/TexTeller...",
                 self.config.model_precision
             );
+            // Quantized ops have no CUDA kernels - requesting CUDA with
+            // Int8 weights makes ORT split the graph across devices
+            // (171-267 Memcpy nodes) and runs ~2x SLOWER than plain CPU.
+            if self.config.model_quantization == crate::config::ModelQuantization::Int8
+                && self
+                    .config
+                    .ort_providers
+                    .iter()
+                    .chain(
+                        self.config
+                            .encoder_ort_providers
+                            .iter()
+                            .flatten(),
+                    )
+                    .any(|p| p.to_lowercase().contains("cuda"))
+            {
+                tracing::warn!(
+                    "model_quantization=Int8 combined with CUDA providers: quantized ops                      fall back across devices (Memcpy-node overhead) and measure ~2x slower                      than CPU. Prefer model_quantization=Fp32 when running on a GPU."
+                );
+            }
             let enc_providers = self.config.encoder_ort_providers.as_deref();
             let tt = match self.config.model_quantization {
                 crate::config::ModelQuantization::Fp32 => TexTeller::from_pretrained_split(
