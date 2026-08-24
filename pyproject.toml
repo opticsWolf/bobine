@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "bobine"
-version = "0.3.0"
+version = "0.3.1"
 description = "PDF / Office / text → Markdown ingestion engine (Rust core with Python bindings)"
 license = "Apache-2.0 OR MIT"
 authors = [{ name = "opticsWolf", email = "opticswolf@protonmail.com" }]
