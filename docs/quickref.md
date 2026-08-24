@@ -157,8 +157,8 @@ Raw fixtures in `%TEMP%/bobine_test/bench10/`.
 | Model | Source | Size |
 |---|---|---|
 | TexTeller encoder + decoder + tokenizer | auto-download from HuggingFace `OleehyO/TexTeller` into `cache_dir` | ~1.25 GB |
-| RapidLayout (DocLayout-YOLO) | local path via `OnnxEngine::set_layout_model` | ~30 MB |
-| RapidOCR det + rec | local paths via `OnnxEngine::set_ocr_models` | ~15 MB |
+| RapidLayout (DocLayout-YOLO) | auto-download from HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` into cache dir, or `set_layout_model` | ~72 MB |
+| RapidOCR PP-OCRv4 det + rec | auto-download from HF `SWHL/RapidOCR` into `<cache>/PP-OCRv4/`, or `set_ocr_models` | ~16 MB |
 | RapidTable (SLANet-plus) | auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` into `<cache>/models/`, or `set_table_model` | ~7.8 MB |
 | TexTeller Int8 (default formula weights) | auto-download from HF `Ji-Ha/TexTeller3-ONNX-dynamic` into `<cache>/texteller_int8/` (KV-cache-capable merged graph) | ~319 MB |
 

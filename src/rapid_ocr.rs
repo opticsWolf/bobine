@@ -173,6 +173,8 @@ pub struct RapidOcr {
     rec_session: Session,
     /// Character list for CTC decoding (defaults to English charset)
     characters: Vec<String>,
+    /// Whether `characters` has been aligned to the model's class count.
+    charset_aligned: bool,
 }
 
 /// CTC charset fallback when the rec model has no `character` metadata.
@@ -268,7 +270,7 @@ impl RapidOcr {
             "RapidOCR ready"
         );
 
-        Ok(Self { det_session, rec_session, characters })
+        Ok(Self { det_session, rec_session, characters, charset_aligned: false })
     }
 
     /// Run OCR on an image → text lines with bounding boxes.
@@ -495,12 +497,32 @@ impl RapidOcr {
             .run(inputs!["x" => input])
             .map_err(|e| BobineError::Ort(format!("rec run: {e}")))?;
 
-        // Output: [1, T, num_classes] CTC log-probabilities
-        let logits = outputs["softmax_0.tmp_0"]
+        // Output: [1, T, num_classes] CTC log-probabilities. Paddle2ONNX
+        // names the softmax node differently across export versions
+        // (softmax_0.tmp_0, softmax_11.tmp_0, ...) - pick the first output
+        // whose name starts with "softmax", else the first output.
+        let logits_view = outputs.iter().find(|(k, _)| k.starts_with("softmax"))
+            .or_else(|| outputs.iter().next())
+            .map(|(_, v)| v)
+            .ok_or_else(|| BobineError::Ort("rec model has no outputs".into()))?;
+        let logits = logits_view
             .try_extract_array::<f32>()
             .map_err(|e| BobineError::Ort(format!("rec output: {e}")))?;
 
-        // Greedy CTC decode
+        // Greedy CTC decode. PaddleOCR exports vary in whether the metadata
+        // charset includes the leading blank class and/or trailing space
+        // class - align once using the actual output class count.
+        let num_classes = logits.shape()[2];
+        if !self.charset_aligned {
+            let l = self.characters.len();
+            if num_classes == l + 2 {
+                self.characters.insert(0, String::new()); // blank
+                self.characters.push(" ".to_string());    // space
+            } else if num_classes == l + 1 {
+                self.characters.insert(0, String::new()); // blank
+            }
+            self.charset_aligned = true;
+        }
         let (_batch, timesteps, num_classes) = (
             logits.shape()[0], logits.shape()[1], logits.shape()[2]
         );

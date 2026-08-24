@@ -198,13 +198,17 @@ impl HybridConverter {
 
         // AUTO / ALWAYS
         if needs_onnx(pdf, index, &self.config) {
-            if let Ok(Some(md)) =
-                self.full_structure_page_markdown(pdf, index, work_dir)
-            {
-                if !md.trim().is_empty() {
+            match self.full_structure_page_markdown(pdf, index, work_dir) {
+                Ok(Some(md)) if !md.trim().is_empty() => {
                     info!("page {} → ONNX layout+OCR", index + 1);
                     return Ok(md);
                 }
+                Err(e) => tracing::warn!(
+                    "page {}: ONNX full-structure failed ({}); falling back to fast path",
+                    index + 1,
+                    e
+                ),
+                _ => {}
             }
         }
 

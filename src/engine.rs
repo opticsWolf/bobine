@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use tracing::info;
 
 use crate::config::{ConverterConfig, RoutingMode};
-use crate::error::Result;
+use crate::error::{BobineError, Result};
 use crate::rapid_layout::RapidLayout;
 use crate::rapid_ocr::RapidOcr;
 use crate::tex_teller::TexTeller;
@@ -68,6 +68,45 @@ pub(crate) fn apply_providers(
             Ok(builder)
         }
     }
+}
+
+// ------------------------------------------------------------------
+// HuggingFace model acquisition (layout / OCR)
+// ------------------------------------------------------------------
+
+/// DocLayout-YOLO ONNX conversion of the official DocStructBench weights
+/// (the author's repo ships .pt only; this export matches bobine's
+/// fallback label order).
+const LAYOUT_REPO: (&str, &str) = ("wybxc", "DocLayout-YOLO-DocStructBench-onnx");
+const LAYOUT_FILENAME: &str = "doclayout_yolo_docstructbench_imgsz1024.onnx";
+
+/// PP-OCRv4 mobile det + rec exports; the rec model embeds its charset in
+/// the ONNX custom metadata key "character".
+const OCR_REPO: (&str, &str) = ("SWHL", "RapidOCR");
+const OCR_DET_FILENAME: &str = "PP-OCRv4/ch_PP-OCRv4_det_infer.onnx";
+const OCR_REC_FILENAME: &str = "PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx";
+
+/// Download a file from HuggingFace into `cache_dir/<filename>` unless it
+/// already exists (download_file never probes the destination itself).
+fn hf_fetch(cache_dir: &Path, repo: (&str, &str), filename: &str) -> Result<PathBuf> {
+    let dest = cache_dir.join(filename);
+    if dest.exists() {
+        return Ok(dest);
+    }
+    info!(repo = repo.0, file = filename, "Downloading model from HuggingFace...");
+    let client = hf_hub::HFClientSync::new()
+        .map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    client
+        .model(repo.0, repo.1)
+        .download_file()
+        .filename(filename.to_string())
+        .local_dir(cache_dir.to_path_buf())
+        .send()
+        .map_err(|e| BobineError::Ort(format!("download {filename}: {e}")))?;
+    Ok(dest)
 }
 
 /// Manages the ONNX model lifecycle with lazy loading.
@@ -246,12 +285,16 @@ impl OnnxEngine {
 
     fn ensure_layout(&mut self) -> Result<()> {
         if self.layout.is_none() {
-            let path = self
-                .layout_model_path
-                .as_deref()
-                .unwrap_or_else(|| Path::new("layout.onnx"));
+            let path = match self.layout_model_path.clone() {
+                Some(p) => p,
+                None => hf_fetch(
+                    &self.cache_dir,
+                    LAYOUT_REPO,
+                    LAYOUT_FILENAME,
+                )?,
+            };
             info!("Loading RapidLayout from {}...", path.display());
-            let layout = RapidLayout::load(path, &self.config.ort_providers)?;
+            let layout = RapidLayout::load(&path, &self.config.ort_providers)?;
             self.layout = Some(layout);
         }
         Ok(())
@@ -271,10 +314,16 @@ impl OnnxEngine {
 
     fn ensure_ocr(&mut self) -> Result<()> {
         if self.ocr.is_none() {
-            let det = self.ocr_det_path.as_deref().unwrap_or_else(|| Path::new("det.onnx"));
-            let rec = self.ocr_rec_path.as_deref().unwrap_or_else(|| Path::new("rec.onnx"));
+            let det = match self.ocr_det_path.clone() {
+                Some(p) => p,
+                None => hf_fetch(&self.cache_dir, OCR_REPO, OCR_DET_FILENAME)?,
+            };
+            let rec = match self.ocr_rec_path.clone() {
+                Some(p) => p,
+                None => hf_fetch(&self.cache_dir, OCR_REPO, OCR_REC_FILENAME)?,
+            };
             info!("Loading RapidOCR from {} and {}...", det.display(), rec.display());
-            let ocr = RapidOcr::load(det, rec, &self.config.ocr_lang, &self.config.ort_providers)?;
+            let ocr = RapidOcr::load(&det, &rec, &self.config.ocr_lang, &self.config.ort_providers)?;
             self.ocr = Some(ocr);
         }
         Ok(())

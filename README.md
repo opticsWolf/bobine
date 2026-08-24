@@ -77,8 +77,10 @@ md = conv.convert("notes.txt", work_dir="/tmp/out")
 | `Surgical`| Formula crops via TexTeller only; full pipeline just for scans.           |
 | `Always`  | Every page through the full ONNX layout + OCR pipeline.                   |
 
-Missing layout/OCR models degrade gracefully to the fast path per page — a
-conversion never fails because of them.
+RapidLayout and RapidOCR weights also auto-download from HuggingFace on
+first use (DocStructBench YOLO ~72 MB, PP-OCRv4 ~16 MB); explicit local
+paths can override them. Missing/broken heavy models degrade gracefully to
+the fast path per page — a conversion never fails because of them.
 
 ## Quick start (Rust)
 

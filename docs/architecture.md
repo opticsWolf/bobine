@@ -109,8 +109,8 @@ Three lazy slots, each loaded on first use and cached:
 | Slot | Model source | Loaded by |
 |---|---|---|
 | `tex_teller` | HuggingFace via `hf-hub` (blocking): default **Int8** from `Ji-Ha/TexTeller3-ONNX-dynamic` into `<cache>/texteller_int8/`; `ModelQuantization::Fp32` uses `OleehyO/TexTeller` | `ensure_tex_teller()` |
-| `layout` | local ONNX path (`set_layout_model()`) | `ensure_layout()` |
-| `ocr` | local det/rec ONNX paths (`set_ocr_models()`) | `ensure_ocr()` |
+| `layout` | HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` (auto-download, probe-first) or local path (`set_layout_model()`) | `ensure_layout()` |
+| `ocr` | HF `SWHL/RapidOCR` PP-OCRv4 det+rec (auto-download, probe-first) or local paths (`set_ocr_models()`) | `ensure_ocr()` |
 | `table` | local slanet-plus path (`set_table_model()`) or auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` (~7.8 MB) into `<cache>/models/` | `ensure_table()` (lazy — only on table regions) |
 
 Degradation contract: model-load failures propagate as `BobineError`, but
@@ -207,10 +207,17 @@ as Python.
   weights are paired per variant in distinct cache namespaces. `Fp16`
   variants would be picked up as `*_fp16.onnx` if present (generation
   deferred).
-- **RapidLayout / RapidOCR**: loaded from explicit local paths set via
-  `OnnxEngine::set_layout_model` / `set_ocr_models`. Label lists are read
-  from the ONNX models' custom metadata key `character` (falling back to
-  DocStructBench defaults / ASCII).
+- **RapidLayout / RapidOCR**: downloaded automatically on first use unless
+  explicit local paths are set via `OnnxEngine::set_layout_model` /
+  `set_ocr_models`. Layout: `wybxc/DocLayout-YOLO-DocStructBench-onnx`
+  (`doclayout_yolo_docstructbench_imgsz1024.onnx`, 72 MB - a community ONNX
+  conversion of the official DocStructBench weights, whose repo ships .pt
+  only). OCR: `SWHL/RapidOCR` `PP-OCRv4/ch_PP-OCRv4_{det,rec}_infer.onnx`
+  (~16 MB total). Label lists / charsets are read from the ONNX models'
+  custom metadata key `character` (falling back to DocStructBench defaults /
+  ASCII); the rec charset is aligned against the model's actual class count
+  at first decode, since exports vary in whether they include the leading
+  CTC blank and trailing space classes.
 
 ## 9. Version pinning philosophy
 
