@@ -1,131 +1,138 @@
 # bobine — Quick Reference
 
-Standalone PDF / Office / text → Markdown ingestion engine. Everything below
-is the stable surface; the package imports with **zero dependencies** and
-degrades gracefully when optional backends are missing.
+Standalone PDF / Office / text → Markdown ingestion engine. Rust core with
+Python bindings; the Python package imports with **zero ML dependencies**
+(no torch, no optimum, no opencv) and degrades gracefully when optional
+models are missing.
+
+> Template: `legacy/docs/quickref.md` (pure-Python bobine v0.2.0).
 
 ## Install
 
 ```bash
-pip install bobine                 # core (Pillow only)
-pip install "bobine[pdf-ingest]"    # + pdf_oxide, office_oxide, RapidAI ONNX
-pip install "bobine[formula]"       # + vendored formula OCR runtime
-pip install "bobine[markdown]"      # + mordant linting, frontmatter parsing
-pip install "bobine[dev]"           # + pytest, reportlab (corpus generator)
+# from the repo root (Rust workspace + maturin)
+maturin develop --release          # editable install into current venv
+# or build a wheel:
+maturin build --release && pip install target/wheels/bobine-*.whl
 ```
 
-Extras compose freely. `[pdf-ingest]` + `[formula]` together = full pipeline.
+Requirements: Rust toolchain (1.85+, edition 2024), maturin ≥1.7, and a
+modern onnxruntime (≥1.19) discoverable by `ort`:
+
+```bash
+export ORT_DYLIB_PATH=/path/to/onnxruntime.dll   # e.g.
+# <venv>/Lib/site-packages/onnxruntime/capi/onnxruntime.dll
+```
 
 ## One-liners
 
 ```python
-from bobine import ConverterConfig, RoutingMode, ingest_document, convert_directory
+import bobine
 
-# single document → staged, linted markdown in ./out
-r = ingest_document("paper.pdf", "out", config=ConverterConfig(routing_mode=RoutingMode.SURGICAL))
-print(r.md_path, r.page_count, r.image_count, r.lint)
+# single PDF → markdown string
+config = bobine.ConverterConfig(routing_mode=bobine.RoutingMode.Surgical)
+conv = bobine.HybridConverter(config, cache_dir="~/.cache/bobine")
+md = conv.convert_pdf("paper.pdf", work_dir="/tmp/out")
 
-# batch a whole directory
-results = convert_directory("docs/", "out/")
+# one-shot helper
+md = bobine.convert_to_markdown("paper.pdf", config, work_dir="/tmp/out",
+                                cache_dir="~/.cache/bobine")
 
-# text files need no native deps at all
-ingest_document("notes.txt", "out")
+# formula crop → LaTeX
+latex = conv.recognize_formula("crop.png")     # r"\frac{1}{2}"
+
+# text files need no models at all
+md = conv.convert("notes.md", work_dir="/tmp/out")
 ```
 
-## Public API (`from bobine import …`)
+## Public API (`import bobine`)
 
 | Symbol | Purpose |
 |---|---|
-| `ingest_document(path, output_dir, *, config, lint, auto_fix, log)` | Full pipeline → `ConvertedDocument` (staged `_assets/`, linted md) |
-| `convert_directory(source_dir, output_dir, *, config, log)` | Batch `ingest_document` over `rglob` |
-| `convert_to_markdown(path, config, work_dir, *, should_continue, on_page, log)` | Raw markdown string only, no staging/lint |
-| `stage_images(md, image_dir, *, output_dir)` | Rewrite local `![](...)` links to `okf-asset://` + copy bytes |
-| `HybridConverter(config, log)` | Direct converter; `ensure_models()` / `convert_pdf()` / `convert_office()` / `close()` |
-| `OnnxRapidEngine(log_fn, ort_providers)` | Lazy ONNX model manager (formula/ocr/layout/table) |
-| `ConverterConfig`, `RoutingMode` | Tuning knobs + routing modes |
-| `Document`, `load_markdown_document(path)`, `wrap_thoughts(text, topic)` | Text-doc model, frontmatter, thoughts wrapper |
-| `lint_markdown(content, *, auto_fix)`, `lint_markdown_file(path)` | mordant linting (guarded, no-op `E999` without it) |
-| `html_tables_to_gfm(html)` | HTML table → GFM pipe table |
-| `check_rapid_versions()` | Version drift warning on import |
-| `asset_id`, `stage_images_as_okf_assets`, `ASSET_STORE_DIRNAME` | Low-level staging primitives |
-
-`ConvertedDocument`: `.md_path`, `.md_text`, `.image_dir`, `.image_count`,
-`.page_count`, `.lint` (dict with `errors`/`fixed`/`content`).
+| `HybridConverter(config, cache_dir)` | Direct converter: `convert()`, `convert_pdf()`, `recognize_formula()` |
+| `convert_to_markdown(path, config, work_dir, cache_dir)` | Raw markdown string, one-shot |
+| `ConverterConfig` | Tuning knobs (see table below) |
+| `RoutingMode` | `Never` / `Auto` / `Surgical` / `Always` |
+| `FormulaBackend` | `TexTeller` (only backend) |
+| `ModelPrecision` | `Fp32` / `Fp16` (`*_fp16.onnx`, models deferred) |
 
 ## RoutingMode
 
 | Mode | Behaviour |
 |---|---|
-| `NEVER` | Fast path only (pdf_oxide). No ONNX models loaded. |
-| `AUTO` | Per-page heuristics (math signal / scanned) → full ONNX layout+OCR only on flagged pages. |
-| `SURGICAL` | Fast path + formula crops (vendored RapidLaTeXOCR); full pipeline only for scanned pages. |
-| `ALWAYS` | Every page through full ONNX layout + OCR. |
+| `Never` | Fast path only (pdf_oxide). No ONNX models loaded. |
+| `Auto` *(default)* | Per-page heuristics (math signal / scanned) → full layout+OCR only on flagged pages. |
+| `Surgical` | Fast path + formula crops via TexTeller; full pipeline only for scanned pages. |
+| `Always` | Every page through full layout + OCR. |
 
 ## ConverterConfig fields
 
 | Field | Default | Meaning |
 |---|---|---|
-| `extract_images` | `True` | Stage embedded images as assets |
+| `extract_images` | `True` | Save embedded page images to `work_dir` |
 | `append_unreferenced_images` | `True` | Gallery-append images not referenced in text |
 | `use_onnx` | `True` | Master switch for ONNX passes |
-| `routing_mode` | `AUTO` | See table above |
-| `ort_providers` | `None` | ONNX Runtime providers (`None` → from `device`) |
+| `routing_mode` | `Auto` | See table above |
+| `formula_backend` | `TexTeller` | Formula recognizer |
+| `model_precision` | `Fp32` | Selects `*_fp16.onnx` when `Fp16` |
 | `render_dpi` | `300` | Renders for scanned-page OCR / layout |
 | `formula_dpi` | `200` | Renders for formula crops |
-| `detect_headings` | `True` | `#` headings from title regions / fast path |
-| `convert_html_tables` | `True` | slanet HTML → GFM pipes |
-| `math_char_threshold` | `30` | AUTO: math chars before flagging a page |
-| `scanned_text_threshold` | `50` | AUTO: max chars for scanned-page detection |
-| `formula_batch_size` | `8` | Reserved (single-crop recognizer) |
-| `formula_pad_pts` | `4.0` | Padding around formula crops |
-| `min_formula_math_chars` | `5` | Min chars for a text-layer formula box |
+| `detect_headings` | `True` | `#` headings from fast path |
+| `convert_html_tables` | `True` | HTML tables → GFM pipes |
+| `min_formula_math_chars` | `5` | Min math chars for a text-layer formula box |
 | `formula_inline_max_width_pts` | `220.0` | Box wider → `$$…$$` display math |
-| `formula_layout_fallback` | `False` | P2: layout `equation` regions when text layer has no math fonts |
-| `detect_code_blocks` | `True` | Fence monospace runs |
-| `rescue_bad_tables` | `False` | Fast-path table repair (off) |
-| `ocr_lang` | `"en"` | RapidOCR language |
-| `device` | `"cuda"` | `"cuda"`/`"gpu"` → CUDA providers, else CPU |
+| `formula_pad_pts` | `4.0` | Padding around formula crops |
+| `formula_layout_fallback` | `False` | Layout `equation` regions when text layer has no math fonts |
+| `math_char_threshold` | `30` | Auto: math chars before flagging a page |
+| `scanned_text_threshold` | `50` | Auto: max chars for scanned-page detection |
 
 ## Common tasks
 
 ```python
-# scanned / born-digital control
-ConverterConfig(routing_mode=RoutingMode.ALWAYS, render_dpi=300)  # scanned docs
-ConverterConfig(routing_mode=RoutingMode.NEVER, use_onnx=False)  # fast text only
+# scanned document — force full pipeline at high dpi
+bobine.ConverterConfig(routing_mode=bobine.RoutingMode.Always, render_dpi=300)
+
+# fastest: text layer only, never touch ONNX
+bobine.ConverterConfig(routing_mode=bobine.RoutingMode.Never, use_onnx=False)
 
 # formulas on text-layer-hostile PDFs (Word/InDesign/OCR output)
-ConverterConfig(routing_mode=RoutingMode.SURGICAL, formula_layout_fallback=True)
+bobine.ConverterConfig(routing_mode=bobine.RoutingMode.Surgical,
+                       formula_layout_fallback=True)
 
-# CPU-only
-ConverterConfig(device="cpu")
-
-# text pipeline without a PDF backend
-doc = load_markdown_document("note.md")
-fixed = lint_markdown(doc.body, auto_fix=True)
+# FP16 model variants (when present next to the fp32 files)
+bobine.ConverterConfig(model_precision=bobine.ModelPrecision.Fp16)
 ```
+
+## Models
+
+| Model | Source | Size |
+|---|---|---|
+| TexTeller encoder + decoder + tokenizer | auto-download from HuggingFace `OleehyO/TexTeller` into `cache_dir` | ~1.25 GB |
+| RapidLayout (DocLayout-YOLO) | local path via `OnnxEngine::set_layout_model` | ~30 MB |
+| RapidOCR det + rec | local paths via `OnnxEngine::set_ocr_models` | ~15 MB |
+
+Missing layout/OCR models degrade to the fast path per page — conversion
+never fails because of them.
 
 ## Testing
 
 ```bash
-pytest                          # unit suite, no native backends (fake pdf_oxide)
-pytest -m integration           # real backends + PDF corpus (needs [pdf-ingest])
-pytest -m slow                  # ONNX runs over real pages
-pytest --cov=bobine             # 92 % coverage
-ruff check . && ruff format --check .
+cargo test                 # 45 tests (unit + integration)
+ORT_DYLIB_PATH=... cargo test   # needed for the PDF integration tests
+maturin develop && python -c "import bobine"   # bindings smoke test
 ```
 
-Markers: `integration`, `slow`. Corpus fixtures in `tests/fixtures/pdf/`
-(CC BY 4.0 arXiv trims + generated scanned page — see `SOURCES.md`).
+Fixtures: `tests/fixtures/` — CC BY 4.0 arXiv papers (attribution in
+`SOURCES.md`) + generated scanned page.
 
 ## Env vars
 
 | Var | Effect |
 |---|---|
-| `BOBINE_INGEST_ALLOW_UNPINNED=1` | Silence RapidAI version-drift warning |
-| `OKFGRAPH_INGEST_ALLOW_UNPINNED=1` | Legacy alias, still honoured |
+| `ORT_DYLIB_PATH` | Explicit onnxruntime shared library for `ort` (≥1.19 required) |
 
 ## License
 
-Apache-2.0 **OR** MIT (dual, choose either). Vendored `bobine/_vendor/`
-code keeps its own license (MIT (c) 2023 RapidAI). Corpus fixtures are CC
-BY 4.0 (attribution in `tests/fixtures/SOURCES.md`).
+Apache-2.0 **OR** MIT (dual, choose either). Corpus fixtures are CC BY 4.0
+(attribution in `tests/fixtures/SOURCES.md`). `legacy/` keeps the original
+Python release's licensing.

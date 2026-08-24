@@ -1,9 +1,11 @@
 # bobine — Architecture
 
-A standalone **PDF / Office / text → Markdown ingestion engine**, extracted
-from OKFgraph (read-only extraction; OKFgraph keeps its own copies until it
-consumes bobine — roadmap #7). This document explains how the pieces fit,
-the data flows, and the non-obvious invariants.
+A standalone **PDF / Office / text → Markdown ingestion engine**, implemented
+in Rust (`bobine_rs` crate) with Python bindings via PyO3/maturin
+(`import bobine`). This document explains how the pieces fit, the data
+flows, and the non-obvious invariants.
+
+> Template: `legacy/docs/architecture.md` (pure-Python bobine v0.2.0).
 
 ---
 
@@ -11,207 +13,206 @@ the data flows, and the non-obvious invariants.
 
 **Goals**
 - Convert PDF (fast native text + optional ONNX heavy passes), Office
-  (docx/xlsx/pptx), and text documents (txt/md/rst) to markdown.
-- Stage extracted images into an `okf-asset://` asset store.
-- Lint/normalize markdown into a graph-ready `Document` model.
-- Import with **zero dependencies**; every native backend is optional and
-  import-guarded; missing backends degrade to fast paths or raise clear
-  `RuntimeError`s.
+  (docx/xlsx/pptx/doc/xls/ppt), and text documents (txt/md) to markdown.
+- Formula recognition via **TexTeller** ONNX (ViT encoder → RoBERTa decoder).
+- Page layout analysis via **DocLayout-YOLO**; text OCR via **PaddleOCR**
+  det+rec ONNX.
+- Expose everything to Python with **zero Python ML dependencies** — no
+  torch, no optimum, no opencv. The heavy lifting is pure Rust.
 
 **Non-goals** (by design)
-- No database, no embedding, no UI. The consumer owns embedding/storage
-  (in OKFgraph that is `OKFRouter.import_bundle`).
-- No CUDA-version coupling: ONNX runs on a plain `onnxruntime` wheel;
-  CUDA is an opt-in provider list.
+- No database, no embedding, no UI. The consumer owns storage/embedding.
+- No RapidLaTeXOCR: TexTeller replaced it (5× faster per crop, better
+  accuracy; costs ~1 GB more RAM).
+- No CUDA-version coupling: `ort` uses `load-dynamic`; point
+  `ORT_DYLIB_PATH` at any modern onnxruntime (≥1.19), CUDA included.
 
 ---
 
 ## 2. Module map
 
 ```
-bobine/
-├── __init__.py      public re-exports, __version__
-├── config.py        ConverterConfig (dataclass) + RoutingMode (enum)
-├── engine.py        OnnxRapidEngine — lazy ONNX model manager (formula/ocr/layout/table)
-├── converter.py     HybridConverter — the core PDF/Office pipeline (~830 LOC)
-├── tables.py        HTML table → GFM pipe-table converter
-├── assets.py        okf-asset:// staging, asset_id (deterministic content hash)
-├── versions.py      known-good RapidAI pins + check_rapid_versions() warning
-├── documents.py     Document model, frontmatter parsing, wrap_thoughts
-├── markdown.py      mordant linting (guarded; no-op E999 without mordant)
-├── pipeline.py      orchestrators: convert_to_markdown / stage_images /
-│                    ingest_document / convert_directory
-└── _vendor/         third-party code, vendored with original licenses
-    └── rapid_latex_ocr/   formula OCR (MIT (c) 2023 RapidAI, numpy-2 fixed)
+src/
+├── lib.rs            crate root, re-exports
+├── config.rs         ConverterConfig, RoutingMode, FormulaBackend, ModelPrecision
+├── error.rs          BobineError enum
+├── engine.rs         OnnxEngine — lazy model manager (TexTeller/RapidLayout/RapidOCR)
+├── converter.rs      HybridConverter — core PDF/Office pipeline (~700 LOC)
+├── tex_teller.rs     TexTeller ONNX: preprocess → encoder → autoregressive decode
+├── rapid_layout.rs   DocLayout-YOLO: LetterBox(1024) → NMS → LayoutRegion
+├── rapid_ocr.rs      PaddleOCR DBNet + CRNN: contour boxes → CTC decode
+├── tables.rs         HTML <table> → GFM pipe-table converter
+└── py_bindings.rs    PyO3 surface: bobine._native
+python/bobine/        Python shim (__init__.py re-exports _native) + .pyi stubs
+legacy/               frozen pure-Python bobine v0.2.0 (reference implementation)
 ```
 
-Dependency direction: `pipeline → converter → engine → (rapidai | _vendor)`,
-`pipeline → documents/markdown/assets/tables`. No cycles; `converter` never
-touches the DB/graph layer.
+Dependency direction: `py_bindings → converter → engine → (tex_teller |
+rapid_layout | rapid_ocr)`; `converter → tables`. No cycles.
 
 ---
 
 ## 3. Data flows
 
-### `ingest_document(path, output_dir, …)` (pipeline.py)
-
-1. `convert_to_markdown` dispatches by extension:
-   - `.pdf` → `HybridConverter.convert_pdf` (fast path + ONNX passes per page)
-   - Office exts → `office_oxide` `to_markdown()`
-   - text exts → raw UTF-8 read
-2. `stage_images` rewrites `![](local.png)` → `![](okf-asset://<id>)` and
-   copies bytes into `output_dir/_assets/`.
-3. Optional lint (`mordant`, auto-fix).
-4. Returns `ConvertedDocument{md_path, md_text, image_count, page_count, lint}`.
-
-### `HybridConverter.convert_pdf` (converter.py)
+### `HybridConverter.convert_pdf(path, work_dir)`
 
 ```
-open PdfDocument
-  for each page:
+open pdf_oxide::api::Pdf
+  for each page i:
     extract embedded images (if extract_images)
-    page_md = _route_page(doc, page, i, work_dir)     ← routing decision
+    page_md = route_page(pdf, i, work_dir)        ← routing decision
+    maybe append image gallery
   join pages with "---" separators
 ```
 
-### Per-page routing (`_route_page`)
+### Per-page routing (`route_page`)
 
 ```
-NEVER  → fast path (pdf_oxide markdown)                       [no models]
-SURGICAL → scanned?  → full ONNX layout+OCR
-            else     → fast + formula pass (text-layer math boxes,
-                       fallback P2 layout equation regions)
-AUTO   → ocr() present AND _needs_paddle(page)?
-            yes → full ONNX layout+OCR
-            no  → fast path
-ALWAYS → full ONNX layout+OCR on every page
+NEVER    → fast path (pdf_oxide to_markdown)                    [no models]
+SURGICAL → scanned?  → full_structure_page_markdown
+             else   → surgical_page_markdown (formula crops)
+AUTO     → needs_onnx(page)? yes → full structure; else fast path
+ALWAYS   → full structure on every page
 ```
 
-`_needs_paddle` signals: math chars in the text layer (font names /
-unicode) over a threshold, or scanned-page heuristic (few chars + images).
+Routing signals (mirroring the Python heuristics):
+- **Math signal**: text-layer chars whose font matches TeX math keywords
+  (`cmmi`, `cmsy`, `cmex`, …) or unicode math ranges (Greek, U+2200–22FF,
+  U+1D400–1D7FF, …) above `math_char_threshold`.
+- **Scanned**: fewer than `scanned_text_threshold` chars + page has images.
+
+### `convert()` dispatch
+
+| Extension | Path |
+|---|---|
+| `.pdf` | `convert_pdf` |
+| `.docx .xlsx .pptx .doc .xls .ppt` | `office_oxide::Document::open().to_markdown()` (auto-detect) |
+| anything else | raw UTF-8 read |
 
 ---
 
-## 4. OnnxRapidEngine — lazy loading & degradation
+## 4. OnnxEngine — lazy loading & degradation
 
-Four lazy loaders (`formula()`, `ocr()`, `layout()`, `table()`) construct
-the backend on first use and cache it. Every loader is wrapped in
-try/except: a constructor failure logs `⚠️ Could not load …` and returns
-`None`; callers then take the fast path. This is why a born-digital paper
-in `SURGICAL` loads **only** the tiny formula model, never the
-OCR/layout/table stack.
+Three lazy slots, each loaded on first use and cached:
 
-All version-sensitive calls are flagged `# VERIFY`. The 3.x line returns
-dataclasses (`RapidOCROutput` / `RapidLayoutOutput` / `RapidTableOutput`)
-rather than tuples; `ocr_lines`/`layout_regions`/`table_html` normalize
-both shapes, and `RapidOCR()` takes no kwargs in 3.x. These adapters were
-verified live against rapidocr 3.9.2 / rapid_layout 1.2.1 / rapid_table
-3.0.2 (Phases 5–6).
+| Slot | Model source | Loaded by |
+|---|---|---|
+| `tex_teller` | HuggingFace `OleehyO/TexTeller` via `hf-hub` (blocking) | `ensure_tex_teller()` |
+| `layout` | local ONNX path (`set_layout_model()`) | `ensure_layout()` |
+| `ocr` | local det/rec ONNX paths (`set_ocr_models()`) | `ensure_ocr()` |
+
+Degradation contract: model-load failures propagate as `BobineError`, but
+`full_structure_page_markdown` failures are caught by the router
+(`if let Ok(Some(md))`) and the page **falls back to the fast path** — a
+missing layout.onnx never kills a conversion. `ModelPrecision::Fp16`
+selects `*_fp16.onnx` filenames (models deferred).
 
 ---
 
 ## 5. Coordinate spaces (the one real trap)
 
-Two different spaces flow through the converter — never mix them:
+The Rust port is *simpler* than the Python one on this front:
 
 | Space | Used for | Source |
 |---|---|---|
-| **PDF points** | text-layer char boxes, formula boxes, `_crop_pil` input | `TextChar.bbox` — but pdf_oxide ≥0.3 reports `(x, y, w, h)`, older/fakes report `(x0, y0, x1, y1)`. `_bbox_to_xyxy()` normalizes both. |
-| **Render pixels** | RapidLayout region boxes, crops fed to OCR/table | `layout_regions()` output is in the pixel space of the image it was given |
+| **PDF points (top-left origin)** | `Rect` from `extract_chars` bboxes, formula boxes, region boxes | pdf_oxide ≥0.3 normalizes `Rect { x, y, width, height }` with y = top edge |
+| **Render pixels** | rendered page images, RapidLayout outputs | `render_page(dpi)`; scale factor `dpi / 72` |
 
 Invariants:
-- `_math_boxes_from_chars` returns **points** (used by `_crop_pil`).
-- Layout regions are converted **pixels → points** (`÷ (dpi/72)`) before
-  `_crop_pil` in both the full-structure path and the P2 fallback. A past
-  bug passed pixels as points (≈2× oversized crops that worked by luck).
-- `_crop_pil` maps points → pixels with `dpi/72` and flips y (PDF origin
-  bottom-left, image top-left).
+- `math_boxes_from_chars` returns **points** (pdf_oxide Rect directly).
+- RapidLayout regions arrive in **render pixels** and are converted
+  points-ward by dividing by `dpi/72` before cropping.
+- `crop_image` maps points → pixels with `dpi/72`; **no y-flip needed**
+  (pdf_oxide Rect is already top-left, unlike raw PDF coordinates).
 
 ---
 
 ## 6. Formula pipeline (SURGICAL)
 
-1. **Detection**: text-layer chars whose font name contains a TeX math
-   keyword (`cmmi`, `cmsy`, `cmex`, `msam`, `msbm`, …) or unicode math
-   codepoints. Body fonts (`cmr`, `cmbx`, …) are deliberately excluded —
-   CMR10 is Computer Modern *Roman*, not math (a 58%-of-chars false
-   positive was fixed in Phase 7).
-2. **Line-aware merge**: chars → lines (baseline tolerance) → horizontal
-   runs per line → vertical merge only if lines horizontally overlap, the
-   gap fits ≤1.5× median line height, and the result stays ≤40 % of page
-   height. Multi-line display equations = one crop; columns/prose stay
-   separate.
-3. **Recognition**: each crop → vendored RapidLaTeXOCR (`LatexOCR`) →
-   LaTeX string.
-4. **Splice**: the LaTeX replaces the region's text-layer text in the fast
-   markdown (whitespace-tolerant, else appended at page end).
+1. **Detection**: identical heuristic to Python — math font keywords +
+   unicode ranges over `extract_chars`; body fonts (`cmr`, `cmbx`)
+   deliberately excluded.
+2. **Line-aware merge**: chars → lines (0.8× median height baseline
+   tolerance) → horizontal runs (gap ≤1.5× median height) → vertical merge
+   only when lines horizontally overlap, gap fits line spacing, and merged
+   box stays sane. Multi-line display equations = one crop.
+3. **Recognition**: crop PNG → `TexTeller::recognize`:
+   - trim white border (corner-sampled bg, threshold 15),
+   - grayscale, fit within 448×448 (CatmullRom ≈ bicubic),
+   - pad bottom-right, normalize `(x/255 − 0.9545467) / 0.15394445`,
+   - encoder → `last_hidden_state` [1, 1024, 768],
+   - greedy autoregressive decode via `decoder_model_merged.onnx`
+     (full-sequence re-run each step — correct, side-steps optimum's
+     KV-cache bug; KV variant deferred),
+   - BPE decode via `tokenizers` (`tokenizer.json`), bos `<s>`, eos `</s>`.
+4. **Wrap + splice**: display vs inline chosen by
+   `height > 1.6 × line_height ∥ width > formula_inline_max_width_pts`;
+   LaTeX replaces the region's text-layer needle (whitespace-tolerant
+   regex), unmatched blocks append at page end.
 
-**P2 fallback** (`formula_layout_fallback=True`, off by default): when the
-text layer has no math fonts (Word/InDesign/OCR output), run RapidLayout
-and use `equation`-labelled regions (`_MATH_LAYOUT_LABELS` includes
-`display_formula`/`inline_formula`/`isolate_formula` for other layout
-models). Cost: pulls the layout stack into SURGICAL; layout misses inline
-math — hence opt-in only.
-
----
-
-## 7. Full ONNX pipeline (AUTO/ALWAYS/scanned)
-
-`_full_structure_page_markdown`:
-1. Render page at `render_dpi` → PIL.
-2. `layout_regions` → regions in **render pixels** → converted to points.
-3. Per region (reading order):
-   - `table` → **text layer first** on born-digital pages (lossless;
-     slanet HTML only when the text layer is empty — scans). Two-column
-     layout models mislabel prose↔table, so text wins on digital pages.
-   - math labels → crop → formula recognizer → `$$…$$`.
-   - `figure`/`image` → crop staged as asset link.
-   - else → text layer first, OCR fallback; `title` → `## heading`.
+**P2 fallback** (`formula_layout_fallback=true`): when the text layer has
+no math fonts, run RapidLayout and use `equation`-labelled regions
+(`MATH_LAYOUT_LABELS`). Inline math is lost — opt-in only, same tradeoff
+as Python.
 
 ---
 
-## 8. Vendoring policy
+## 7. Full structure pipeline (AUTO/ALWAYS/scanned)
 
-Dead-but-essential third-party code is vendored into `bobine/_vendor/`
-with its original license file, rather than forked or re-pinned:
+`full_structure_page_markdown`:
+1. Render page at `render_dpi`.
+2. `layout_regions` → regions in render pixels → converted to points,
+   sorted reading order (y then x).
+3. Per region:
+   - `table` → **text layer first** (lossless on born-digital pages);
+     runs through `html_tables_to_gfm` when enabled. Scanned-table
+     recognition (RapidTable) not yet ported — emits `[table: <label>]`.
+   - math labels → crop → TexTeller → `$$…$$`.
+   - `figure`/`image` → crop saved to work_dir, `![](name.png)` link.
+   - else → text layer first, `ocr_lines` fallback; `title` → `## heading`.
 
-- Fixes applied in-tree (the numpy-2 `int(np.argmax(…))` crash, class-name
-  alias `LatexOCR = LaTeXOCR`).
-- `ruff` and coverage both exclude `_vendor/` (third-party code shouldn't
-  skew our metrics or lint).
-- Models (~179 MB) auto-download on first use into
-  `bobine/_vendor/rapid_latex_ocr/models/` and are git-ignored.
+---
+
+## 8. Model acquisition
+
+- **TexTeller**: downloaded automatically on first use from
+  `https://huggingface.co/OleehyO/TexTeller` (`encoder_model.onnx` 344 MB,
+  `decoder_model_merged.onnx` 909 MB, `tokenizer.json`) into the cache dir
+  given at converter construction. `Fp16` variants would be picked up as
+  `*_fp16.onnx` if present (generation deferred).
+- **RapidLayout / RapidOCR**: loaded from explicit local paths set via
+  `OnnxEngine::set_layout_model` / `set_ocr_models`. Label lists are read
+  from the ONNX models' custom metadata key `character` (falling back to
+  DocStructBench defaults / ASCII).
 
 ## 9. Version pinning philosophy
 
-RapidAI packages move fast and break APIs between minors (the `# VERIFY`
-flags exist because of it). `versions.py` holds the known-good list;
-`check_rapid_versions()` warns at import on drift
-(`BOBINE_INGEST_ALLOW_UNPINNED=1` silences; legacy `OKFGRAPH_…` honoured).
-Pins in `pyproject.toml` are exact for RapidAI packages, floors elsewhere.
+Rust dependencies are locked in `Cargo.lock`. The one external binary
+contract is **onnxruntime itself**: `ort` 2.0-rc requires ≥1.19; a stale
+system DLL fails at session creation with a clear `BadVersion` error.
+Set `ORT_DYLIB_PATH` explicitly in CI/dev (e.g. the venv's
+`onnxruntime/capi/onnxruntime.dll`).
 
 ## 10. Testing strategy
 
-Three layers, each with a distinct purpose:
+Two layers (mirrors the Python three minus fakes):
 
-1. **Unit (fake pdf_oxide)** — `tests/conftest.py` fakes
-   (`FakeChar/FakePage/FakePdfDocument/FakeRegion`) drive the real converter
-   code through every routing, splice, and ONNX-assembly path with **no
-   native deps**; engine normalization branches use injected fake engines.
-   169 tests, 92 % coverage.
-2. **Integration corpus** — real backends + `tests/fixtures/pdf/` (three
-   CC BY 4.0 arXiv papers — text, formulas, tables, figures — plus a
-   generated no-text-layer scanned page). Gated by `integration`/`slow`
-   markers; self-skips when backends are missing.
-3. **Parity** — OKFgraph's pure-pipeline tests run against bobine's modules
-   via a sys.modules shim (35/35 green). See `docs/PARITY.md`.
+1. **Unit tests** (`#[cfg(test)]` modules, 38 tests): pure-Rust logic with
+   no native deps — tables parsing, splice/ws_replace, math-font/unicode
+   classifiers, TexTeller preprocessing shape/range, white-border trim,
+   LetterBox preprocessing, IoU/NMS, config serde round-trip.
+2. **Integration** (`tests/test_converter.rs`, 7 tests): real pdf_oxide
+   against the CC BY 4.0 arXiv corpus in `tests/fixtures/` (text paper +
+   scanned page), text-file conversion, config access, error paths.
+   PDF tests need a modern onnxruntime (`ORT_DYLIB_PATH`).
+
+Run: `cargo test` (45 total). Python-side smoke: `maturin develop` then
+`import bobine`.
 
 ## 11. Licensing layout
 
-- bobine code: **Apache-2.0 OR MIT** (dual) — `LICENSE` pointer +
-  `LICENSES/{Apache-2.0,MIT}.txt`.
-- `bobine/_vendor/rapid_latex_ocr/`: MIT (c) 2023 RapidAI (its own
-  `LICENSE` inside the vendored dir).
-- `tests/fixtures/pdf/`: CC BY 4.0 arXiv papers (attribution +
-  modification notes in `tests/fixtures/SOURCES.md`); `scanned_page.pdf`
-  is generated in-repo (bobine's own license).
+- bobine_rs code: **Apache-2.0 OR MIT** (dual).
+- `tests/fixtures/`: CC BY 4.0 arXiv papers (attribution in
+  `tests/fixtures/SOURCES.md`).
+- `legacy/`: frozen Python bobine v0.2.0, keeps its own dual license and
+  vendored third-party notices.

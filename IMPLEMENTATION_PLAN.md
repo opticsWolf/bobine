@@ -1,0 +1,131 @@
+# bobine_rs — Consolidated Status, Gaps & Implementation Plan
+
+> Rust-first rewrite of bobine. Template: `legacy/docs/IMPLEMENTATION_PLAN.md`
+> (pure-Python v0.2.0). This file is the single source of truth for what is
+> done, what is missing, and in which order it will be built.
+>
+> Last updated: rust_dev @ `2eaadf8` (docs: architecture + quickref).
+
+---
+
+## 1. Goal
+
+Parity with legacy Python bobine's **user-facing surface** — one-liner
+ingestion (`ingest_document`, `convert_directory`), staged asset store,
+document model, lint hook — on a pure-Rust core with PyO3 bindings, no
+Python ML dependencies, distributed as `bobine` on PyPI.
+
+## 2. Status Summary
+
+| Layer | State |
+|---|---|
+| PDF fast path (pdf_oxide → markdown) | ✅ done |
+| Routing NEVER / AUTO / SURGICAL / ALWAYS | ✅ done |
+| Formula box detection (font+unicode heuristics, line-aware merge) | ✅ done |
+| TexTeller ONNX formula OCR (hf-hub download, ort inference) | ✅ done |
+| RapidLayout (DocLayout-YOLO) + full-structure page pipeline | ✅ done |
+| RapidOCR (DBNet det + CRNN rec, CTC) | ✅ minimal port done |
+| Office conversion (office_oxide auto-detect) | ✅ done |
+| HTML → GFM tables | ✅ done |
+| PyO3 bindings (`import bobine`, maturin, .pyi stubs) | ✅ done |
+| Docs (architecture, quickref, this file) | ✅ done |
+| Tests: 38 unit + 7 integration, 0 failures | ✅ done |
+| Pipeline layer (assets/documents/pipeline modules) | ❌ Phase 2 |
+| Scanned-table recognition (RapidTable) | ❌ Phase 3 |
+| CI on branch + release workflow | ❌ Phase 4 |
+| Coverage fakes (converter logic without real PDFs) | ❌ Phase 5 |
+
+## 3. Repository Layout
+
+```
+├── src/                Rust core (10 modules, ~2 300 LOC)
+├── python/bobine/      PyO3 shim + type stubs        (import bobine)
+├── tests/              cargo integration tests + CC BY 4.0 fixtures
+├── docs/               architecture.md · quickref.md · IMPLEMENTATION_PLAN.md
+├── Cargo.toml          workspace (cdylib + rlib)
+├── pyproject.toml      maturin; dist name = bobine 0.3.0
+└── legacy/             frozen pure-Python bobine v0.2.0 (reference)
+```
+
+## 4. Open Work — Prioritized Roadmap
+
+Legend: **S** < 1 day · **M** 2–3 days · **L** 1+ week
+
+### Phase 1 — Quick wins & wiring (S)
+
+| # | Item | Effort | Why |
+|---|---|---|---|
+| 1.1 | **Wire `wrap_code_blocks` into the fast path** — currently dead code; call from `route_page` when `detect_code_blocks`, splice fenced blocks like Python does | S | Config knob exists but does nothing |
+| 1.2 | **CI triggers on `rust_dev`**: add branch to `.github/workflows/CI.yml` push list; add `ORT_DYLIB_PATH` setup step (download onnxruntime release asset or pip install into venv and export path); skip-or-env for PDF tests | S | Zero CI runs today — regressions ship silently |
+| 1.3 | **Expose `ort_providers` through to `ort::Session` builder** (`config.ort_providers` field already exists but is ignored by every session constructor); add `device` config sugar mapping cuda→CUDAExecutionProvider | S | GPU path untested otherwise (legacy roadmap #5) |
+
+### Phase 2 — Pipeline layer (M) — restores legacy one-liner UX
+
+| # | Item | Effort | Why |
+|---|---|---|---|
+| 2.1 | **`assets.rs`** — `stage_images_as_okf_assets`: SHA-256 content-hash ids (`img_<16hex>`), copy bytes into `_assets/`, rewrite `![](local)` → `![](okf-asset://<id>)`, skip http/data/already-staged links. Port of `assets.py` (~100 LOC Python → ~150 Rust, `sha2` + `regex`) | M | Core of the ingest contract |
+| 2.2 | **`documents.rs`** — `Document{id,title,description,body,type,tags,metadata}`, frontmatter parse/dump (minimal YAML subset or `serde_yaml`), `load_markdown_document()`, `wrap_thoughts()` | M | Legacy documents.py parity |
+| 2.3 | **`pipeline.rs`** — `ingest_document(path, output_dir, config, lint)` → `ConvertedDocument`; `convert_directory()` batch; expose both via PyO3 so Python gets `bobine.ingest_document(...)` one-liners back | M | The main missing UX |
+| 2.4 | **Progress & cancellation callbacks** in PyO3: pass Python callables for `on_page(idx,total)` / `should_continue()`; check between pages inside `convert_pdf` | S | Legacy convert_to_markdown signature parity; long conversions are currently uncancellable/silent |
+| 2.5 | **`markdown.rs` lint hook** — optional: accept any Python object with `.lint(content)/fix(content)` (mordant) behind a callback instead of a Rust linter re-write | S | Keeps Rust core lean; mordant stays Python-side |
+
+### Phase 3 — Scanned tables & OCR quality (M–L)
+
+| # | Item | Effort | Why |
+|---|---|---|---|
+| 3.1 | **RapidTable (slanet-plus)** — table structure ONNX: load model slot #4 in engine, feed crop + OCR lines, emit HTML → existing GFM converter. Replaces `[table: label]` placeholder on scans | L | Last missing recognizer of the four-model stack |
+| 3.2 | **OCR det post-processing upgrade** — replace flood-fill bounding boxes with proper DB unclip (polygon offsetting) or at minimum min-area-rect rotation handling; improves multi-column scan reading order | M | Current contour boxes are axis-aligned only; rotated text degrades |
+| 3.3 | **`ocr_lang` config** — plumb language-specific rec model selection | S | Legacy parity (currently en-only charset default) |
+
+### Phase 4 — Distribution (S)
+
+| # | Item | Effort | Why |
+|---|---|---|---|
+| 4.1 | **Release workflow**: tag `v*` → maturin build matrix (3 OS × py3.10–3.13), wheel smoke test, trusted publish to PyPI as `bobine`. Reuse lessons from legacy release.yml (merge-multiple artifact corruption fix applies verbatim) | S | Legacy roadmap #6 carried over |
+| 4.2 | **PyPI trusted publisher** (user-side): Project `bobine` · Workflow `release.yml` · Environment `pypi` | S | Blocks 4.1 final step |
+| 4.3 | **Merge `rust_dev` → `main`** once Phases 1–2 land; legacy/ stays frozen in-tree | S | Single-branch simplicity going forward |
+
+### Phase 5 — Quality (ongoing)
+
+| # | Item | Effort | Why |
+|---|---|---|---|
+| 5.1 | **Fake-pdf_oxide unit layer** — injectable page/doc trait so routing/splice/gallery logic is testable without fixture PDFs (mirrors legacy conftest.py fakes that got Python to 92%) | L | Function coverage 22 % → target ≥ 70 % on converter.rs |
+| 5.2 | **Corpus regression assertions** — golden-file tests over the arXiv fixtures (formula count per page, heading presence, table round-trip) | M | Catches silent quality drift in detection heuristics |
+| 5.3 | **GPU CI job** (optional) — onnxruntime-gpu runner, exercises CUDA provider path | L | Legacy roadmap #5 |
+
+### Deferred (by design — not gaps)
+
+| Item | Reason |
+|---|---|
+| FP16 model generation & benchmarking | `ModelPrecision::Fp16` plumbing ready; models themselves deferred |
+| KV-cache decoder (`decoder_with_past_model.onnx`) | optimum KV-state divergence unresolved; merged-decoder greedy is correct |
+| OKFgraph consumption shim (legacy roadmap #7) | Blocked by user constraint — OKFgraph untouched |
+| Formula accuracy alternative (legacy roadmap #9) | Done — TexTeller *is* the upgrade |
+| Vendored RapidLaTeXOCR | Removed by design; TexTeller replaces it |
+
+## 5. Acceptance Criteria (definition of done for v0.3.0)
+
+- [ ] All 45 current tests green; new pipeline-layer unit tests green
+- [ ] `bobine.ingest_document("paper.pdf", "out/")` works end-to-end from Python:
+      markdown on disk, `_assets/` store populated, links rewritten to `okf-asset://`
+- [ ] `bobine.convert_directory("docs/", "out/")` batches without leaking handles
+- [ ] Progress + cancellation callbacks functional (verified by test)
+- [ ] CI green on `rust_dev` (then `main`): fmt + clippy + test matrix with ORT set up
+- [ ] Release workflow builds wheels for 3 OS × py3.10–3.13; `bobine==0.3.0` publishes
+- [ ] Converter function coverage ≥ 70 % (fake layer)
+- [ ] Docs updated same-commit with any API change
+
+## 6. How to Run
+
+```bash
+# dev install (Rust toolchain + maturin required)
+maturin develop --release
+
+export ORT_DYLIB_PATH=<venv>/Lib/site-packages/onnxruntime/capi/onnxruntime.dll
+
+cargo test                     # 45 tests
+python -c "import bobine; print(bobine.__doc__)"
+
+# rebuild graph index after refactors
+codegraph init   # idempotent; auto-sync watches files
+```
