@@ -226,28 +226,77 @@ impl TexTeller {
         &mut self,
         encoder_hidden: &ndarray::ArrayD<f32>,
     ) -> Result<Vec<u32>> {
+        use ort::value::Tensor;
+
+        // KV-cache decode via decoder_model_merged.onnx:
+        //
+        // Step 0 (prefill): feed the whole prompt with empty past and
+        // `use_cache_branch=false`; the graph computes every position from
+        // scratch AND emits `present.*` caches.
+        //
+        // Steps 1..: feed only the newest token plus the previous `present.*`
+        // as `past_key_values.*` with `use_cache_branch=true` — O(1) per step
+        // instead of re-running the whole prefix.
+        const LAYERS: usize = 12;
+
         let mut token_ids: Vec<i64> = vec![self.bos_token_id as i64];
 
-        for _step in 0..MAX_TOKENS {
-            let shape = vec![1i64, token_ids.len() as i64];
-            let input_value = ort::value::Tensor::from_array((shape, token_ids.clone()))
-                .map_err(|e| BobineError::Ort(format!("build input_ids: {e}")))?;
+        // Encoder hidden states never change across steps — build once, borrow
+        // every step (the old code re-copied ~2.4 MB per step).
+        let enc_value = Tensor::from_array(encoder_hidden.clone())
+            .map_err(|e| BobineError::Ort(format!("build encoder states: {e}")))?;
+        let true_flag = Tensor::from_array(ndarray::arr1(&[true]))
+            .map_err(|e| BobineError::Ort(format!("build flag: {e}")))?;
+        let false_flag = Tensor::from_array(ndarray::arr1(&[false]))
+            .map_err(|e| BobineError::Ort(format!("build flag: {e}")))?;
 
-            let enc_shape: Vec<i64> = encoder_hidden.shape().iter().map(|&d| d as i64).collect();
-            let enc_data: Vec<f32> = encoder_hidden.iter().copied().collect();
-            let enc_value = ort::value::Tensor::from_array((enc_shape, enc_data))
-                .map_err(|e| BobineError::Ort(format!("build encoder: {e}")))?;
+        // KV state, keyed exactly like the graph's 48 past/present IOs.
+        //
+        // CAUTION (verified against the real model): the true branch emits a
+        // *broken* encoder cache (zero-batch tensors) — cross-attention K/V
+        // are therefore harvested from the false-branch prefill ONCE and
+        // pinned for the whole decode; only the decoder self-attention caches
+        // roll forward step by step.
+        let mut dec_cache: Vec<(String, ort::value::Value<ort::value::TensorValueType<f32>>)> =
+            Vec::with_capacity(LAYERS * 2);
+        let mut enc_cache: Vec<(String, ort::value::Value<ort::value::TensorValueType<f32>>)> =
+            Vec::with_capacity(LAYERS * 2);
+
+        for _step in 0..MAX_TOKENS {
+            // Feed only the new tokens on cached steps; everything on prefill.
+            let prefill = dec_cache.is_empty();
+            let (feed_ids, use_cache) = if prefill {
+                (token_ids.as_slice(), &false_flag)
+            } else {
+                (&token_ids[token_ids.len() - 1..], &true_flag)
+            };
+            let ids_value = Tensor::from_array(
+                ndarray::Array2::<i64>::from_shape_vec((1, feed_ids.len()), feed_ids.to_vec())
+                    .map_err(|e| BobineError::Ort(format!("build input_ids: {e}")))?,
+            )
+            .map_err(|e| BobineError::Ort(format!("build input_ids: {e}")))?;
+
+            let mut inputs: Vec<(String, ort::session::SessionInputValue)> =
+                Vec::with_capacity(3 + LAYERS * 4);
+            inputs.push(("input_ids".into(), ids_value.into()));
+            inputs.push(("encoder_hidden_states".into(), (&enc_value).into()));
+            inputs.push(("use_cache_branch".into(), (&*use_cache).into()));
+
+            for (name, val) in enc_cache.iter().chain(dec_cache.iter()) {
+                inputs.push((name.clone(), val.into()));
+            }
 
             let outputs = self
                 .decoder
-                .run(inputs!["input_ids" => input_value, "encoder_hidden_states" => enc_value])
+                .run(inputs)
                 .map_err(|e| BobineError::Ort(e.to_string()))?;
 
+            // Argmax over the last position.
             let logits = outputs["logits"]
                 .try_extract_array::<f32>()
                 .map_err(|e| BobineError::Ort(format!("decoder output: {e}")))?;
-
-            let last = logits.slice(s![0, logits.shape()[1] - 1, ..]);
+            let seq_len = logits.shape()[1];
+            let last = logits.slice(ndarray::s![0, seq_len - 1, ..]);
             let next_token = last
                 .iter()
                 .enumerate()
@@ -255,8 +304,40 @@ impl TexTeller {
                 .map(|(idx, _)| idx as i64)
                 .unwrap_or(self.eos_token_id as i64);
 
-            debug!(step = _step, token = next_token, "decoder");
             token_ids.push(next_token);
+
+            // Harvest present.* decoder caches for the next step. The
+            // encoder caches are NOT refreshed (see note above); they were
+            // captured once from the prefill below.
+            dec_cache.clear();
+            for i in 0..LAYERS {
+                for kv in ["key", "value"] {
+                    let name = format!("present.{i}.decoder.{kv}");
+                    let arr = outputs[name.as_str()]
+                        .try_extract_array::<f32>()
+                        .map_err(|e| BobineError::Ort(format!("{name}: {e}")))?
+                        .to_owned();
+                    let val = Tensor::from_array(arr)
+                        .map_err(|e| BobineError::Ort(format!("{name}: {e}")))?;
+                    dec_cache.push((format!("past_key_values.{i}.decoder.{kv}"), val));
+                }
+            }
+            if enc_cache.is_empty() && prefill {
+                // Prefill: capture the cross-attention K/V permanently.
+                for i in 0..LAYERS {
+                    for kv in ["key", "value"] {
+                        let name = format!("present.{i}.encoder.{kv}");
+                        let arr = outputs[name.as_str()]
+                            .try_extract_array::<f32>()
+                            .map_err(|e| BobineError::Ort(format!("{name}: {e}")))?
+                            .to_owned();
+                        let val = Tensor::from_array(arr)
+                            .map_err(|e| BobineError::Ort(format!("{name}: {e}")))?;
+                        enc_cache.push((format!("past_key_values.{i}.encoder.{kv}"), val));
+                    }
+                }
+            }
+
             if next_token == self.eos_token_id as i64 {
                 break;
             }

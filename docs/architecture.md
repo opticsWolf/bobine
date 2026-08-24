@@ -147,9 +147,12 @@ Invariants:
    - grayscale, fit within 448×448 (CatmullRom ≈ bicubic),
    - pad bottom-right, normalize `(x/255 − 0.9545467) / 0.15394445`,
    - encoder → `last_hidden_state` [1, 1024, 768],
-   - greedy autoregressive decode via `decoder_model_merged.onnx`
-     (full-sequence re-run each step — correct, side-steps optimum's
-     KV-cache bug; KV variant deferred),
+   - greedy autoregressive decode via `decoder_model_merged.onnx` with
+     KV-cache: false-branch prefill over `[bos]`, then one token per step
+     with `use_cache_branch=true`. Decoder caches roll forward; encoder
+     cross-attention caches are pinned from the prefill (the true branch
+     emits a broken zero-batch encoder cache). ~26 ms/step flat vs
+     70→244 ms full-recompute; identical greedy output,
    - BPE decode via `tokenizers` (`tokenizer.json`), bos `<s>`, eos `</s>`.
 4. **Wrap + splice**: display vs inline chosen by
    `height > 1.6 × line_height ∥ width > formula_inline_max_width_pts`;

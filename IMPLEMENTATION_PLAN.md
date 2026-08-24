@@ -108,7 +108,8 @@ Legend: **S** < 1 day · **M** 2–3 days · **L** 1+ week
 
 | Item | Reason |
 |---|---|
-| FP16 model generation & benchmarking | `ModelPrecision::Fp16` plumbing ready; models themselves deferred |
+| FP16 model generation & benchmarking | No compatible fp16 exists: upstream repo ships fp32 only; onnx-community fp16 decoder lacks the KV-cache interface; generic converters (onnxconverter-common, ORT OnnxModel) break on the merged graph's If-subgraph. `ModelPrecision::Fp16` stays as bring-your-own-files knob |
+| FP8 | Does not exist for TexTeller anywhere (both HF repos checked); ORT CPU EP has no fp8 kernels — not applicable |
 | KV-cache decoder (`decoder_with_past_model.onnx`) | optimum KV-state divergence unresolved; merged-decoder greedy is correct |
 | OKFgraph consumption shim (legacy roadmap #7) | Blocked by user constraint — OKFgraph untouched |
 | Formula accuracy alternative (legacy roadmap #9) | Done — TexTeller *is* the upgrade |
