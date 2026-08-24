@@ -118,6 +118,25 @@ impl HybridConverter {
     // ==================================================================
 
     fn route_page(&mut self, pdf: &mut Pdf, index: usize, work_dir: &Path) -> Result<String> {
+        let md = self.route_page_inner(pdf, index, work_dir)?;
+        // Code-block detection is a pure char scan — no ONNX needed.
+        if self.config.detect_code_blocks {
+            let mut md = md;
+            for block in wrap_code_blocks(pdf, index) {
+                md.push_str("\n\n");
+                md.push_str(&block);
+            }
+            return Ok(md);
+        }
+        Ok(md)
+    }
+
+    fn route_page_inner(
+        &mut self,
+        pdf: &mut Pdf,
+        index: usize,
+        work_dir: &Path,
+    ) -> Result<String> {
         if !self.config.use_onnx || self.config.routing_mode == RoutingMode::Never {
             return fast_page_markdown(pdf, index);
         }

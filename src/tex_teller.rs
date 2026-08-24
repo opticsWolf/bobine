@@ -43,6 +43,7 @@ impl TexTeller {
         repo: &str,
         cache_dir: &Path,
         precision: ModelPrecision,
+        providers: &[String],
     ) -> Result<Self> {
         let (owner, name) = repo
             .split_once('/')
@@ -78,7 +79,7 @@ impl TexTeller {
             .send()
             .map_err(|e| BobineError::Ort(format!("download tokenizer: {e}")))?;
 
-        Self::load_from_paths(&encoder_path, &decoder_path, &tokenizer_path)
+        Self::load_from_paths(&encoder_path, &decoder_path, &tokenizer_path, providers)
     }
 
     /// Load from specific ONNX + tokenizer file paths.
@@ -86,16 +87,15 @@ impl TexTeller {
         encoder_path: &Path,
         decoder_path: &Path,
         tokenizer_path: &Path,
+        providers: &[String],
     ) -> Result<Self> {
         info!("Loading TexTeller encoder from {}", encoder_path.display());
-        let encoder = Session::builder()
-            .map_err(|e| BobineError::Ort(e.to_string()))?
+        let encoder = crate::engine::apply_providers(Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?, providers)?
             .commit_from_file(encoder_path)
             .map_err(|e| BobineError::Ort(e.to_string()))?;
 
         info!("Loading TexTeller decoder from {}", decoder_path.display());
-        let decoder = Session::builder()
-            .map_err(|e| BobineError::Ort(e.to_string()))?
+        let decoder = crate::engine::apply_providers(Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?, providers)?
             .commit_from_file(decoder_path)
             .map_err(|e| BobineError::Ort(e.to_string()))?;
 

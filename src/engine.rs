@@ -14,6 +14,47 @@ use crate::rapid_layout::RapidLayout;
 use crate::rapid_ocr::RapidOcr;
 use crate::tex_teller::TexTeller;
 
+/// Apply configured execution providers to an ort session builder.
+/// Unknown names are warned and skipped; CPU is always available implicitly.
+pub(crate) fn apply_providers(
+    builder: ort::session::builder::SessionBuilder,
+    providers: &[String],
+) -> crate::error::Result<ort::session::builder::SessionBuilder> {
+    use ort::ep::*;
+    let mut eps: Vec<ExecutionProviderDispatch> = Vec::new();
+    for p in providers {
+        let lower = p.to_lowercase();
+        let dispatch = match lower.as_str() {
+            "cudaexecutionprovider" | "cuda" => Some(CUDA::default().build()),
+            "rocmexecutionprovider" | "rocm" => Some(ROCm::default().build()),
+            "directmlexecutionprovider" | "directml" => {
+                Some(DirectML::default().build())
+            }
+            "openvinoexecutionprovider" | "openvino" => {
+                Some(OpenVINO::default().build())
+            }
+            "coremlexecutionprovider" | "coreml" => {
+                Some(CoreML::default().build())
+            }
+            "cpuexecutionprovider" | "cpu" => None, // implicit default
+            other => {
+                tracing::warn!(provider = other, "unknown ORT provider, skipping");
+                None
+            }
+        };
+        if let Some(d) = dispatch {
+            eps.push(d);
+        }
+    }
+    if eps.is_empty() {
+        return Ok(builder);
+    }
+    builder.with_execution_providers(&eps).map_err(|e| {
+        tracing::warn!(error = %e, "provider registration failed; CPU-only session");
+        crate::error::BobineError::Ort(e.to_string())
+    })
+}
+
 /// Manages the ONNX model lifecycle with lazy loading.
 pub struct OnnxEngine {
     config: ConverterConfig,
@@ -98,6 +139,7 @@ impl OnnxEngine {
                 "OleehyO/TexTeller",
                 &self.cache_dir,
                 self.config.model_precision,
+                &self.config.ort_providers,
             )?;
             self.tex_teller = Some(tt);
         }
@@ -122,7 +164,7 @@ impl OnnxEngine {
                 .as_deref()
                 .unwrap_or_else(|| Path::new("layout.onnx"));
             info!("Loading RapidLayout from {}...", path.display());
-            let layout = RapidLayout::load(path)?;
+            let layout = RapidLayout::load(path, &self.config.ort_providers)?;
             self.layout = Some(layout);
         }
         Ok(())
@@ -145,7 +187,7 @@ impl OnnxEngine {
             let det = self.ocr_det_path.as_deref().unwrap_or_else(|| Path::new("det.onnx"));
             let rec = self.ocr_rec_path.as_deref().unwrap_or_else(|| Path::new("rec.onnx"));
             info!("Loading RapidOCR from {} and {}...", det.display(), rec.display());
-            let ocr = RapidOcr::load(det, rec)?;
+            let ocr = RapidOcr::load(det, rec, &self.config.ort_providers)?;
             self.ocr = Some(ocr);
         }
         Ok(())

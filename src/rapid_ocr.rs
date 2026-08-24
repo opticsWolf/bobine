@@ -43,18 +43,22 @@ pub struct RapidOcr {
 }
 
 impl RapidOcr {
-    pub fn load(det_model: &Path, rec_model: &Path) -> Result<Self> {
+    pub fn load(det_model: &Path, rec_model: &Path, providers: &[String]) -> Result<Self> {
         info!("Loading RapidOCR det from {}", det_model.display());
-        let det_session = Session::builder()
-            .map_err(|e| BobineError::Ort(e.to_string()))?
-            .commit_from_file(det_model)
-            .map_err(|e| BobineError::Ort(e.to_string()))?;
+        let det_session = crate::engine::apply_providers(
+            Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
+            providers,
+        )?
+        .commit_from_file(det_model)
+        .map_err(|e| BobineError::Ort(e.to_string()))?;
 
         info!("Loading RapidOCR rec from {}", rec_model.display());
-        let rec_session = Session::builder()
-            .map_err(|e| BobineError::Ort(e.to_string()))?
-            .commit_from_file(rec_model)
-            .map_err(|e| BobineError::Ort(e.to_string()))?;
+        let rec_session = crate::engine::apply_providers(
+            Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
+            providers,
+        )?
+        .commit_from_file(rec_model)
+        .map_err(|e| BobineError::Ort(e.to_string()))?;
 
         // Try to read character list from rec model metadata
         let characters: Vec<String> = rec_session

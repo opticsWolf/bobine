@@ -28,8 +28,10 @@ extension-module = ["dep:pyo3", "pyo3/extension-module"]
 pdf_oxide = { version = "0.3", features = ["rendering"] }
 office_oxide = "0.1"
 
-# ONNX Runtime (TexTeller / RapidLayout / RapidOCR)
-ort = { version = "2.0.0-rc.13", features = ["load-dynamic"] }
+# ONNX Runtime (TexTeller / RapidLayout / RapidOCR).
+# load-dynamic: the shared library is located at runtime (ORT_DYLIB_PATH).
+# Provider features below only gate registration code — nothing links.
+ort = { version = "2.0.0-rc.13", features = ["load-dynamic", "cuda", "rocm", "directml", "openvino", "coreml", "tensorrt"] }
 
 # HuggingFace tokenizers (BPE tokenizer for TexTeller RoBERTa decoder)
 tokenizers = "0.21"

@@ -40,12 +40,14 @@ pub struct RapidLayout {
 
 impl RapidLayout {
     /// Load the DocLayout-YOLO ONNX model from a file path.
-    pub fn load(model_path: &Path) -> Result<Self> {
+    pub fn load(model_path: &Path, providers: &[String]) -> Result<Self> {
         info!("Loading RapidLayout from {}", model_path.display());
-        let session = Session::builder()
-            .map_err(|e| BobineError::Ort(e.to_string()))?
-            .commit_from_file(model_path)
-            .map_err(|e| BobineError::Ort(e.to_string()))?;
+        let session = crate::engine::apply_providers(
+            Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
+            providers,
+        )?
+        .commit_from_file(model_path)
+        .map_err(|e| BobineError::Ort(e.to_string()))?;
 
         // Read label list from ONNX model metadata
         let labels = Self::read_labels(&session).unwrap_or_else(|| {
