@@ -104,7 +104,12 @@ src/
 ├── tex_teller.rs     TexTeller ONNX — ViT encoder → RoBERTa decoder
 ├── rapid_layout.rs   DocLayout-YOLO page layout analysis
 ├── rapid_ocr.rs      PaddleOCR det + rec (DBNet / CRNN, CTC decode)
+├── rapid_table.rs    SLANet-plus table-structure recognition (scans)
+├── pdf_source.rs     PdfSource trait — page text without a real PDF file
 ├── tables.rs         HTML table → GFM pipe-table converter
+├── assets.rs         okf-asset://\ staging store
+├── documents.rs      ConvertedDocument + frontmatter
+├── pipeline.rs       ingest_document / convert_directory / ProgressHooks
 ├── error.rs          BobineError
 └── py_bindings.rs    PyO3 surface (behind the extension-module feature)
 python/bobine/        Python shim + type stubs        (import bobine)
@@ -113,11 +118,20 @@ legacy/               frozen pure-Python bobine v0.2.0 (reference implementation
 
 ### Formula OCR (SURGICAL mode)
 
-Formulas are recognized by **TexTeller** (80M training pairs): encoder–decoder
-ONNX (~1.25 GB) auto-downloaded from HuggingFace `OleehyO/TexTeller` into the
-converter's cache dir on first use — roughly 5× faster per crop than the
-RapidLaTeXOCR backend used by the legacy Python package, with markedly better
-accuracy.
+Formulas are recognized by **TexTeller** (80M training pairs), decoded with
+KV-cache over a ViT encoder → RoBERTa decoder ONNX graph — roughly 5× faster
+per crop than the RapidLaTeXOCR backend used by the legacy Python package,
+with markedly better accuracy.
+
+By default bobine downloads the quantized export
+(~\~319 MB total, HF `Ji-Ha/TexTeller3-ONNX-dynamic`) into the converter's
+cache dir on first use; set `model_quantization=ModelQuantization::Fp32` to
+use full-precision weights (~1.25 GB, HF `OleehyO/TexTeller`) instead.
+Measured on a 10-formula corpus: both variants recognize 9/10 correctly with
+their single miss on different examples and byte-identical output elsewhere —
+pick by hardware, not quality. On NVIDIA GPUs, point `ORT_DYLIB_PATH` at a
+GPU onnxruntime build and set `ort_providers=["cuda", ...]`; requests degrade
+gracefully to CPU.
 
 Formula regions come from the PDF text layer (TeX math fonts such as
 `cmmi`/`cmsy`/`cmex`, plus unicode math codepoints), merged **line-aware** so
@@ -130,16 +144,16 @@ layout model for equation regions instead (off by default).
 
 `convert_pdf` returns one markdown string: inline `$…$` / display `$$…$$`
 LaTeX spliced in place, GFM pipe tables, fenced code blocks from monospaced
-font runs, embedded images written to `work_dir`. The `okf-asset://` staging
-store of the legacy package is being ported next (see
-[roadmap](IMPLEMENTATION_PLAN.md), Phase 2) — `ingest_document`,
-`convert_directory` and the document/lint layer follow in the same phase.
+font runs, embedded images written to `work_dir`, plus an `okf-asset://` staging store
+for unreferenced figures. For document-level workflows use
+`ingest_document` / `convert_directory`, which return versioned
+`ConvertedDocument`s with frontmatter and lint hooks.
 
 ## Testing
 
 ```bash
-cargo test                # 38 unit tests — no native backends needed
-ORT_DYLIB_PATH=... cargo test   # + 7 integration tests over the PDF corpus
+cargo test                # 81 unit tests — no native backends needed
+ORT_DYLIB_PATH=... cargo test   # + 9 integration tests over the PDF corpus
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```
 

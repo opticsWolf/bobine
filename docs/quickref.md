@@ -141,9 +141,9 @@ limit, contour integral), greedy decode, RTX 3090 / Ryzen 9 5950X:
 | Config | Correct | vs other | Median time |
 |---|---|---|---|
 | Int8 + CPU (default) | 9/10 | 1 miss (`\oint` misread) | ~0.5 s |
-| Fp32 + CUDA | 9/10 | 1 miss (nested `rac` hallucination) | ~0.4 s |
+| Fp32 + CUDA | 9/10 | 1 miss (nested `\frac` hallucination) | ~0.4 s |
 
-The two misses are on *different* examples; after whitespace/`	frac`
+The two misses are on *different* examples; after whitespace/`\tfrac`
 normalization the remaining outputs are byte-identical. Conclusion:
 **Int8 quantization costs no measurable accuracy**, and Fp32 is not
 "safer" - it makes its own independent mistakes. Choose by hardware,
