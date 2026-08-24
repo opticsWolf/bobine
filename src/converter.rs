@@ -5,17 +5,13 @@
 use std::path::{Path, PathBuf};
 
 use image::DynamicImage;
-use pdf_oxide::{
-    api::Pdf,
-    geometry::Rect,
-    layout::{RectFilterMode, TextChar},
-    rendering::RenderOptions,
-};
+use pdf_oxide::{api::Pdf, geometry::Rect};
 use tracing::{info, warn};
 
 use crate::config::{ConverterConfig, RoutingMode};
 use crate::engine::OnnxEngine;
 use crate::error::{BobineError, Result};
+use crate::pdf_source::{PdfSource, SourceChar};
 
 /// Progress / cancellation hooks for long-running conversions.
 ///
@@ -115,9 +111,19 @@ impl HybridConverter {
     ) -> Result<String> {
         let mut pdf = Pdf::open(path)
             .map_err(|e| BobineError::PdfOxide(format!("open: {e}")))?;
-        let n_pages = pdf
-            .page_count()
-            .map_err(|e| BobineError::PdfOxide(format!("page_count: {e}")))?;
+        self.convert_pdf_source(&mut pdf, work_dir, hooks)
+    }
+
+    /// Convert an already-opened document. Generic over any [`PdfSource`] —
+    /// pass a real `pdf_oxide::api::Pdf`, or a custom source for testing /
+    /// alternative PDF backends.
+    pub fn convert_pdf_source<S: PdfSource>(
+        &mut self,
+        pdf: &mut S,
+        work_dir: &Path,
+        hooks: &ProgressHooks<'_>,
+    ) -> Result<String> {
+        let n_pages = pdf.page_count()?;
 
         std::fs::create_dir_all(work_dir)?;
         let mut blocks: Vec<String> = Vec::with_capacity(n_pages);
@@ -129,11 +135,11 @@ impl HybridConverter {
             }
             (hooks.on_page)(i, n_pages);
             if self.config.extract_images {
-                if let Err(e) = self.extract_page_images(&mut pdf, i, work_dir) {
+                if let Err(e) = self.extract_page_images(pdf, i, work_dir) {
                     warn!("image extraction failed on page {}: {e}", i + 1);
                 }
             }
-            let page_md = self.route_page(&mut pdf, i, work_dir)?;
+            let page_md = self.route_page(pdf, i, work_dir)?;
             let final_md =
                 if self.config.extract_images && self.config.append_unreferenced_images {
                     self.maybe_append_gallery(page_md, work_dir, i)
@@ -150,7 +156,7 @@ impl HybridConverter {
     // Per-page routing
     // ==================================================================
 
-    fn route_page(&mut self, pdf: &mut Pdf, index: usize, work_dir: &Path) -> Result<String> {
+    fn route_page(&mut self, pdf: &mut dyn PdfSource, index: usize, work_dir: &Path) -> Result<String> {
         let md = self.route_page_inner(pdf, index, work_dir)?;
         // Code-block detection is a pure char scan — no ONNX needed.
         if self.config.detect_code_blocks {
@@ -166,7 +172,7 @@ impl HybridConverter {
 
     fn route_page_inner(
         &mut self,
-        pdf: &mut Pdf,
+        pdf: &mut dyn PdfSource,
         index: usize,
         work_dir: &Path,
     ) -> Result<String> {
@@ -211,7 +217,7 @@ impl HybridConverter {
 
     fn surgical_page_markdown(
         &mut self,
-        pdf: &mut Pdf,
+        pdf: &mut dyn PdfSource,
         index: usize,
         work_dir: &Path,
     ) -> Result<String> {
@@ -222,22 +228,20 @@ impl HybridConverter {
             // P2 fallback: use RapidLayout to find equations when text-layer
             // has no math fonts (Word/InDesign/OCR output).
             let dpi = self.config.formula_dpi;
-            if let Ok(rendered) = render_page(pdf, index, dpi) {
-                if let Ok(img) = image::load_from_memory(&rendered.data) {
-                    let scale = dpi as f32 / 72.0;
-                    if let Ok(regions) = self.engine.layout_regions(&img) {
-                        boxes = regions
-                            .into_iter()
-                            .filter(|r| {
-                                MATH_LAYOUT_LABELS.iter()
-                                    .any(|k| r.label.to_lowercase().contains(k))
-                            })
-                            .map(|r| Rect::new(
-                                r.x0 / scale, r.y0 / scale,
-                                (r.x1 - r.x0) / scale, (r.y1 - r.y0) / scale,
-                            ))
-                            .collect();
-                    }
+            if let Ok(img) = render_page_image(pdf, index, dpi) {
+                let scale = dpi as f32 / 72.0;
+                if let Ok(regions) = self.engine.layout_regions(&img) {
+                    boxes = regions
+                        .into_iter()
+                        .filter(|r| {
+                            MATH_LAYOUT_LABELS.iter()
+                                .any(|k| r.label.to_lowercase().contains(k))
+                        })
+                        .map(|r| Rect::new(
+                            r.x0 / scale, r.y0 / scale,
+                            (r.x1 - r.x0) / scale, (r.y1 - r.y0) / scale,
+                        ))
+                        .collect();
                 }
             }
         }
@@ -246,9 +250,7 @@ impl HybridConverter {
         }
 
         let dpi = self.config.formula_dpi;
-        let rendered = render_page(pdf, index, dpi)?;
-        let img = image::load_from_memory(&rendered.data)
-            .map_err(|e| BobineError::Ort(format!("decode render: {e}")))?;
+        let img = render_page_image(pdf, index, dpi)?;
         let media = page_media_box(pdf, index)?;
         let page_h = media[3];
 
@@ -294,15 +296,8 @@ impl HybridConverter {
     // Helpers
     // ==================================================================
 
-    fn extract_page_images(&self, pdf: &mut Pdf, index: usize, dir: &Path) -> Result<()> {
-        let images = pdf
-            .extract_images(index)
-            .map_err(|e| BobineError::PdfOxide(format!("extract_images: {e}")))?;
-        for (n, img) in images.iter().enumerate() {
-            let p = dir.join(format!("p{}_img{}.png", index, n));
-            img.save_as_png(&p)
-                .map_err(|e| BobineError::PdfOxide(format!("save image: {e}")))?;
-        }
+    fn extract_page_images(&self, pdf: &mut dyn PdfSource, index: usize, dir: &Path) -> Result<()> {
+        pdf.extract_image_files(index, dir, &format!("p{}_img", index))?;
         Ok(())
     }
 
@@ -340,31 +335,27 @@ impl HybridConverter {
 // Free functions
 // ======================================================================
 
-fn fast_page_markdown(pdf: &mut Pdf, index: usize) -> Result<String> {
-    match pdf.to_markdown(index) {
+fn fast_page_markdown(pdf: &mut dyn PdfSource, index: usize) -> Result<String> {
+    match pdf.page_markdown(index) {
         Ok(md) => Ok(md),
         Err(_) => {
             let r = Rect::new(0.0, 0.0, f32::MAX, f32::MAX);
-            Ok(pdf
-                .extract_text_in_rect(index, r, RectFilterMode::Intersects)
-                .unwrap_or_default())
+            Ok(pdf.text_in_rect(index, r).unwrap_or_default())
         }
     }
 }
 
-fn render_page(pdf: &mut Pdf, index: usize, dpi: u32) -> Result<pdf_oxide::rendering::RenderedImage> {
-    let opts = RenderOptions::with_dpi(dpi);
-    pdf.render_page(index, Some(&opts))
-        .map_err(|e| BobineError::PdfOxide(format!("render: {e}")))
+fn render_page_image(pdf: &mut dyn PdfSource, index: usize, dpi: u32) -> Result<DynamicImage> {
+    let png = pdf.render_png(index, dpi)?;
+    image::load_from_memory(&png).map_err(|e| BobineError::Ort(format!("decode render: {e}")))
 }
 
-fn page_media_box(pdf: &mut Pdf, index: usize) -> Result<[f32; 4]> {
-    pdf.page_media_box(index)
-        .map_err(|e| BobineError::PdfOxide(format!("media_box: {e}")))
+fn page_media_box(pdf: &mut dyn PdfSource, index: usize) -> Result<[f32; 4]> {
+    pdf.media_box(index)
 }
 
-fn estimate_line_height(pdf: &mut Pdf, index: usize, page_h: f32) -> f32 {
-    if let Ok(chars) = pdf.extract_chars(index) {
+fn estimate_line_height(pdf: &mut dyn PdfSource, index: usize, page_h: f32) -> f32 {
+    if let Ok(chars) = pdf.chars(index) {
         let mut heights: Vec<f32> =
             chars.iter().map(|c| c.bbox.height).filter(|&h| h > 0.0).collect();
         heights.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -389,8 +380,8 @@ fn is_math_font(font_name: &str) -> bool {
     MATH_FONT_KEYWORDS.iter().any(|k| lower.contains(k))
 }
 
-fn page_math_signal(pdf: &mut Pdf, index: usize) -> (usize, usize) {
-    let chars = match pdf.extract_chars(index) {
+fn page_math_signal(pdf: &mut dyn PdfSource, index: usize) -> (usize, usize) {
+    let chars = match pdf.chars(index) {
         Ok(c) => c,
         Err(_) => return (0, 0),
     };
@@ -402,19 +393,16 @@ fn page_math_signal(pdf: &mut Pdf, index: usize) -> (usize, usize) {
     (math, total)
 }
 
-fn is_scanned(pdf: &mut Pdf, index: usize, threshold: usize) -> bool {
-    let chars = match pdf.extract_chars(index) {
+fn is_scanned(pdf: &mut dyn PdfSource, index: usize, threshold: usize) -> bool {
+    let chars = match pdf.chars(index) {
         Ok(c) => c,
         Err(_) => return false,
     };
-    let has_images = pdf
-        .extract_images(index)
-        .map(|imgs| !imgs.is_empty())
-        .unwrap_or(false);
+    let has_images = pdf.image_count(index).unwrap_or(0) > 0;
     chars.len() < threshold && has_images
 }
 
-fn needs_onnx(pdf: &mut Pdf, index: usize, config: &ConverterConfig) -> bool {
+fn needs_onnx(pdf: &mut dyn PdfSource, index: usize, config: &ConverterConfig) -> bool {
     if !config.use_onnx || config.routing_mode == RoutingMode::Never {
         return false;
     }
@@ -432,13 +420,13 @@ fn needs_onnx(pdf: &mut Pdf, index: usize, config: &ConverterConfig) -> bool {
 // Formula box detection
 // ======================================================================
 
-fn math_boxes_from_chars(pdf: &mut Pdf, index: usize, min_chars: usize) -> Vec<Rect> {
-    let chars = match pdf.extract_chars(index) {
+fn math_boxes_from_chars(pdf: &mut dyn PdfSource, index: usize, min_chars: usize) -> Vec<Rect> {
+    let chars = match pdf.chars(index) {
         Ok(c) => c,
         Err(_) => return vec![],
     };
 
-    let items: Vec<&TextChar> = chars
+    let items: Vec<&SourceChar> = chars
         .iter()
         .filter(|c| is_math_font(&c.font_name) || is_math_unicode(c.char))
         .collect();
@@ -455,7 +443,7 @@ fn math_boxes_from_chars(pdf: &mut Pdf, index: usize, min_chars: usize) -> Vec<R
     let vgap_max = 1.5 * med_h;
 
     // Group by baseline
-    let mut sorted: Vec<&&TextChar> = items.iter().collect();
+    let mut sorted: Vec<&&SourceChar> = items.iter().collect();
     sorted.sort_by(|a, b| {
         (a.bbox.y + a.bbox.height / 2.0)
             .partial_cmp(&(b.bbox.y + b.bbox.height / 2.0))
@@ -573,9 +561,8 @@ fn crop_image(img: &DynamicImage, bbox: Rect, dpi: u32, pad_pts: f64) -> Option<
 // Region text
 // ======================================================================
 
-fn region_text(pdf: &mut Pdf, index: usize, bbox: Rect) -> String {
-    pdf.extract_text_in_rect(index, bbox, RectFilterMode::Intersects)
-        .unwrap_or_default()
+fn region_text(pdf: &mut dyn PdfSource, index: usize, bbox: Rect) -> String {
+    pdf.text_in_rect(index, bbox).unwrap_or_default()
 }
 
 // ======================================================================
@@ -633,16 +620,12 @@ fn splice(md: &str, replacements: &[(String, String)]) -> String {
 impl HybridConverter {
     fn full_structure_page_markdown(
         &mut self,
-        pdf: &mut Pdf,
+        pdf: &mut dyn PdfSource,
         index: usize,
         work_dir: &Path,
     ) -> Result<Option<String>> {
         let dpi = self.config.render_dpi;
-        let rendered = match render_page(pdf, index, dpi) {
-            Ok(r) => r,
-            Err(_) => return Ok(None),
-        };
-        let img = match image::load_from_memory(&rendered.data) {
+        let img = match render_page_image(pdf, index, dpi) {
             Ok(i) => i,
             Err(_) => return Ok(None),
         };
@@ -771,14 +754,14 @@ impl HybridConverter {
 // ======================================================================
 
 #[allow(dead_code)]
-fn wrap_code_blocks(pdf: &mut Pdf, index: usize) -> Vec<String> {
-    let chars = match pdf.extract_chars(index) {
+fn wrap_code_blocks(pdf: &mut dyn PdfSource, index: usize) -> Vec<String> {
+    let chars = match pdf.chars(index) {
         Ok(c) => c,
         Err(_) => return vec![],
     };
     let mut lines: std::collections::BTreeMap<i32, String> = std::collections::BTreeMap::new();
     for c in &chars {
-        if c.is_monospace || is_mono_font(&c.font_name) {
+        if is_mono_font(&c.font_name) {
             let y_key = (c.bbox.y * 10.0) as i32;
             lines.entry(y_key).or_default().push(c.char);
         }
@@ -801,6 +784,166 @@ fn is_mono_font(font_name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pdf_source::fake::{FakePage, FakePdf};
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("bobine_conv_{}", name));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    // ==================================================================
+    // PdfSource seam end-to-end routing (legacy test_converter_flow port)
+    // ==================================================================
+
+    #[test]
+    fn never_mode_joins_pages_and_fires_hooks() {
+        let mut pdf = FakePdf::new(vec![
+            FakePage::from_text("Page one text", "Helvetica"),
+            FakePage::from_text("Page two text", "Helvetica"),
+            FakePage::from_text("Page three text", "Helvetica"),
+        ]);
+        let mut conv = HybridConverter::new(
+            ConverterConfig { routing_mode: RoutingMode::Never, ..Default::default() },
+            &temp_dir("never"),
+        );
+        let pages = std::cell::RefCell::new(0usize);
+        let hooks = ProgressHooks {
+            should_continue: Box::new(|| true),
+            on_page: Box::new(|_, _| *pages.borrow_mut() += 1),
+        };
+        let out = conv
+            .convert_pdf_source(&mut pdf, Path::new("/tmp"), &hooks)
+            .unwrap();
+        assert_eq!(*pages.borrow(), 3);
+        assert_eq!(out.matches("\n\n---\n\n").count(), 2);
+        assert!(out.contains("Page one text"));
+        assert!(out.contains("Page three text"));
+    }
+
+    #[test]
+    fn cancellation_stops_mid_document() {
+        let mut pdf = FakePdf::new(vec![
+            FakePage::from_text("first page words", "Helvetica"),
+            FakePage::from_text("second page words", "Helvetica"),
+            FakePage::from_text("third page words", "Helvetica"),
+        ]);
+        let mut conv = HybridConverter::new(
+            ConverterConfig { routing_mode: RoutingMode::Never, ..Default::default() },
+            &temp_dir("cancel"),
+        );
+        let n = std::cell::Cell::new(0usize);
+        let hooks = ProgressHooks {
+            should_continue: Box::new(|| n.get() < 2), // stop before page 3
+            on_page: Box::new(|_, _| n.set(n.get() + 1)),
+        };
+        let out = conv
+            .convert_pdf_source(&mut pdf, Path::new("/tmp"), &hooks)
+            .unwrap();
+        assert_eq!(n.get(), 2);
+        assert!(out.contains("first page"));
+        assert!(out.contains("second page"));
+        assert!(!out.contains("third page"));
+    }
+
+    #[test]
+    fn gallery_appends_unreferenced_images() {
+        let img = image::DynamicImage::new_rgb8(4, 4);
+        let with_img =
+            FakePage::from_text("caption-less page", "Helvetica").with_image(img);
+        let dir = temp_dir("gallery");
+        let mut conv = HybridConverter::new(ConverterConfig::default(), &dir);
+        let mut pdf = FakePdf::new(vec![with_img]);
+        let out = conv
+            .convert_pdf_source(&mut pdf, &dir.join("work"), &ProgressHooks::default())
+            .unwrap();
+        assert!(out.contains("![](p0_img0.png)"), "{}", out);
+
+        // a page already referencing an image must NOT get the gallery
+        let md_page = FakePage::from_text("", "Helvetica")
+            .with_markdown("![inline](x.png)")
+            .with_image(image::DynamicImage::new_rgb8(4, 4));
+        let dir2 = temp_dir("gallery2");
+        let mut pdf2 = FakePdf::new(vec![md_page]);
+        let out2 = conv
+            .convert_pdf_source(&mut pdf2, &dir2.join("work"), &ProgressHooks::default())
+            .unwrap();
+        assert!(!out2.contains("p0_img"), "{}", out2);
+    }
+
+    #[test]
+    fn surgical_without_math_returns_fast_markdown() {
+        let mut pdf =
+            FakePdf::new(vec![FakePage::from_text("plain body prose only", "Helvetica")]);
+        let mut conv = HybridConverter::new(
+            ConverterConfig { routing_mode: RoutingMode::Surgical, ..Default::default() },
+            &temp_dir("surgical_plain"),
+        );
+        let out = conv
+            .convert_pdf_source(&mut pdf, Path::new("/tmp/nowhere"), &ProgressHooks::default())
+            .unwrap();
+        assert!(out.contains("plain body prose"), "{}", out);
+    }
+
+    #[test]
+    fn auto_mode_plain_ascii_page_stays_on_fast_path() {
+        let mut pdf = FakePdf::new(vec![FakePage::from_text(
+            "just regular sentences here",
+            "Helvetica",
+        )]);
+        let mut conv = HybridConverter::new(ConverterConfig::default(), &temp_dir("auto_plain"));
+        let out = conv
+            .convert_pdf_source(&mut pdf, Path::new("/tmp/nowhere"), &ProgressHooks::default())
+            .unwrap();
+        assert!(out.contains("regular sentences"), "{}", out);
+    }
+
+    #[test]
+    fn fast_path_falls_back_to_char_join_when_md_errors() {
+        let mut page = FakePage::from_text("fallback chars", "Helvetica");
+        page.md = None; // simulate to_markdown failure
+        let mut pdf = FakePdf::new(vec![page]);
+        let mut conv = HybridConverter::new(
+            ConverterConfig { routing_mode: RoutingMode::Never, ..Default::default() },
+            &temp_dir("fallback"),
+        );
+        let out = conv
+            .convert_pdf_source(&mut pdf, Path::new("/tmp"), &ProgressHooks::default())
+            .unwrap();
+        assert!(out.contains("fallback chars"), "{}", out);
+    }
+
+    // ==================================================================
+    // math_boxes_from_chars grouping (free fn, no ONNX)
+    // ==================================================================
+
+    #[test]
+    fn math_boxes_group_lines_and_respect_min_chars() {
+        // one line of 6 math-font chars at y=100
+        let mut chars: Vec<SourceChar> = (0..6)
+            .map(|i| SourceChar::new('x', 10.0 + i as f32 * 8.0, 100.0, 7.0, 11.0, "cmmi"))
+            .collect();
+        // a second math line just below -> merges vertically into the same box
+        for i in 0..4 {
+            chars.push(SourceChar::new('y', 12.0 + i as f32 * 8.0, 112.0, 7.0, 11.0, "msam"));
+        }
+        // body-font chars elsewhere are ignored entirely
+        for i in 0..20 {
+            chars.push(SourceChar::new('a', 10.0 + i as f32 * 8.0, 400.0, 7.0, 11.0, "Helvetica"));
+        }
+        let mut fake = FakePdf::default();
+        fake.pages[0].chars = chars;
+
+        let boxes = math_boxes_from_chars(&mut fake, 0, 5);
+        assert_eq!(boxes.len(), 1, "{boxes:?}");
+        let b = boxes[0];
+        assert!(b.y <= 100.0 && b.y + b.height >= 123.0, "{b:?}");
+
+        // raising min_chars above both line sizes filters everything
+        let none = math_boxes_from_chars(&mut fake, 0, 11);
+        assert!(none.is_empty());
+    }
 
     // ==================================================================
     // is_math_unicode / is_math_font
@@ -915,5 +1058,46 @@ mod tests {
         let result = splice(md, &repls);
         assert!(result.contains("base"));
         assert!(result.contains("extra"));
+    }
+
+    #[test]
+    fn needs_onnx_flags_scanned_pages_in_auto_mode() {
+        let scanned_page = FakePage::from_text("tiny", "Helvetica") // < threshold chars
+            .with_image(image::DynamicImage::new_rgb8(2, 2));
+        let mut scanned = FakePdf::new(vec![scanned_page]);
+        let cfg = ConverterConfig::default();
+        assert!(needs_onnx(&mut scanned, 0, &cfg));
+
+        let textual_page = FakePage::from_text("word word word word word word", "Helvetica");
+        let mut textual = FakePdf::new(vec![textual_page]);
+        assert!(!needs_onnx(&mut textual, 0, &cfg));
+
+        // Always overrides everything; Never suppresses everything
+        let cfg_always =
+            ConverterConfig { routing_mode: RoutingMode::Always, ..Default::default() };
+        assert!(needs_onnx(&mut textual, 0, &cfg_always));
+        let cfg_never =
+            ConverterConfig { routing_mode: RoutingMode::Never, ..Default::default() };
+        assert!(!needs_onnx(&mut scanned, 0, &cfg_never));
+    }
+
+    #[test]
+    fn wrap_code_blocks_emits_fence_for_mono_lines() {
+        let mut page = FakePage::from_text("", "Helvetica");
+        page.chars.clear();
+        for (i, ch) in "let x = 42;".chars().enumerate() {
+            page.chars
+                .push(SourceChar::new(ch, 50.0 + i as f32 * 8.0, 300.0, 7.0, 11.0, "Consolas"));
+        }
+        let mut fake = FakePdf::new(vec![page]);
+        let blocks = wrap_code_blocks(&mut fake, 0);
+        assert_eq!(blocks.len(), 1);
+        assert!(blocks[0].starts_with("```"), "{}", blocks[0]);
+        assert!(blocks[0].contains("let x = 42;"));
+
+        // proportional font means no block
+        let prop = FakePage::from_text("hello world", "Georgia");
+        let mut prop_doc = FakePdf::new(vec![prop]);
+        assert!(wrap_code_blocks(&mut prop_doc, 0).is_empty());
     }
 }

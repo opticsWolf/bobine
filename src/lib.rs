@@ -8,6 +8,7 @@ pub mod converter;
 pub mod documents;
 pub mod engine;
 pub mod error;
+pub mod pdf_source;
 pub mod pipeline;
 pub mod rapid_layout;
 pub mod rapid_ocr;
