@@ -108,7 +108,7 @@ Legend: **S** < 1 day · **M** 2–3 days · **L** 1+ week
 
 | Item | Reason |
 |---|---|
-| Quantized formula weights | ✅ Int8 done and **default** since v0.3.9 (`model_quantization=Int8`): onnx-community exports (316 MB), equal speed; minor typographic drift possible. FP16 remains unavailable (no compatible export; generic converters break on merged If-graph) |
+| Quantized formula weights | ✅ Int8 default since v0.3.9; **upgraded to KV-cached Ji-Ha/TexTeller3-ONNX-dynamic export in v0.4.2**: 319 MB total, ~10 ms/step vs ~26 ms fp32 -> formulas 0.44-0.64 s (2.4x). FP16 still unavailable (converters break on merged If-graph) |
 | FP8 | Does not exist for TexTeller anywhere (both HF repos checked); ORT CPU EP has no fp8 kernels — not applicable |
 | KV-cache decoder (`decoder_with_past_model.onnx`) | optimum KV-state divergence unresolved; merged-decoder greedy is correct |
 | OKFgraph consumption shim (legacy roadmap #7) | Blocked by user constraint — OKFgraph untouched |

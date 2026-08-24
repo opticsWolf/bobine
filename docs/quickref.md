@@ -75,7 +75,7 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `routing_mode` | `Auto` | See table above |
 | `formula_backend` | `TexTeller` | Formula recognizer |
 | `model_precision` | `Fp32` | Selects `*_fp16.onnx` when `Fp16` |
-| `model_quantization` | `Int8` | Formula weights: `Int8` (default) = 4x smaller RAM, same CPU speed; `Fp32` = exact + KV-cache decode |
+| `model_quantization` | `Int8` | Formula weights: `Int8` (default, Ji-Ha export) = 4x smaller RAM **and** ~2.4x faster than Fp32 on CPU (KV-cached); `Fp32` = reference output |
 | `render_dpi` | `300` | Renders for scanned-page OCR / layout |
 | `formula_dpi` | `200` | Renders for formula crops |
 | `detect_headings` | `True` | `#` headings from fast path |
@@ -136,6 +136,7 @@ bobine.ingest_document("paper.pdf", "out/",
 | RapidLayout (DocLayout-YOLO) | local path via `OnnxEngine::set_layout_model` | ~30 MB |
 | RapidOCR det + rec | local paths via `OnnxEngine::set_ocr_models` | ~15 MB |
 | RapidTable (SLANet-plus) | auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` into `<cache>/models/`, or `set_table_model` | ~7.8 MB |
+| TexTeller Int8 (default formula weights) | auto-download from HF `Ji-Ha/TexTeller3-ONNX-dynamic` into `<cache>/texteller_int8/` (KV-cache-capable merged graph) | ~319 MB |
 
 Missing layout/OCR models degrade to the fast path per page; a missing
 table model only disables scanned-table recognition.
