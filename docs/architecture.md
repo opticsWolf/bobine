@@ -38,6 +38,9 @@ src/
 ├── error.rs          BobineError enum
 ├── engine.rs         OnnxEngine — lazy model manager (TexTeller/RapidLayout/RapidOCR)
 ├── converter.rs      HybridConverter — core PDF/Office pipeline (~700 LOC)
+│                     (internals generic over PdfSource)
+├── pdf_source.rs     PdfSource trait: converter ↔ PDF backend seam;
+│                     pdf_oxide adapter + in-memory FakePdf test fakes
 ├── tex_teller.rs     TexTeller ONNX: preprocess → encoder → autoregressive decode
 ├── rapid_layout.rs   DocLayout-YOLO: LetterBox(1024) → NMS → LayoutRegion
 ├── rapid_ocr.rs      PaddleOCR DBNet + CRNN: DB unclip (min-area rect +
@@ -50,7 +53,7 @@ legacy/               frozen pure-Python bobine v0.2.0 (reference implementation
 ```
 
 Dependency direction: `py_bindings → converter → engine → (tex_teller |
-rapid_layout | rapid_ocr)`; `converter → tables`. No cycles.
+rapid_layout | rapid_ocr)`; `converter → tables`, `converter → pdf_source`. No cycles.
 
 ---
 
