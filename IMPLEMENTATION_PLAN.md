@@ -36,7 +36,7 @@ Python ML dependencies, distributed as `bobine` on PyPI.
 | DB unclip det postprocess + rotated crops | ✅ Phase 3 done |
 | ocr_lang config knob | ✅ Phase 3 done (charset fallback) |
 | CI on branch + release workflow | ❌ Phase 4 (CI triggers fixed during merge prep) |
-| Coverage fakes (converter logic without real PDFs) | ❌ Phase 5 |
+| Coverage fakes (converter logic without real PDFs) | ✅ Phase 5 done (`PdfSource` seam; converter fns 22% → 77%) |
 
 ## 3. Repository Layout
 
@@ -92,8 +92,8 @@ Legend: **S** < 1 day · **M** 2–3 days · **L** 1+ week
 
 | # | Item | Effort | Why |
 |---|---|---|---|
-| 5.1 | **Fake-pdf_oxide unit layer** — injectable page/doc trait so routing/splice/gallery logic is testable without fixture PDFs (mirrors legacy conftest.py fakes that got Python to 92%) | L | Function coverage 22 % → target ≥ 70 % on converter.rs |
-| 5.2 | **Corpus regression assertions** — golden-file tests over the arXiv fixtures (formula count per page, heading presence, table round-trip) | M | Catches silent quality drift in detection heuristics |
+| 5.1 | ~~Fake-pdf_oxide unit layer~~ ✅ **done** (`6bc74d8`) — `src/pdf_source.rs` trait + in-memory fakes; converter.rs 77 % fn / 71 % line coverage (cargo-llvm-cov) | L | Met the ≥70 % target |
+| 5.2 | ~~Corpus regression assertions~~ ✅ **done** — `tests/test_golden.rs`: deterministic fast-path conversion of all fixtures vs checked-in goldens (`tests/golden/`); regenerate with `BOBINE_UPDATE_GOLDENS=1` | M | Catches silent quality drift |
 | 5.3 | **GPU CI job** (optional) — onnxruntime-gpu runner, exercises CUDA provider path | L | Legacy roadmap #5 |
 
 ### Deferred (by design — not gaps)
@@ -123,7 +123,7 @@ Legend: **S** < 1 day · **M** 2–3 days · **L** 1+ week
 - [ ] Progress + cancellation callbacks functional (verified by test)
 - [ ] CI green on `rust_dev` (then `main`): fmt + clippy + test matrix with ORT set up
 - [ ] Release workflow builds wheels for 3 OS × py3.10–3.13; `bobine==0.3.0` publishes
-- [ ] Converter function coverage ≥ 70 % (fake layer)
+- [x] Converter function coverage ≥ 70 % (fake layer): 77 % functions / 71 % lines
 - [ ] Docs updated same-commit with any API change
 
 ## 6. How to Run
