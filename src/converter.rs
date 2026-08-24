@@ -682,6 +682,27 @@ impl HybridConverter {
                         text
                     };
                     blocks.push(t);
+                } else if let Some(crop) = crop_image(&img, bbox, dpi, 0.0) {
+                    // Scanned table: OCR the crop, then SLANet-plus structure.
+                    match self.engine.ocr_lines(&crop).map(|lines| {
+                        self.engine.recognize_table(&crop, &lines)
+                    }) {
+                        Ok(Ok(Some(html))) => {
+                            info!("page {}: table recognized ({}px crop)", index + 1, crop.width());
+                            let t = if self.config.convert_html_tables {
+                                crate::tables::html_tables_to_gfm(&html)
+                            } else {
+                                html
+                            };
+                            blocks.push(t);
+                        }
+                        Ok(Ok(None)) | Ok(Err(_)) => {
+                            blocks.push(format!("[table: {}]", region.label));
+                        }
+                        Err(_) => {
+                            blocks.push(format!("[table: {}]", region.label));
+                        }
+                    }
                 } else {
                     blocks.push(format!("[table: {}]", region.label));
                 }

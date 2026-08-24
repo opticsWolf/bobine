@@ -32,7 +32,9 @@ Python ML dependencies, distributed as `bobine` on PyPI.
 | Tests: 38 unit + 7 integration, 0 failures | ✅ done |
 | Pipeline layer (assets/documents/pipeline modules) | ✅ Phase 2 done (`82d36bd`) |
 | Markdown linting | ⚠️ partial — callback hook only, no native rules (see Known Gaps) |
-| Scanned-table recognition (RapidTable) | ❌ Phase 3 |
+| Scanned-table recognition (RapidTable) | ✅ Phase 3 done (slanet-plus, auto-download) |
+| DB unclip det postprocess + rotated crops | ✅ Phase 3 done |
+| ocr_lang config knob | ✅ Phase 3 done (charset fallback) |
 | CI on branch + release workflow | ❌ Phase 4 (CI triggers fixed during merge prep) |
 | Coverage fakes (converter logic without real PDFs) | ❌ Phase 5 |
 

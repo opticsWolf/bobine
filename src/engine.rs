@@ -68,6 +68,10 @@ pub struct OnnxEngine {
     /// RapidOCR text detection + recognition (loaded on demand).
     ocr: Option<RapidOcr>,
 
+    /// RapidTable table-structure recognition (loaded on demand, lazily —
+    /// only when a scanned table region is actually encountered).
+    table: Option<crate::rapid_table::RapidTable>,
+
     /// Cache directory for downloaded models.
     cache_dir: PathBuf,
 
@@ -79,6 +83,9 @@ pub struct OnnxEngine {
 
     /// Path to the RapidOCR recognition model.
     ocr_rec_path: Option<PathBuf>,
+
+    /// Path to a SLANet-plus table-structure model.
+    table_model_path: Option<PathBuf>,
 }
 
 impl OnnxEngine {
@@ -88,10 +95,12 @@ impl OnnxEngine {
             tex_teller: None,
             layout: None,
             ocr: None,
+            table: None,
             cache_dir: cache_dir.to_path_buf(),
             layout_model_path: None,
             ocr_det_path: None,
             ocr_rec_path: None,
+            table_model_path: None,
         }
     }
 
@@ -104,6 +113,12 @@ impl OnnxEngine {
     pub fn set_ocr_models(&mut self, det: &Path, rec: &Path) {
         self.ocr_det_path = Some(det.to_path_buf());
         self.ocr_rec_path = Some(rec.to_path_buf());
+    }
+
+    /// Set an explicit SLANet-plus table-structure ONNX model path.
+    /// When unset, the model auto-downloads from HuggingFace on first use.
+    pub fn set_table_model(&mut self, path: &Path) {
+        self.table_model_path = Some(path.to_path_buf());
     }
 
     /// Load models required by the current routing mode.
@@ -144,6 +159,34 @@ impl OnnxEngine {
             self.tex_teller = Some(tt);
         }
         Ok(())
+    }
+
+    // ------------------------------------------------------------------
+    // RapidTable (lazy: downloads on first table region)
+    // ------------------------------------------------------------------
+
+    fn ensure_table(&mut self) -> Result<()> {
+        if self.table.is_none() {
+            let path = match self.table_model_path.clone() {
+                Some(p) => p,
+                None => crate::rapid_table::download_slanet_plus(&self.cache_dir)?,
+            };
+            self.table = Some(crate::rapid_table::RapidTable::load(
+                &path,
+                &self.config.ort_providers,
+            )?);
+        }
+        Ok(())
+    }
+
+    /// Recognize a table crop using OCR lines; returns full HTML or None.
+    pub fn recognize_table(
+        &mut self,
+        img: &image::DynamicImage,
+        ocr_lines: &[crate::rapid_ocr::OcrLine],
+    ) -> Result<Option<String>> {
+        self.ensure_table()?;
+        self.table.as_mut().unwrap().recognize(img, ocr_lines)
     }
 
     pub fn recognize_formula(&mut self, image_path: &Path) -> Result<Option<String>> {

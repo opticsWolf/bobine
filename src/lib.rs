@@ -11,6 +11,7 @@ pub mod error;
 pub mod pipeline;
 pub mod rapid_layout;
 pub mod rapid_ocr;
+pub mod rapid_table;
 pub mod tables;
 pub mod tex_teller;
 
@@ -22,5 +23,6 @@ pub use converter::{HybridConverter, ProgressHooks};
 pub use engine::OnnxEngine;
 pub use error::BobineError;
 pub use pipeline::{ConvertedDocument, LintOutcome};
+pub use rapid_table::RapidTable;
 pub use tables::html_tables_to_gfm;
 pub use tex_teller::TexTeller;
