@@ -277,17 +277,14 @@ impl TexTeller {
             &gray, new_w, new_h, image::imageops::FilterType::CatmullRom,
         );
 
-        let mut padded = image::GrayImage::new(FIXED_IMG_SIZE, FIXED_IMG_SIZE);
-        for y in 0..new_h {
-            for x in 0..new_w {
-                padded.put_pixel(x, y, *resized.get_pixel(x, y));
-            }
-        }
-
+        // Match upstream TexTeller: Normalize runs BEFORE padding, so the
+        // pad fill must be 0.0 in NORMALIZED space (raw ~243, background
+        // white) — not raw black. Array4::zeros already provides that fill;
+        // we only write normalized pixels inside the resized content region.
         let mut arr = Array4::<f32>::zeros((1, 1, FIXED_IMG_SIZE as usize, FIXED_IMG_SIZE as usize));
-        for y in 0..FIXED_IMG_SIZE as usize {
-            for x in 0..FIXED_IMG_SIZE as usize {
-                let p = padded.get_pixel(x as u32, y as u32);
+        for y in 0..new_h as usize {
+            for x in 0..new_w as usize {
+                let p = resized.get_pixel(x as u32, y as u32);
                 let val = p.0[0] as f32 / 255.0;
                 arr[[0, 0, y, x]] = (val - IMAGE_MEAN) / IMAGE_STD;
             }
