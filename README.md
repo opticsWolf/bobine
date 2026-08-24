@@ -1,22 +1,22 @@
-# bobine_rs
+# bobine
 
 Fast PDF/Office/text → Markdown ingestion engine. Rust core with Python bindings.
 
 ## Install
 
 ```bash
-pip install bobine-rs
+pip install -e .
 ```
 
 ## Quick Start
 
 ```python
-import bobine_rs
+import bobine
 
-config = bobine_rs.ConverterConfig(
-    routing_mode=bobine_rs.RoutingMode.Surgical,
+config = bobine.ConverterConfig(
+    routing_mode=bobine.RoutingMode.Surgical,
 )
-converter = bobine_rs.HybridConverter(config, cache_dir="~/.cache/bobine")
+converter = bobine.HybridConverter(config, cache_dir="~/.cache/bobine")
 md = converter.convert_pdf("paper.pdf", work_dir="/tmp/out")
 print(md)
 ```

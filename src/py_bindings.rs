@@ -1,4 +1,4 @@
-// PyO3 bindings — exposes bobine_rs to Python as `bobine_rs`.
+// PyO3 bindings — exposes bobine to Python as `bobine._native`.
 
 use pyo3::prelude::*;
 
