@@ -49,6 +49,18 @@ impl TexTeller {
         precision: ModelPrecision,
         providers: &[String],
     ) -> Result<Self> {
+        Self::from_pretrained_split(repo, cache_dir, precision, None, providers)
+    }
+
+    /// Like [`from_pretrained`] but with a separate provider list for the
+    /// encoder session (see [`Self::load_with_provider_split`]).
+    pub fn from_pretrained_split(
+        repo: &str,
+        cache_dir: &Path,
+        precision: ModelPrecision,
+        encoder_providers: Option<&[String]>,
+        decoder_providers: &[String],
+    ) -> Result<Self> {
         let (owner, name) = repo
             .split_once('/')
             .ok_or_else(|| BobineError::Ort(format!("invalid repo: {repo}")))?;
@@ -84,13 +96,30 @@ impl TexTeller {
         let decoder_path = fetch(format!("decoder_model_merged{suffix}.onnx"), "decoder")?;
         let tokenizer_path = fetch("tokenizer.json".to_string(), "tokenizer")?;
 
-        Self::load_from_paths(&encoder_path, &decoder_path, &tokenizer_path, providers)
+        Self::load_with_provider_split(
+            &encoder_path,
+            &decoder_path,
+            &tokenizer_path,
+            true,
+            encoder_providers,
+            decoder_providers,
+        )
     }
 
     /// Load the int8 quantized TexTeller exports from the onnx-community
     /// repository (~316 MB total). The int8 decoder has no KV-cache inputs;
     /// decoding falls back to full-sequence recompute.
     pub fn from_pretrained_int8(cache_dir: &Path, providers: &[String]) -> Result<Self> {
+        Self::from_pretrained_int8_split(cache_dir, None, providers)
+    }
+
+    /// Like [`from_pretrained_int8`] but with a separate provider list for
+    /// the encoder session (see [`Self::load_with_provider_split`]).
+    pub fn from_pretrained_int8_split(
+        cache_dir: &Path,
+        encoder_providers: Option<&[String]>,
+        decoder_providers: &[String],
+    ) -> Result<Self> {
         const OWNER: &str = "onnx-community";
         const NAME: &str = "TexTeller-ONNX";
 
@@ -142,12 +171,13 @@ impl TexTeller {
                 .map_err(|e| BobineError::Ort(format!("download int8 tokenizer: {e}")))?
         };
 
-        Self::load_from_paths_with_cache_mode(
+        Self::load_with_provider_split(
             &encoder_path,
             &decoder_path,
             &tokenizer_path,
             false,
-            providers,
+            encoder_providers,
+            decoder_providers,
         )
     }
 
@@ -159,31 +189,37 @@ impl TexTeller {
         tokenizer_path: &Path,
         providers: &[String],
     ) -> Result<Self> {
-        Self::load_from_paths_with_cache_mode(
+        Self::load_with_provider_split(
             encoder_path,
             decoder_path,
             tokenizer_path,
             true,
+            None,
             providers,
         )
     }
 
-    /// Load from explicit paths, selecting whether the decoder carries
-    /// KV-cache inputs.
-    pub fn load_from_paths_with_cache_mode(
+    /// Load from explicit paths with per-session execution-provider
+    /// selection. `encoder_providers` overrides the providers used for the
+    /// ViT encoder session only (`None` = same as `decoder_providers`) —
+    /// useful to offload the compute-bound encoder to a GPU while keeping
+    /// the latency-bound autoregressive decoder on CPU.
+    pub fn load_with_provider_split(
         encoder_path: &Path,
         decoder_path: &Path,
         tokenizer_path: &Path,
         kv_cache: bool,
-        providers: &[String],
+        encoder_providers: Option<&[String]>,
+        decoder_providers: &[String],
     ) -> Result<Self> {
         info!("Loading TexTeller encoder from {}", encoder_path.display());
-        let encoder = crate::engine::apply_providers(Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?, providers)?
+        let enc_prov = encoder_providers.unwrap_or(decoder_providers);
+        let encoder = crate::engine::apply_providers(Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?, enc_prov)?
             .commit_from_file(encoder_path)
             .map_err(|e| BobineError::Ort(e.to_string()))?;
 
         info!("Loading TexTeller decoder from {}", decoder_path.display());
-        let decoder = crate::engine::apply_providers(Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?, providers)?
+        let decoder = crate::engine::apply_providers(Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?, decoder_providers)?
             .commit_from_file(decoder_path)
             .map_err(|e| BobineError::Ort(e.to_string()))?;
 

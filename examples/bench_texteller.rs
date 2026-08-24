@@ -36,21 +36,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|s| !s.is_empty())
         .collect();
 
+    let enc_providers: Vec<String> = std::env::var("BOBINE_ORT_ENCODER_PROVIDERS")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
     let t0 = Instant::now();
     let mut tt = if int8.is_some() {
-        bobine::TexTeller::from_pretrained_int8(&cache, &providers)?
+        bobine::TexTeller::from_pretrained_int8_split(
+            &cache,
+            if enc_providers.is_empty() { None } else { Some(&enc_providers) },
+            &providers,
+        )?
     } else {
-        bobine::TexTeller::from_pretrained(
+        bobine::TexTeller::from_pretrained_split(
             "OleehyO/TexTeller",
             &cache,
             bobine::ModelPrecision::Fp32,
+            if enc_providers.is_empty() { None } else { Some(&enc_providers) },
             &providers,
         )?
     };
     println!(
-        "model load ({}, providers={:?}): {:?}",
+        "model load ({}, dec={:?}, enc={:?}): {:?}",
         if int8.is_some() { "int8" } else { "fp32+kv" },
         providers,
+        if enc_providers.is_empty() { std::borrow::Cow::Borrowed("<inherit>") } else { std::borrow::Cow::Owned(format!("{enc_providers:?}")) },
         t0.elapsed()
     );
 

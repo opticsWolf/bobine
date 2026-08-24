@@ -73,6 +73,7 @@ impl PyConverterConfig {
         scanned_text_threshold = 50usize,
         ocr_lang = "en".to_string(),
         ort_providers = None,
+        encoder_ort_providers = None,
     ))]
     fn new(
         extract_images: bool,
@@ -95,6 +96,7 @@ impl PyConverterConfig {
         scanned_text_threshold: usize,
         ocr_lang: String,
         ort_providers: Option<Vec<String>>,
+        encoder_ort_providers: Option<Vec<String>>,
     ) -> Self {
         // Execution-provider selection is resolved at runtime against the
         // loaded ONNX Runtime library (ORT_DYLIB_PATH). Requesting an
@@ -115,6 +117,7 @@ impl PyConverterConfig {
                     PyModelQuantization::Int8 => ModelQuantization::Int8,
                 },
                 ort_providers,
+                encoder_ort_providers,
                 render_dpi, formula_dpi, detect_headings, convert_html_tables,
                 detect_code_blocks, min_formula_math_chars,
                 formula_inline_max_width_pts, formula_pad_pts,
@@ -141,6 +144,9 @@ impl PyConverterConfig {
     }
     #[getter] fn ort_providers(&self) -> Vec<String> {
         self.inner.ort_providers.clone()
+    }
+    #[getter] fn encoder_ort_providers(&self) -> Option<Vec<String>> {
+        self.inner.encoder_ort_providers.clone()
     }
     fn __repr__(&self) -> String {
         format!("ConverterConfig(routing={:?}, precision={:?})", self.inner.routing_mode, self.inner.model_precision)

@@ -78,7 +78,15 @@ pub struct ConverterConfig {
     pub model_quantization: ModelQuantization,
 
     /// ONNX Runtime execution providers e.g. ["CPUExecutionProvider"].
+    /// Requesting an accelerator the loaded ORT library lacks degrades
+    /// gracefully to CPU.
     pub ort_providers: Vec<String>,
+
+    /// Provider override for the TexTeller *encoder* session only.
+    /// `None` (default) = use `ort_providers`. Useful to offload the
+    /// compute-bound ViT encoder to a GPU while keeping the latency-bound
+    /// autoregressive decoder on CPU, e.g. `["cuda", "cpu"]`.
+    pub encoder_ort_providers: Option<Vec<String>>,
 
     /// DPI for scanned-page renders.
     pub render_dpi: u32,
@@ -132,6 +140,7 @@ impl Default for ConverterConfig {
             model_precision: ModelPrecision::Fp32,
             model_quantization: ModelQuantization::Int8,
             ort_providers: vec!["CPUExecutionProvider".into()],
+            encoder_ort_providers: None,
             render_dpi: 300,
             formula_dpi: 200,
             detect_headings: true,

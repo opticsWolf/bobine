@@ -58,7 +58,7 @@ pub(crate) fn apply_providers(
     // (CloneSessionOptions), so the original stays pristine for fallback.
     let attempt = builder.clone();
     match attempt.with_execution_providers(&eps) {
-        Ok(_) => Ok(builder),
+        Ok(configured) => Ok(configured),
         Err(e) => {
             tracing::warn!(
                 error = %e,
@@ -165,16 +165,20 @@ impl OnnxEngine {
                 "Loading TexTeller ({:?}) from OleehyO/TexTeller...",
                 self.config.model_precision
             );
+            let enc_providers = self.config.encoder_ort_providers.as_deref();
             let tt = match self.config.model_quantization {
-                crate::config::ModelQuantization::Fp32 => TexTeller::from_pretrained(
+                crate::config::ModelQuantization::Fp32 => TexTeller::from_pretrained_split(
                     "OleehyO/TexTeller",
                     &self.cache_dir,
                     self.config.model_precision,
+                    enc_providers,
                     &self.config.ort_providers,
                 )?,
-                crate::config::ModelQuantization::Int8 => {
-                    TexTeller::from_pretrained_int8(&self.cache_dir, &self.config.ort_providers)?
-                }
+                crate::config::ModelQuantization::Int8 => TexTeller::from_pretrained_int8_split(
+                    &self.cache_dir,
+                    enc_providers,
+                    &self.config.ort_providers,
+                )?,
             };
             self.tex_teller = Some(tt);
         }

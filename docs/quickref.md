@@ -110,8 +110,16 @@ bobine.ConverterConfig(model_quantization=bobine.ModelQuantization.Int8)
 # GPU (dynamic): request CUDA with CPU fallback - same build, no rebuild needed.
 # Point ORT_DYLIB_PATH at a GPU-enabled ONNX Runtime library (onnxruntime-gpu
 # >= 1.19 + matching CUDA/cuDNN); requests degrade gracefully to CPU otherwise.
+# On a GPU, prefer Fp32 weights + all-CUDA (~2.3x faster formulas measured on
+# an RTX 3090); Int8 is CPU-oriented (quantized ops run slower on the GPU EP).
 bobine.ConverterConfig(
+    model_quantization=bobine.ModelQuantization.Fp32,
     ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+
+# or offload only the ViT encoder to the GPU and keep the autoregressive
+# decoder on CPU (~20% faster than all-CPU):
+bobine.ConverterConfig(
+    encoder_ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
 
 # ingest with lint + progress + cancellation callbacks
 bobine.ingest_document("paper.pdf", "out/",
