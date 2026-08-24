@@ -1,0 +1,21 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "bobine-rs"
+version = "0.1.0"
+description = "PDF / Office / text → Markdown ingestion engine (Rust core with Python bindings)"
+license = "Apache-2.0 OR MIT"
+readme = "README.md"
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+# TexTeller formula OCR (ONNX models auto-downloaded from HuggingFace)
+formula = []
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+python-source = "python"
+module-name = "bobine_rs._native"
+bindings = "pyo3"
