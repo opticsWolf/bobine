@@ -659,6 +659,16 @@ impl HybridConverter {
                 (region.x1 - region.x0) / scale, (region.y1 - region.y0) / scale,
             );
             let lab = region.label.to_lowercase();
+            // Caption labels describe OTHER regions; they are plain text.
+            // ("formula" substring-matches "formula_caption", so this check
+            // must precede the math/table/figure routes.)
+            if lab.contains("caption") || lab.contains("footnote") {
+                let text = region_text(pdf, index, bbox);
+                if !text.trim().is_empty() {
+                    blocks.push(text);
+                    continue;
+                }
+            }
 
             if lab.contains("table") {
                 let text = region_text(pdf, index, bbox);
@@ -694,7 +704,32 @@ impl HybridConverter {
                     blocks.push(format!("[table: {}]", region.label));
                 }
             } else if MATH_LAYOUT_LABELS.iter().any(|k| lab.contains(k)) {
-                // Formula region → TexTeller
+                // Formula region → TexTeller, unless the box is implausibly
+                // large. At our 1024-side letterbox the layout model emits
+                // column/half-page "isolate_formula" boxes over ordinary
+                // text (upstream infers at native page resolution); a full
+                // autoregressive decode of body text costs tens of seconds
+                // and yields garbage LaTeX. Degrade to the text layer.
+                let page_h = img.height() as f64;
+                let page_px = img.width() as f64 * page_h;
+                // region coords are already render pixels - no extra scale
+                let w_px = (region.x1 - region.x0) as f64;
+                let h_px = (region.y1 - region.y0) as f64;
+                if h_px > 0.25 * page_h || w_px * h_px > 0.15 * page_px {
+                    tracing::warn!(
+                        "page {}: implausible {} region ({:.0}x{:.0}px, {:.0}% of page); treating as text",
+                        index + 1,
+                        region.label,
+                        w_px,
+                        h_px,
+                        100.0 * (w_px * h_px) / page_px
+                    );
+                    let text = region_text(pdf, index, bbox);
+                    if !text.trim().is_empty() {
+                        blocks.push(text);
+                    }
+                    continue;
+                }
                 if let Some(crop) = crop_image(&img, bbox, dpi, self.config.formula_pad_pts) {
                     if crop.width() >= 4 && crop.height() >= 4 {
                         let p = work_dir.join(format!("_reg_f_{}.png", blocks.len()));

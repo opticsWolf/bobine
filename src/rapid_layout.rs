@@ -238,18 +238,17 @@ impl RapidLayout {
             }
         }
 
-        // Convert to CHW float32 [0,1], BGR→RGB (YOLO convention)
+        // Convert to CHW float32 [0,1], RGB→BGR.
+        // Upstream inference.py runs cv2.cvtColor(RGB2BGR) before the net
+        // (OpenCV convention); feeding RGB measurably degrades boxes into
+        // page-sized false positives.
         let mut arr = Array4::<f32>::zeros((1, 3, INPUT_SIZE as usize, INPUT_SIZE as usize));
         for y in 0..INPUT_SIZE as usize {
             for x in 0..INPUT_SIZE as usize {
                 let p = padded.get_pixel(x as u32, y as u32);
-                // OpenCV reads as BGR; we already have RGB from image crate.
-                // YOLO models are often trained with BGR input, but DocLayout-YOLO
-                // preprocessing in rapid_layout does BGR→RGB via [..., ::-1].
-                // We'll use RGB (as-is from image crate) and normalize.
-                arr[[0, 0, y, x]] = p.0[0] as f32 / 255.0; // R
-                arr[[0, 1, y, x]] = p.0[1] as f32 / 255.0; // G  
-                arr[[0, 2, y, x]] = p.0[2] as f32 / 255.0; // B
+                arr[[0, 0, y, x]] = p.0[2] as f32 / 255.0; // B
+                arr[[0, 1, y, x]] = p.0[1] as f32 / 255.0; // G
+                arr[[0, 2, y, x]] = p.0[0] as f32 / 255.0; // R
             }
         }
 
