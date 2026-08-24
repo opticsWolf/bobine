@@ -132,6 +132,23 @@ bobine.ingest_document("paper.pdf", "out/",
                        should_continue=lambda: not cancelled())
 ```
 
+## Formula accuracy (measured)
+
+10-example corpus (matplotlib-rendered: Gaussian integral, Basel sum,
+heat equation, Euler's identity, vector norm, binomial, AM-GM product,
+limit, contour integral), greedy decode, RTX 3090 / Ryzen 9 5950X:
+
+| Config | Correct | vs other | Median time |
+|---|---|---|---|
+| Int8 + CPU (default) | 9/10 | 1 miss (`\oint` misread) | ~0.5 s |
+| Fp32 + CUDA | 9/10 | 1 miss (nested `rac` hallucination) | ~0.4 s |
+
+The two misses are on *different* examples; after whitespace/`	frac`
+normalization the remaining outputs are byte-identical. Conclusion:
+**Int8 quantization costs no measurable accuracy**, and Fp32 is not
+"safer" - it makes its own independent mistakes. Choose by hardware,
+not quality. Raw fixtures in `%TEMP%/bobine_test/bench10/`.
+
 ## Models
 
 | Model | Source | Size |
@@ -148,7 +165,7 @@ table model only disables scanned-table recognition.
 ## Testing
 
 ```bash
-cargo test                 # 45 tests (unit + integration)
+cargo test                 # 81 unit + 9 integration tests
 ORT_DYLIB_PATH=... cargo test   # needed for the PDF integration tests
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```

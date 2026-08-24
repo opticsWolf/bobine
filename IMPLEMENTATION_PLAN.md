@@ -29,7 +29,8 @@ Python ML dependencies, distributed as `bobine` on PyPI.
 | HTML → GFM tables | ✅ done |
 | PyO3 bindings (`import bobine`, maturin, .pyi stubs) | ✅ done |
 | Docs (architecture, quickref, this file) | ✅ done |
-| Tests: 38 unit + 7 integration, 0 failures | ✅ done |
+| Tests: 81 unit + 9 integration, 0 failures | ✅ done |
+| Accuracy parity Int8-CPU vs Fp32-CUDA (10-formula corpus) | ✅ measured — 9/10 correct each, misses on different examples, rest byte-identical after normalization |
 | Pipeline layer (assets/documents/pipeline modules) | ✅ Phase 2 done (`82d36bd`) |
 | Markdown linting | ⚠️ partial — callback hook only, no native rules (see Known Gaps) |
 | Scanned-table recognition (RapidTable) | ✅ Phase 3 done (slanet-plus, auto-download) |
