@@ -107,10 +107,15 @@ bobine.ConverterConfig(model_precision=bobine.ModelPrecision.Fp16)
 # compact-memory formula recognition (~316 MB instead of ~1.25 GB):
 bobine.ConverterConfig(model_quantization=bobine.ModelQuantization.Int8)
 
+# GPU (dynamic): request CUDA with CPU fallback - same build, no rebuild needed.
+# Point ORT_DYLIB_PATH at a GPU-enabled ONNX Runtime library (onnxruntime-gpu
+# >= 1.19 + matching CUDA/cuDNN); requests degrade gracefully to CPU otherwise.
+bobine.ConverterConfig(
+    ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+
 # ingest with lint + progress + cancellation callbacks
 bobine.ingest_document("paper.pdf", "out/",
-                       lint_callback=lambda md: (True, md.strip() + "
-"),
+                       lint_callback=lambda md: (True, md.strip() + "\n"),
                        on_page=lambda i, n: print(f"page {i+1}/{n}"),
                        should_continue=lambda: not cancelled())
 ```
@@ -142,7 +147,7 @@ Fixtures: `tests/fixtures/` — CC BY 4.0 arXiv papers (attribution in
 
 | Var | Effect |
 |---|---|
-| `ORT_DYLIB_PATH` | Explicit onnxruntime shared library for `ort` (≥1.19 required) |
+| `ORT_DYLIB_PATH` | Explicit onnxruntime shared library for `ort` (≥1.19 required). Point at a **GPU build** (onnxruntime-gpu + CUDA/cuDNN) to activate `ort_providers=["cuda", ...]`; CPU builds degrade gracefully |
 
 ## License
 

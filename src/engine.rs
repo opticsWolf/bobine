@@ -49,10 +49,25 @@ pub(crate) fn apply_providers(
     if eps.is_empty() {
         return Ok(builder);
     }
-    builder.with_execution_providers(&eps).map_err(|e| {
-        tracing::warn!(error = %e, "provider registration failed; CPU-only session");
-        crate::error::BobineError::Ort(e.to_string())
-    })
+
+    // Dynamic provider selection: with load-dynamic, whether an accelerator
+    // actually works depends solely on which ONNX Runtime shared library is
+    // loaded (ORT_DYLIB_PATH). A CPU-only library cannot register CUDA, so
+    // treat registration failure as "fall back to CPU" instead of failing
+    // the whole conversion. The clone deep-copies the session options
+    // (CloneSessionOptions), so the original stays pristine for fallback.
+    let attempt = builder.clone();
+    match attempt.with_execution_providers(&eps) {
+        Ok(_) => Ok(builder),
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                requested = ?providers,
+                "accelerator providers unavailable in this ONNX Runtime library; using CPU"
+            );
+            Ok(builder)
+        }
+    }
 }
 
 /// Manages the ONNX model lifecycle with lazy loading.
@@ -279,5 +294,45 @@ impl OnnxEngine {
         }
 
         Ok(md_pages.join("\n\n---\n\n"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Requesting CUDA on a machine/library without it must degrade to CPU
+    /// gracefully (Ok), never fail the session build.
+    #[test]
+    fn cuda_request_degrades_gracefully_without_gpu() {
+        // load-dynamic requires a resolvable ONNX Runtime library
+        if std::env::var("ORT_DYLIB_PATH").is_err() {
+            eprintln!("skipped: ORT_DYLIB_PATH not set");
+            return;
+        }
+        let builder = ort::session::Session::builder().unwrap();
+        let result = apply_providers(
+            builder,
+            &["CUDAExecutionProvider".to_string(), "cpu".to_string()],
+        );
+        assert!(
+            result.is_ok(),
+            "cuda request must fall back to cpu: {}",
+            result.as_ref().err().map(|e| e.to_string()).unwrap_or_default()
+        );
+    }
+
+    #[test]
+    fn unknown_providers_are_skipped_and_cpu_still_works() {
+        if std::env::var("ORT_DYLIB_PATH").is_err() {
+            eprintln!("skipped: ORT_DYLIB_PATH not set");
+            return;
+        }
+        let builder = ort::session::Session::builder().unwrap();
+        let result = apply_providers(
+            builder,
+            &["warp-drive".to_string(), "CPUExecutionProvider".to_string()],
+        );
+        assert!(result.is_ok());
     }
 }

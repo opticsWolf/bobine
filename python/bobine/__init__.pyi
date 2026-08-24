@@ -26,6 +26,11 @@ class ModelQuantization(Enum):
     Int8 = "int8"
 
 class ConverterConfig:
+    '''ort_providers: execution-provider priority, e.g.
+    ["CUDAExecutionProvider", "CPUExecutionProvider"]. Requires pointing
+    ORT_DYLIB_PATH at a GPU-enabled ONNX Runtime library; requests degrade
+    gracefully to CPU when the library lacks the provider.'''
+
     def __init__(
         self,
         extract_images: bool = True,
@@ -47,7 +52,11 @@ class ConverterConfig:
         math_char_threshold: int = 30,
         scanned_text_threshold: int = 50,
         ocr_lang: str = "en",
+        ort_providers: list[str] | None = None,
     ) -> None: ...
+    @property
+    def ort_providers(self) -> list[str]: ...
+
     @property
     def extract_images(self) -> bool: ...
     @property

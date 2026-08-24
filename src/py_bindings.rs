@@ -72,6 +72,7 @@ impl PyConverterConfig {
         math_char_threshold = 30usize,
         scanned_text_threshold = 50usize,
         ocr_lang = "en".to_string(),
+        ort_providers = None,
     ))]
     fn new(
         extract_images: bool,
@@ -93,7 +94,13 @@ impl PyConverterConfig {
         math_char_threshold: usize,
         scanned_text_threshold: usize,
         ocr_lang: String,
+        ort_providers: Option<Vec<String>>,
     ) -> Self {
+        // Execution-provider selection is resolved at runtime against the
+        // loaded ONNX Runtime library (ORT_DYLIB_PATH). Requesting an
+        // accelerator that the library lacks degrades gracefully to CPU.
+        let ort_providers = ort_providers.unwrap_or_else(|| vec!["cpu".to_string()]);
+
         PyConverterConfig {
             inner: ConverterConfig {
                 extract_images, append_unreferenced_images, use_onnx,
@@ -107,7 +114,7 @@ impl PyConverterConfig {
                     PyModelQuantization::Fp32 => ModelQuantization::Fp32,
                     PyModelQuantization::Int8 => ModelQuantization::Int8,
                 },
-                ort_providers: vec!["CPUExecutionProvider".into()],
+                ort_providers,
                 render_dpi, formula_dpi, detect_headings, convert_html_tables,
                 detect_code_blocks, min_formula_math_chars,
                 formula_inline_max_width_pts, formula_pad_pts,
@@ -131,6 +138,9 @@ impl PyConverterConfig {
             ModelQuantization::Fp32 => PyModelQuantization::Fp32,
             ModelQuantization::Int8 => PyModelQuantization::Int8,
         }
+    }
+    #[getter] fn ort_providers(&self) -> Vec<String> {
+        self.inner.ort_providers.clone()
     }
     fn __repr__(&self) -> String {
         format!("ConverterConfig(routing={:?}, precision={:?})", self.inner.routing_mode, self.inner.model_precision)
