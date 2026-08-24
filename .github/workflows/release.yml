@@ -1,0 +1,107 @@
+# Release workflow — dual publish on version tags.
+#
+# Tag `vX.Y.Z` on **main** (after merging rust_dev) triggers:
+#   1. crates.io  — pure-Rust crate `bobine` (default features, no pyo3)
+#   2. PyPI       — full Python package `bobine` via maturin (extension-module)
+#
+# Required secrets / configuration:
+#   - secrets.CARGO_REGISTRY_TOKEN   → crates.io API token
+#   - PyPI trusted publisher configured for this workflow + environment `pypi`
+#     (Project: bobine · Workflow: release.yml · Environment: pypi)
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ------------------------------------------------------------------
+  # 1. crates.io — Rust library (no Python bindings)
+  # ------------------------------------------------------------------
+  crates-io:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify default build is Python-free
+        run: cargo check --locked
+      - name: Run library unit tests (integration needs onnxruntime)
+        run: cargo test --locked --lib
+      - name: Publish to crates.io
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # ------------------------------------------------------------------
+  # 2. PyPI — Python wheel matrix via maturin (trusted publishing)
+  # ------------------------------------------------------------------
+  pypi:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - runner: ubuntu-22.04
+            target: x86_64
+          - runner: ubuntu-22.04
+            target: aarch64
+            manylinux: auto
+          - runner: windows-latest
+            target: x86_64
+          - runner: macos-14
+            target: aarch64
+    runs-on: ${{ matrix.platform.runner }}
+    permissions:
+      id-token: write # PyPI trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheel (sdist on linux x86_64 too)
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist --locked --features extension-module
+          manylinux: ${{ matrix.platform.manylinux || 'auto' }}
+          sccache: true
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
+          path: dist
+
+  # ------------------------------------------------------------------
+  # 3. sdist + PyPI upload (single verified copy — no merge-multiple)
+  # ------------------------------------------------------------------
+  pypi-publish:
+    needs: [pypi]
+    runs-on: ubuntu-22.04
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+
+      - name: Download wheels (per-artifact dirs — never merge-multiple,
+        # see legacy release postmortem: identical paths across artifacts
+        # corrupt the merged zip)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+
+      - name: Flatten wheel directories
+        run: find dist -name '*.whl' -exec mv {} dist/ \;
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

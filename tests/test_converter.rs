@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use bobine_rs::{ConverterConfig, HybridConverter, RoutingMode};
+use bobine::{ConverterConfig, HybridConverter, RoutingMode};
 
 fn temp_dir() -> PathBuf {
     std::env::temp_dir().join("bobine_test")

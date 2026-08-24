@@ -370,8 +370,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "bobine_rs"
-version = "0.1.0"
+name = "bobine"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "hf-hub",

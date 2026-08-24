@@ -7,15 +7,22 @@ name = "bobine"
 version = "0.3.0"
 description = "PDF / Office / text → Markdown ingestion engine (Rust core with Python bindings)"
 license = "Apache-2.0 OR MIT"
+authors = [{ name = "opticsWolf", email = "opticswolf@protonmail.com" }]
 readme = "README.md"
 requires-python = ">=3.9"
+
+[project.urls]
+Homepage = "https://github.com/opticsWolf/bobine"
+Repository = "https://github.com/opticsWolf/bobine"
+Documentation = "https://github.com/opticsWolf/bobine/docs"
+Issues = "https://github.com/opticsWolf/bobine/issues"
 
 [project.optional-dependencies]
 # TexTeller formula OCR (ONNX models auto-downloaded from HuggingFace)
 formula = []
 
 [tool.maturin]
-features = ["pyo3/extension-module"]
+features = ["extension-module"]
 python-source = "python"
 module-name = "bobine._native"
 bindings = "pyo3"

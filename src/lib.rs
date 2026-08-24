@@ -11,6 +11,7 @@ pub mod rapid_ocr;
 pub mod tables;
 pub mod tex_teller;
 
+#[cfg(feature = "extension-module")]
 mod py_bindings;
 
 pub use config::{ConverterConfig, FormulaBackend, ModelPrecision, RoutingMode};
