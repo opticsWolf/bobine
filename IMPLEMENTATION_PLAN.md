@@ -140,4 +140,4 @@ python -c "import bobine; print(bobine.__doc__)"
 
 # rebuild graph index after refactors
 codegraph init   # idempotent; auto-sync watches files
-```
+```| FP16 model generation & benchmarking | Decoder: no compatible export exists (onnx-community lacks KV-cache; converters break on merged If-graph). Encoder: `Ji-Ha/TexTeller3-ONNX-dynamic` ships `encoder_model_fp16.onnx` — MEASURED and REJECTED (CPU 353 ms vs int8 176 ms; CUDA 90 ms vs fp32 38 ms; cast overhead dominates, ORT CUDA EP has no fused fp16 kernels for this ViT). `ModelPrecision::Fp16` stays a bring-your-own-files knob |
