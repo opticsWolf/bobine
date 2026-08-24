@@ -17,6 +17,24 @@ use crate::config::{ConverterConfig, RoutingMode};
 use crate::engine::OnnxEngine;
 use crate::error::{BobineError, Result};
 
+/// Progress / cancellation hooks for long-running conversions.
+///
+/// - `should_continue`: return `false` to stop after the current page.
+/// - `on_page`: called as `(page_index, page_count)` (0-based index).
+pub struct ProgressHooks<'a> {
+    pub should_continue: Box<dyn Fn() -> bool + 'a>,
+    pub on_page: Box<dyn Fn(usize, usize) + 'a>,
+}
+
+impl Default for ProgressHooks<'_> {
+    fn default() -> Self {
+        Self {
+            should_continue: Box::new(|| true),
+            on_page: Box::new(|_, _| {}),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 
@@ -75,7 +93,7 @@ impl HybridConverter {
             .to_lowercase();
         match ext.as_str() {
             "pdf" => self.convert_pdf(input, work_dir),
-            "docx" | "xlsx" | "pptx" => self.convert_office(input),
+            "docx" | "xlsx" | "pptx" | "doc" | "xls" | "ppt" => self.convert_office(input),
             _ => std::fs::read_to_string(input).map_err(BobineError::Io),
         }
     }
@@ -85,6 +103,16 @@ impl HybridConverter {
     // ==================================================================
 
     pub fn convert_pdf(&mut self, path: &Path, work_dir: &Path) -> Result<String> {
+        self.convert_pdf_with(path, work_dir, &ProgressHooks::default())
+    }
+
+    /// Like [`convert_pdf`] but with progress/cancellation hooks.
+    pub fn convert_pdf_with(
+        &mut self,
+        path: &Path,
+        work_dir: &Path,
+        hooks: &ProgressHooks<'_>,
+    ) -> Result<String> {
         let mut pdf = Pdf::open(path)
             .map_err(|e| BobineError::PdfOxide(format!("open: {e}")))?;
         let n_pages = pdf
@@ -95,6 +123,11 @@ impl HybridConverter {
         let mut blocks: Vec<String> = Vec::with_capacity(n_pages);
 
         for i in 0..n_pages {
+            if !(hooks.should_continue)() {
+                info!("conversion cancelled at page {} of {}", i + 1, n_pages);
+                break;
+            }
+            (hooks.on_page)(i, n_pages);
             if self.config.extract_images {
                 if let Err(e) = self.extract_page_images(&mut pdf, i, work_dir) {
                     warn!("image extraction failed on page {}: {e}", i + 1);

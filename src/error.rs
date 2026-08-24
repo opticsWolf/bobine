@@ -22,6 +22,9 @@ pub enum BobineError {
 
     #[error("Unsupported file format: {0}")]
     UnsupportedFormat(String),
+
+    #[error("{0}")]
+    Other(String),
 }
 
 pub type Result<T> = std::result::Result<T, BobineError>;

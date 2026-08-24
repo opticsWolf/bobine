@@ -3,7 +3,7 @@
 use pyo3::prelude::*;
 
 use crate::config::{ConverterConfig, FormulaBackend, ModelPrecision, RoutingMode};
-use crate::converter::HybridConverter;
+use crate::converter::{HybridConverter, ProgressHooks};
 
 #[pyclass(eq, eq_int, name = "RoutingMode")]
 #[derive(Clone, PartialEq)]
@@ -151,6 +151,131 @@ fn convert_to_markdown(path: &str, config: &PyConverterConfig, work_dir: &str, c
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
 }
 
+// -- pipeline layer ---------------------------------------------------------
+
+use crate::pipeline::{self, ConvertedDocument, LintOutcome};
+
+#[pyclass(name = "ConvertedDocument")]
+pub struct PyConvertedDocument { inner: ConvertedDocument }
+
+#[pymethods]
+impl PyConvertedDocument {
+    #[getter] fn md_path(&self) -> String { self.inner.md_path.display().to_string() }
+    #[getter] fn md_text(&self) -> String { self.inner.md_text.clone() }
+    #[getter] fn image_dir(&self) -> String { self.inner.image_dir.display().to_string() }
+    #[getter] fn image_count(&self) -> usize { self.inner.image_count }
+    #[getter] fn page_count(&self) -> usize { self.inner.page_count }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ConvertedDocument(md_path={}, pages={}, images={})",
+            self.inner.md_path.display(), self.inner.page_count, self.inner.image_count
+        )
+    }
+}
+
+fn to_py_err(e: crate::error::BobineError) -> PyErr {
+    pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
+}
+
+/// Wrap optional Python callables into pipeline hooks.
+struct PyCallbacks<'py> {
+    lint: Option<Bound<'py, PyAny>>,
+    should_continue: Option<Bound<'py, PyAny>>,
+    on_page: Option<Bound<'py, PyAny>>,
+}
+
+#[pyfunction]
+#[pyo3(signature = (path, output_dir, config=None, lint_callback=None, should_continue=None, on_page=None))]
+fn ingest_document<'py>(
+    py: Python<'py>,
+    path: &str,
+    output_dir: &str,
+    config: Option<&PyConverterConfig>,
+    lint_callback: Option<Bound<'py, PyAny>>,
+    should_continue: Option<Bound<'py, PyAny>>,
+    on_page: Option<Bound<'py, PyAny>>,
+) -> PyResult<PyConvertedDocument> {
+    let cbs = PyCallbacks { lint: lint_callback, should_continue, on_page };
+
+    let lint_fn = cbs.lint.as_ref().map(|f| {
+        let f = f.clone();
+        move |md: &str| -> crate::error::Result<LintOutcome> {
+            let res = f.call1((md,)).map_err(|e| crate::error::BobineError::Other(e.to_string()))?;
+            if res.is_none() {
+                return Ok(LintOutcome::default());
+            }
+            let tuple: (bool, String) = res
+                .extract()
+                .map_err(|e| crate::error::BobineError::Other(format!("lint callback must return None or (fixed, content): {e}")))?;
+            Ok(LintOutcome { fixed: tuple.0, content: tuple.1 })
+        }
+    });
+
+    let hooks = ProgressHooks {
+        should_continue: match &cbs.should_continue {
+            Some(f) => {
+                let f = f.clone();
+                Box::new(move || f.call0().and_then(|b| b.extract::<bool>()).unwrap_or(true))
+            }
+            None => Box::new(|| true),
+        },
+        on_page: match &cbs.on_page {
+            Some(f) => {
+                let f = f.clone();
+                Box::new(move |i: usize, n: usize| {
+                    let _ = f.call1((i, n));
+                })
+            }
+            None => Box::new(|_, _| {}),
+        },
+    };
+
+    // LintFn is a reference type; keep the boxed closure alive in this scope.
+    let owned_lint = lint_fn;
+    let doc = pipeline::ingest_document(
+        std::path::Path::new(path),
+        std::path::Path::new(output_dir),
+        config.map(|c| &c.inner),
+        owned_lint.as_ref().map(|f| f as &crate::pipeline::LintFn),
+        &hooks,
+    )
+    .map_err(to_py_err)?;
+    Ok(PyConvertedDocument { inner: doc })
+}
+
+#[pyfunction]
+#[pyo3(signature = (source_dir, output_dir, config=None, lint_callback=None))]
+fn convert_directory(
+    py: Python<'_>,
+    source_dir: &str,
+    output_dir: &str,
+    config: Option<&PyConverterConfig>,
+    lint_callback: Option<Bound<'_, PyAny>>,
+) -> PyResult<Vec<PyConvertedDocument>> {
+    let lint_fn = lint_callback.map(|f| {
+        move |md: &str| -> crate::error::Result<LintOutcome> {
+            let res = f.call1((md,)).map_err(|e| crate::error::BobineError::Other(e.to_string()))?;
+            if res.is_none() {
+                return Ok(LintOutcome::default());
+            }
+            let tuple: (bool, String) = res
+                .extract()
+                .map_err(|e| crate::error::BobineError::Other(format!("lint callback must return None or (fixed, content): {e}")))?;
+            Ok(LintOutcome { fixed: tuple.0, content: tuple.1 })
+        }
+    });
+
+    let docs = pipeline::convert_directory(
+            std::path::Path::new(source_dir),
+            std::path::Path::new(output_dir),
+            config.map(|c| &c.inner),
+            lint_fn.as_ref().map(|f| f as &crate::pipeline::LintFn),
+        )
+    .map_err(to_py_err)?;
+    Ok(docs.into_iter().map(|inner| PyConvertedDocument { inner }).collect())
+}
+
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRoutingMode>()?;
@@ -159,5 +284,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyConverterConfig>()?;
     m.add_class::<PyHybridConverter>()?;
     m.add_function(wrap_pyfunction!(convert_to_markdown, m)?)?;
+    m.add_class::<PyConvertedDocument>()?;
+    m.add_function(wrap_pyfunction!(ingest_document, m)?)?;
+    m.add_function(wrap_pyfunction!(convert_directory, m)?)?;
     Ok(())
 }
