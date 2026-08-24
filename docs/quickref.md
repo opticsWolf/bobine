@@ -138,16 +138,19 @@ bobine.ingest_document("paper.pdf", "out/",
 heat equation, Euler's identity, vector norm, binomial, AM-GM product,
 limit, contour integral), greedy decode, RTX 3090 / Ryzen 9 5950X:
 
-| Config | Correct | vs other | Median time |
+| Config | Correct | Miss | Median time |
 |---|---|---|---|
-| Int8 + CPU (default) | 9/10 | 1 miss (`\oint` misread) | ~0.5 s |
-| Fp32 + CUDA | 9/10 | 1 miss (nested `\frac` hallucination) | ~0.4 s |
+| Int8 + CPU (default) | 10/10 | — | ~0.5 s |
+| Fp32 + CUDA | 9/10 | dropped one token (`n` → `1` in a sum limit) | ~0.4 s |
 
-The two misses are on *different* examples; after whitespace/`\tfrac`
-normalization the remaining outputs are byte-identical. Conclusion:
-**Int8 quantization costs no measurable accuracy**, and Fp32 is not
-"safer" - it makes its own independent mistakes. Choose by hardware,
-not quality. Raw fixtures in `%TEMP%/bobine_test/bench10/`.
+The table reflects v0.4.4, after fixing the pad fill to background-white
+in normalized space (upstream normalizes *before* padding; raw-black
+padding caused e.g. `\oint` misreads on both variants).
+Before the fix each variant missed a different example; afterwards the
+misses flipped again. Conclusion: misses are single-token greedy-decode
+noise near decision boundaries, not systematic quantization or precision
+damage. **Int8 costs no measurable accuracy** - choose by hardware.
+Raw fixtures in `%TEMP%/bobine_test/bench10/`.
 
 ## Models
 

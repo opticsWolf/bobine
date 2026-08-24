@@ -124,14 +124,17 @@ per crop than the RapidLaTeXOCR backend used by the legacy Python package,
 with markedly better accuracy.
 
 By default bobine downloads the quantized export
-(~\~319 MB total, HF `Ji-Ha/TexTeller3-ONNX-dynamic`) into the converter's
+(~319 MB total, HF `Ji-Ha/TexTeller3-ONNX-dynamic`) into the converter's
 cache dir on first use; set `model_quantization=ModelQuantization::Fp32` to
 use full-precision weights (~1.25 GB, HF `OleehyO/TexTeller`) instead.
-Measured on a 10-formula corpus: both variants recognize 9/10 correctly with
-their single miss on different examples and byte-identical output elsewhere —
-pick by hardware, not quality. On NVIDIA GPUs, point `ORT_DYLIB_PATH` at a
-GPU onnxruntime build and set `ort_providers=["cuda", ...]`; requests degrade
-gracefully to CPU.
+Preprocessing matches upstream TexTeller exactly, including its
+normalize-before-pad order (v0.4.4 fixed black pad fill, which measurably
+degraded recognition). Measured on a 10-formula corpus: Int8+CPU scores
+10/10, Fp32+CUDA 9/10 — occasional single-token decode noise flips between
+examples on either variant, so pick by hardware, not quality.
+
+On NVIDIA GPUs, point `ORT_DYLIB_PATH` at a GPU onnxruntime build and set
+`ort_providers=["cuda", ...]`; requests degrade gracefully to CPU.
 
 Formula regions come from the PDF text layer (TeX math fonts such as
 `cmmi`/`cmsy`/`cmex`, plus unicode math codepoints), merged **line-aware** so

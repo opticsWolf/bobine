@@ -34,7 +34,8 @@ flows, and the non-obvious invariants.
 ```
 src/
 ├── lib.rs            crate root, re-exports
-├── config.rs         ConverterConfig, RoutingMode, FormulaBackend, ModelPrecision
+├── config.rs         ConverterConfig, RoutingMode, FormulaBackend,
+│                     ModelPrecision, ModelQuantization
 ├── error.rs          BobineError enum
 ├── engine.rs         OnnxEngine — lazy model manager (TexTeller/RapidLayout/RapidOCR)
 ├── converter.rs      HybridConverter — core PDF/Office pipeline (~700 LOC)
@@ -47,13 +48,18 @@ src/
 │                     polygon offset), rotation-aware crops, CTC decode
 ├── rapid_table.rs    RapidTable (SLANet-plus): scanned-table → HTML
 ├── tables.rs         HTML <table> → GFM pipe-table converter
+├── assets.rs         okf-asset:// staging store for unreferenced images
+├── documents.rs      ConvertedDocument + YAML frontmatter (ingest layer)
+├── pipeline.rs       ingest_document / convert_directory / progress hooks
 └── py_bindings.rs    PyO3 surface: bobine._native
 python/bobine/        Python shim (__init__.py re-exports _native) + .pyi stubs
 legacy/               frozen pure-Python bobine v0.2.0 (reference implementation)
 ```
 
-Dependency direction: `py_bindings → converter → engine → (tex_teller |
-rapid_layout | rapid_ocr)`; `converter → tables`, `converter → pdf_source`. No cycles.
+Dependency direction: `pipeline → converter → engine → (tex_teller |
+rapid_layout | rapid_ocr | rapid_table)`; `converter → tables`,
+`converter → pdf_source`; `documents/assets` sit beside the pipeline layer.
+No cycles.
 
 ---
 
@@ -102,7 +108,7 @@ Three lazy slots, each loaded on first use and cached:
 
 | Slot | Model source | Loaded by |
 |---|---|---|
-| `tex_teller` | HuggingFace `OleehyO/TexTeller` via `hf-hub` (blocking) | `ensure_tex_teller()` |
+| `tex_teller` | HuggingFace via `hf-hub` (blocking): default **Int8** from `Ji-Ha/TexTeller3-ONNX-dynamic` into `<cache>/texteller_int8/`; `ModelQuantization::Fp32` uses `OleehyO/TexTeller` | `ensure_tex_teller()` |
 | `layout` | local ONNX path (`set_layout_model()`) | `ensure_layout()` |
 | `ocr` | local det/rec ONNX paths (`set_ocr_models()`) | `ensure_ocr()` |
 | `table` | local slanet-plus path (`set_table_model()`) or auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` (~7.8 MB) into `<cache>/models/` | `ensure_table()` (lazy — only on table regions) |
@@ -145,7 +151,10 @@ Invariants:
 3. **Recognition**: crop PNG → `TexTeller::recognize`:
    - trim white border (corner-sampled bg, threshold 15),
    - grayscale, fit within 448×448 (CatmullRom ≈ bicubic),
-   - pad bottom-right, normalize `(x/255 − 0.9545467) / 0.15394445`,
+   - normalize `(x/255 − 0.9545467) / 0.15394445`, then pad bottom-right —
+     the pad fill is 0.0 in *normalized* space (= raw ~243, background
+     white), matching upstream's Normalize-before-pad order; padding with
+     raw black measurably degrades recognition (e.g. `\oint` misreads),
    - encoder → `last_hidden_state` [1, 1024, 768],
    - greedy autoregressive decode via `decoder_model_merged.onnx` with
      KV-cache: false-branch prefill over `[bos]`, then one token per step
@@ -187,11 +196,17 @@ as Python.
 
 ## 8. Model acquisition
 
-- **TexTeller**: downloaded automatically on first use from
+- **TexTeller**: downloaded automatically on first use into the cache dir
+  given at converter construction. Default (`ModelQuantization::Int8`):
+  `https://huggingface.co/Ji-Ha/TexTeller3-ONNX-dynamic`
+  (`onnx/encoder_model.onnx` ~90 MB int8, `onnx/decoder_model_merged.onnx`
+  ~909 MB fp32-with-cache-interface, `tokenizer.json`) into
+  `<cache>/texteller_int8/`. Fp32 fallback:
   `https://huggingface.co/OleehyO/TexTeller` (`encoder_model.onnx` 344 MB,
-  `decoder_model_merged.onnx` 909 MB, `tokenizer.json`) into the cache dir
-  given at converter construction. `Fp16` variants would be picked up as
-  `*_fp16.onnx` if present (generation deferred).
+  `decoder_model_merged.onnx` 909 MB, `tokenizer.json`). Tokenizer and
+  weights are paired per variant in distinct cache namespaces. `Fp16`
+  variants would be picked up as `*_fp16.onnx` if present (generation
+  deferred).
 - **RapidLayout / RapidOCR**: loaded from explicit local paths set via
   `OnnxEngine::set_layout_model` / `set_ocr_models`. Label lists are read
   from the ONNX models' custom metadata key `character` (falling back to
@@ -209,16 +224,17 @@ Set `ORT_DYLIB_PATH` explicitly in CI/dev (e.g. the venv's
 
 Two layers (mirrors the Python three minus fakes):
 
-1. **Unit tests** (`#[cfg(test)]` modules, 38 tests): pure-Rust logic with
+1. **Unit tests** (`#[cfg(test)]` modules, 81 tests): pure-Rust logic with
    no native deps — tables parsing, splice/ws_replace, math-font/unicode
    classifiers, TexTeller preprocessing shape/range, white-border trim,
    LetterBox preprocessing, IoU/NMS, config serde round-trip.
-2. **Integration** (`tests/test_converter.rs`, 7 tests): real pdf_oxide
+2. **Integration** (`tests/`, 9 tests across three files): real pdf_oxide
    against the CC BY 4.0 arXiv corpus in `tests/fixtures/` (text paper +
-   scanned page), text-file conversion, config access, error paths.
+   scanned page), text-file conversion, config access, table conversion,
+   error paths.
    PDF tests need a modern onnxruntime (`ORT_DYLIB_PATH`).
 
-Run: `cargo test` (45 total). Python-side smoke: `maturin develop` then
+Run: `cargo test` (90 total). Python-side smoke: `maturin develop` then
 `import bobine`.
 
 ## 11. Licensing layout
