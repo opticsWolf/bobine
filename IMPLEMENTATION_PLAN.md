@@ -115,6 +115,7 @@ Legend: **S** < 1 day · **M** 2–3 days · **L** 1+ week
 | OKFgraph consumption shim (legacy roadmap #7) | Blocked by user constraint — OKFgraph untouched |
 | Formula accuracy alternative (legacy roadmap #9) | Done — TexTeller *is* the upgrade |
 | Vendored RapidLaTeXOCR | Removed by design; TexTeller replaces it |
+| Int8 quantization of the Rapid models (layout/det/rec/table) — **measured & rejected** (2025 session, uncommitted experiment): ORT static QDQ int8 (u8 act / s8 per-channel weights, MinMax calibration on synthetic pages) vs fp32 on Ryzen 5950X CPU. Layout 1024²: **484 -> 660 ms (37% slower)**, output cosine 0.79; det 960×736: 66 -> 87 ms, cosine 0.90; rec: 36 -> 41 ms and decoded strings strictly worse; table: 13 -> 27 ms (2x slower). Sizes: only layout shrinks meaningfully (75 -> 20 MB); the small models gain nothing (QDQ overhead ~ their weight footprint). QOperator format fails outright on all graphs (`AttributeError NoneType.data_type` in the quantizer - paddle2onnx node patterns unsupported). Contrast with TexTeller Int8 (2.4x win): that decoder is a bandwidth-bound transformer where big MatMuls dominate; these are compute-bound conv nets where MLAS fp32 kernels already win and QDQ dequant churn costs more than u8s8 saves. Do not retry without a different runtime (e.g. OpenVINO EP) or fused QOperator exports from upstream |
 
 ## 5. Acceptance Criteria (definition of done for v0.3.0)
 
