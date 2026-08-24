@@ -40,7 +40,9 @@ src/
 ├── converter.rs      HybridConverter — core PDF/Office pipeline (~700 LOC)
 ├── tex_teller.rs     TexTeller ONNX: preprocess → encoder → autoregressive decode
 ├── rapid_layout.rs   DocLayout-YOLO: LetterBox(1024) → NMS → LayoutRegion
-├── rapid_ocr.rs      PaddleOCR DBNet + CRNN: contour boxes → CTC decode
+├── rapid_ocr.rs      PaddleOCR DBNet + CRNN: DB unclip (min-area rect +
+│                     polygon offset), rotation-aware crops, CTC decode
+├── rapid_table.rs    RapidTable (SLANet-plus): scanned-table → HTML
 ├── tables.rs         HTML <table> → GFM pipe-table converter
 └── py_bindings.rs    PyO3 surface: bobine._native
 python/bobine/        Python shim (__init__.py re-exports _native) + .pyi stubs
@@ -100,6 +102,7 @@ Three lazy slots, each loaded on first use and cached:
 | `tex_teller` | HuggingFace `OleehyO/TexTeller` via `hf-hub` (blocking) | `ensure_tex_teller()` |
 | `layout` | local ONNX path (`set_layout_model()`) | `ensure_layout()` |
 | `ocr` | local det/rec ONNX paths (`set_ocr_models()`) | `ensure_ocr()` |
+| `table` | local slanet-plus path (`set_table_model()`) or auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` (~7.8 MB) into `<cache>/models/` | `ensure_table()` (lazy — only on table regions) |
 
 Degradation contract: model-load failures propagate as `BobineError`, but
 `full_structure_page_markdown` failures are caught by the router
@@ -165,8 +168,11 @@ as Python.
    sorted reading order (y then x).
 3. Per region:
    - `table` → **text layer first** (lossless on born-digital pages);
-     runs through `html_tables_to_gfm` when enabled. Scanned-table
-     recognition (RapidTable) not yet ported — emits `[table: <label>]`.
+     runs through `html_tables_to_gfm` when enabled. Scans fall back to
+     **RapidTable** (SLANet-plus): the crop is OCR'd, lines are matched
+     into decoded cell quads, and the resulting HTML also goes through
+     `html_tables_to_gfm`. Placeholder `[table: <label>]` remains as the
+     last resort.
    - math labels → crop → TexTeller → `$$…$$`.
    - `figure`/`image` → crop saved to work_dir, `![](name.png)` link.
    - else → text layer first, `ocr_lines` fallback; `title` → `## heading`.

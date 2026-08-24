@@ -85,6 +85,7 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `formula_layout_fallback` | `False` | Layout `equation` regions when text layer has no math fonts |
 | `math_char_threshold` | `30` | Auto: math chars before flagging a page |
 | `scanned_text_threshold` | `50` | Auto: max chars for scanned-page detection |
+| `ocr_lang` | `"en"` | CTC charset fallback when the rec model lacks metadata |
 
 ## Common tasks
 
@@ -101,6 +102,13 @@ bobine.ConverterConfig(routing_mode=bobine.RoutingMode.Surgical,
 
 # FP16 model variants (when present next to the fp32 files)
 bobine.ConverterConfig(model_precision=bobine.ModelPrecision.Fp16)
+
+# ingest with lint + progress + cancellation callbacks
+bobine.ingest_document("paper.pdf", "out/",
+                       lint_callback=lambda md: (True, md.strip() + "
+"),
+                       on_page=lambda i, n: print(f"page {i+1}/{n}"),
+                       should_continue=lambda: not cancelled())
 ```
 
 ## Models
@@ -110,9 +118,10 @@ bobine.ConverterConfig(model_precision=bobine.ModelPrecision.Fp16)
 | TexTeller encoder + decoder + tokenizer | auto-download from HuggingFace `OleehyO/TexTeller` into `cache_dir` | ~1.25 GB |
 | RapidLayout (DocLayout-YOLO) | local path via `OnnxEngine::set_layout_model` | ~30 MB |
 | RapidOCR det + rec | local paths via `OnnxEngine::set_ocr_models` | ~15 MB |
+| RapidTable (SLANet-plus) | auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` into `<cache>/models/`, or `set_table_model` | ~7.8 MB |
 
-Missing layout/OCR models degrade to the fast path per page — conversion
-never fails because of them.
+Missing layout/OCR models degrade to the fast path per page; a missing
+table model only disables scanned-table recognition.
 
 ## Testing
 
