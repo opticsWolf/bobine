@@ -77,7 +77,9 @@ pub fn slugify(stem: &str) -> String {
 /// Strip surrounding double quotes from a frontmatter value.
 fn unquote(v: &str) -> String {
     let t = v.trim();
-    if t.len() >= 2 && ((t.starts_with('"') && t.ends_with('"')) || (t.starts_with('\'') && t.ends_with('\''))) {
+    if t.len() >= 2
+        && ((t.starts_with('"') && t.ends_with('"')) || (t.starts_with('\'') && t.ends_with('\'')))
+    {
         t[1..t.len() - 1].to_string()
     } else {
         t.to_string()
@@ -151,8 +153,12 @@ pub fn load_markdown_document(
     extra_tags: &[String],
     default_type: &str,
 ) -> Result<Document> {
-    let content = std::fs::read_to_string(md_path)
-        .map_err(|e| BobineError::Io(std::io::Error::new(e.kind(), format!("{}: {e}", md_path.display()))))?;
+    let content = std::fs::read_to_string(md_path).map_err(|e| {
+        BobineError::Io(std::io::Error::new(
+            e.kind(),
+            format!("{}: {e}", md_path.display()),
+        ))
+    })?;
     let (body, fm) = parse_frontmatter(&content);
 
     let cid = concept_id
@@ -162,7 +168,13 @@ pub fn load_markdown_document(
         .map(|s| s.to_string())
         .or_else(|| fm.get("title").cloned())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| md_path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string());
+        .unwrap_or_else(|| {
+            md_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string()
+        });
     let desc = description
         .map(|s| s.to_string())
         .or_else(|| fm.get("description").cloned())
@@ -187,7 +199,12 @@ pub fn load_markdown_document(
 
     let metadata: BTreeMap<String, String> = fm
         .into_iter()
-        .filter(|(k, _)| !matches!(k.as_str(), "title" | "type" | "tags" | "description" | "summary"))
+        .filter(|(k, _)| {
+            !matches!(
+                k.as_str(),
+                "title" | "type" | "tags" | "description" | "summary"
+            )
+        })
         .collect();
 
     Ok(Document {
@@ -230,7 +247,12 @@ fn iso_now() -> String {
     let ts = timestamp_now();
     format!(
         "{}-{}-{}T{}:{}:{}+00:00",
-        &ts[0..4], &ts[4..6], &ts[6..8], &ts[8..10], &ts[10..12], &ts[12..14]
+        &ts[0..4],
+        &ts[4..6],
+        &ts[6..8],
+        &ts[8..10],
+        &ts[10..12],
+        &ts[12..14]
     )
 }
 
@@ -238,14 +260,27 @@ fn iso_now() -> String {
 ///
 /// Produces a [`Document`] of type `thought` whose body carries the
 /// frontmatter block (title, type, thought_type, topic, tags, created).
-pub fn wrap_thoughts(thoughts: &str, topic: &str, concept_id: Option<&str>, tags: &[String]) -> Document {
+pub fn wrap_thoughts(
+    thoughts: &str,
+    topic: &str,
+    concept_id: Option<&str>,
+    tags: &[String],
+) -> Document {
     let cid = concept_id.map(|s| s.to_string()).unwrap_or_else(|| {
         let ts = timestamp_now();
-        let mut slug: String = topic.to_lowercase().replace(' ', "_").chars().take(30).collect();
+        let mut slug: String = topic
+            .to_lowercase()
+            .replace(' ', "_")
+            .chars()
+            .take(30)
+            .collect();
         if slug.is_empty() {
             slug = "topic".into();
         }
-        format!("thought_{slug}_{ts}_{}", uuid::Uuid::new_v4().simple().to_string()[..6].to_string())
+        format!(
+            "thought_{slug}_{ts}_{}",
+            uuid::Uuid::new_v4().simple().to_string()[..6].to_string()
+        )
     });
 
     let header_lines = [
@@ -261,7 +296,11 @@ pub fn wrap_thoughts(thoughts: &str, topic: &str, concept_id: Option<&str>, tags
     ];
     let markdown = format!("{}\n{}", header_lines.join("\n"), thoughts);
 
-    let mut all_tags = vec!["thought".to_string(), "reasoning".to_string(), topic.to_string()];
+    let mut all_tags = vec![
+        "thought".to_string(),
+        "reasoning".to_string(),
+        topic.to_string(),
+    ];
     for t in tags {
         if !all_tags.contains(t) {
             all_tags.push(t.clone());
@@ -299,7 +338,10 @@ mod tests {
         let (body, fm) = parse_frontmatter(src);
         assert_eq!(fm.get("title").unwrap(), "Hello");
         assert_eq!(fm.get("type").unwrap(), "note");
-        assert_eq!(parse_list(fm.get("tags").unwrap()).unwrap(), vec!["alpha", "beta"]);
+        assert_eq!(
+            parse_list(fm.get("tags").unwrap()).unwrap(),
+            vec!["alpha", "beta"]
+        );
         assert!(body.starts_with("\nBody here."));
     }
 
@@ -365,10 +407,7 @@ mod tests {
         let doc = wrap_thoughts("thinking...", "Rust Ports", None, &[]);
         assert!(doc.id.starts_with("thought_rust_ports_"));
         assert_eq!(doc.doc_type, "thought");
-        assert_eq!(
-            doc.tags,
-            vec!["thought", "reasoning", "Rust Ports"]
-        );
+        assert_eq!(doc.tags, vec!["thought", "reasoning", "Rust Ports"]);
         assert_eq!(doc.title, "Thought: Rust Ports");
         assert!(doc.body.contains("thought_type: reasoning"));
         assert!(doc.body.contains("created: "));

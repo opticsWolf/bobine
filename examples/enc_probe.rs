@@ -15,7 +15,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    println!("providers: {providers:?} | model: {} | f16: {use_f16}", path.display());
+    println!(
+        "providers: {providers:?} | model: {} | f16: {use_f16}",
+        path.display()
+    );
 
     let mut builder = Session::builder()?;
     if !providers.is_empty() {
@@ -31,13 +34,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let t0 = Instant::now();
     if use_f16 {
         use half::f16;
-        let x = Tensor::from_array(
-            ndarray::Array4::<f16>::from_elem((1, 1, 448, 448), f16::from_f32(0.5)),
-        )?;
+        let x = Tensor::from_array(ndarray::Array4::<f16>::from_elem(
+            (1, 1, 448, 448),
+            f16::from_f32(0.5),
+        ))?;
         let _ = sess.run(inputs!["pixel_values" => x.clone()]);
         for _ in 0..10 {
             let out = sess.run(inputs!["pixel_values" => x.clone()])?;
-            let h = out["last_hidden_state"].try_extract_array::<f16>()?.to_owned();
+            let h = out["last_hidden_state"]
+                .try_extract_array::<f16>()?
+                .to_owned();
             // cast back like bobine must do before feeding the f32 decoder
             let _h: ndarray::ArrayD<f32> = h.mapv(|v| v.to_f32());
         }
@@ -46,7 +52,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = sess.run(inputs!["pixel_values" => x.clone()]);
         for _ in 0..10 {
             let out = sess.run(inputs!["pixel_values" => x.clone()])?;
-            let _h = out["last_hidden_state"].try_extract_array::<f32>()?.to_owned();
+            let _h = out["last_hidden_state"]
+                .try_extract_array::<f32>()?
+                .to_owned();
         }
     }
     println!("{:?}/run", t0.elapsed() / 10);

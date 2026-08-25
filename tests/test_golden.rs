@@ -74,9 +74,14 @@ fn corpus_matches_goldens() {
                 .lines()
                 .zip(normalized.lines())
                 .position(|(a, b)| a != b)
-                .map(|i| format!("line {}: expected {:?}, got {:?}", i + 1,
-                    expected.lines().nth(i).unwrap_or("<eof>"),
-                    normalized.lines().nth(i).unwrap_or("<eof>")))
+                .map(|i| {
+                    format!(
+                        "line {}: expected {:?}, got {:?}",
+                        i + 1,
+                        expected.lines().nth(i).unwrap_or("<eof>"),
+                        normalized.lines().nth(i).unwrap_or("<eof>")
+                    )
+                })
                 .unwrap_or_else(|| "length mismatch".to_string());
             mismatches.push(format!("{name}: {diff}"));
         }

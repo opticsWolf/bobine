@@ -2,12 +2,19 @@
 
 use pyo3::prelude::*;
 
-use crate::config::{ConverterConfig, FormulaBackend, ModelPrecision, ModelQuantization, RoutingMode};
+use crate::config::{
+    ConverterConfig, FormulaBackend, ModelPrecision, ModelQuantization, RoutingMode,
+};
 use crate::converter::{HybridConverter, ProgressHooks};
 
 #[pyclass(eq, eq_int, name = "RoutingMode")]
 #[derive(Clone, PartialEq)]
-pub enum PyRoutingMode { Never, Auto, Surgical, Always }
+pub enum PyRoutingMode {
+    Never,
+    Auto,
+    Surgical,
+    Always,
+}
 
 impl From<PyRoutingMode> for RoutingMode {
     fn from(py: PyRoutingMode) -> Self {
@@ -33,21 +40,31 @@ impl From<RoutingMode> for PyRoutingMode {
 
 #[pyclass(eq, eq_int, name = "FormulaBackend")]
 #[derive(Clone, PartialEq)]
-pub enum PyFormulaBackend { TexTeller }
+pub enum PyFormulaBackend {
+    TexTeller,
+}
 
 #[pyclass(eq, eq_int, name = "ModelPrecision")]
 #[derive(Clone, PartialEq)]
-pub enum PyModelPrecision { Fp32, Fp16 }
+pub enum PyModelPrecision {
+    Fp32,
+    Fp16,
+}
 
 /// Formula-recognizer weight selection: `Fp32` (accurate, default) or
 /// `Int8` (compact memory footprint, minor typographic drift possible).
 #[pyclass(eq, eq_int, name = "ModelQuantization")]
 #[derive(Clone, PartialEq)]
-pub enum PyModelQuantization { Fp32, Int8 }
+pub enum PyModelQuantization {
+    Fp32,
+    Int8,
+}
 
 #[pyclass(name = "ConverterConfig")]
 #[derive(Clone)]
-pub struct PyConverterConfig { inner: ConverterConfig }
+pub struct PyConverterConfig {
+    inner: ConverterConfig,
+}
 
 #[pymethods]
 impl PyConverterConfig {
@@ -105,7 +122,9 @@ impl PyConverterConfig {
 
         PyConverterConfig {
             inner: ConverterConfig {
-                extract_images, append_unreferenced_images, use_onnx,
+                extract_images,
+                append_unreferenced_images,
+                use_onnx,
                 routing_mode: routing_mode.into(),
                 formula_backend: FormulaBackend::TexTeller,
                 model_precision: match model_precision {
@@ -118,43 +137,68 @@ impl PyConverterConfig {
                 },
                 ort_providers,
                 encoder_ort_providers,
-                render_dpi, formula_dpi, detect_headings, convert_html_tables,
-                detect_code_blocks, min_formula_math_chars,
-                formula_inline_max_width_pts, formula_pad_pts,
-                formula_layout_fallback, math_char_threshold, scanned_text_threshold,
+                render_dpi,
+                formula_dpi,
+                detect_headings,
+                convert_html_tables,
+                detect_code_blocks,
+                min_formula_math_chars,
+                formula_inline_max_width_pts,
+                formula_pad_pts,
+                formula_layout_fallback,
+                math_char_threshold,
+                scanned_text_threshold,
                 ocr_lang,
             },
         }
     }
 
-    #[getter] fn extract_images(&self) -> bool { self.inner.extract_images }
-    #[getter] fn routing_mode(&self) -> PyRoutingMode { self.inner.routing_mode.into() }
-    #[getter] fn ocr_lang(&self) -> String { self.inner.ocr_lang.clone() }
-    #[getter] fn model_precision(&self) -> PyModelPrecision {
+    #[getter]
+    fn extract_images(&self) -> bool {
+        self.inner.extract_images
+    }
+    #[getter]
+    fn routing_mode(&self) -> PyRoutingMode {
+        self.inner.routing_mode.into()
+    }
+    #[getter]
+    fn ocr_lang(&self) -> String {
+        self.inner.ocr_lang.clone()
+    }
+    #[getter]
+    fn model_precision(&self) -> PyModelPrecision {
         match self.inner.model_precision {
             ModelPrecision::Fp32 => PyModelPrecision::Fp32,
             ModelPrecision::Fp16 => PyModelPrecision::Fp16,
         }
     }
-    #[getter] fn model_quantization(&self) -> PyModelQuantization {
+    #[getter]
+    fn model_quantization(&self) -> PyModelQuantization {
         match self.inner.model_quantization {
             ModelQuantization::Fp32 => PyModelQuantization::Fp32,
             ModelQuantization::Int8 => PyModelQuantization::Int8,
         }
     }
-    #[getter] fn ort_providers(&self) -> Vec<String> {
+    #[getter]
+    fn ort_providers(&self) -> Vec<String> {
         self.inner.ort_providers.clone()
     }
-    #[getter] fn encoder_ort_providers(&self) -> Option<Vec<String>> {
+    #[getter]
+    fn encoder_ort_providers(&self) -> Option<Vec<String>> {
         self.inner.encoder_ort_providers.clone()
     }
     fn __repr__(&self) -> String {
-        format!("ConverterConfig(routing={:?}, precision={:?})", self.inner.routing_mode, self.inner.model_precision)
+        format!(
+            "ConverterConfig(routing={:?}, precision={:?})",
+            self.inner.routing_mode, self.inner.model_precision
+        )
     }
 }
 
 #[pyclass(name = "HybridConverter")]
-pub struct PyHybridConverter { inner: HybridConverter }
+pub struct PyHybridConverter {
+    inner: HybridConverter,
+}
 
 #[pymethods]
 impl PyHybridConverter {
@@ -165,27 +209,39 @@ impl PyHybridConverter {
     }
 
     fn convert(&mut self, input: &str, work_dir: &str) -> PyResult<String> {
-        self.inner.convert(std::path::Path::new(input), std::path::Path::new(work_dir))
+        self.inner
+            .convert(std::path::Path::new(input), std::path::Path::new(work_dir))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     fn convert_pdf(&mut self, path: &str, work_dir: &str) -> PyResult<String> {
-        self.inner.convert_pdf(std::path::Path::new(path), std::path::Path::new(work_dir))
+        self.inner
+            .convert_pdf(std::path::Path::new(path), std::path::Path::new(work_dir))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     fn recognize_formula(&mut self, image_path: &str) -> PyResult<Option<String>> {
-        self.inner.engine.recognize_formula(std::path::Path::new(image_path))
+        self.inner
+            .engine
+            .recognize_formula(std::path::Path::new(image_path))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
-    fn __repr__(&self) -> String { "HybridConverter(...)".into() }
+    fn __repr__(&self) -> String {
+        "HybridConverter(...)".into()
+    }
 }
 
 #[pyfunction]
-fn convert_to_markdown(path: &str, config: &PyConverterConfig, work_dir: &str, cache_dir: &str) -> PyResult<String> {
+fn convert_to_markdown(
+    path: &str,
+    config: &PyConverterConfig,
+    work_dir: &str,
+    cache_dir: &str,
+) -> PyResult<String> {
     let mut converter = HybridConverter::new(config.inner.clone(), std::path::Path::new(cache_dir));
-    converter.convert(std::path::Path::new(path), std::path::Path::new(work_dir))
+    converter
+        .convert(std::path::Path::new(path), std::path::Path::new(work_dir))
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
 }
 
@@ -194,20 +250,39 @@ fn convert_to_markdown(path: &str, config: &PyConverterConfig, work_dir: &str, c
 use crate::pipeline::{self, ConvertedDocument, LintOutcome};
 
 #[pyclass(name = "ConvertedDocument")]
-pub struct PyConvertedDocument { inner: ConvertedDocument }
+pub struct PyConvertedDocument {
+    inner: ConvertedDocument,
+}
 
 #[pymethods]
 impl PyConvertedDocument {
-    #[getter] fn md_path(&self) -> String { self.inner.md_path.display().to_string() }
-    #[getter] fn md_text(&self) -> String { self.inner.md_text.clone() }
-    #[getter] fn image_dir(&self) -> String { self.inner.image_dir.display().to_string() }
-    #[getter] fn image_count(&self) -> usize { self.inner.image_count }
-    #[getter] fn page_count(&self) -> usize { self.inner.page_count }
+    #[getter]
+    fn md_path(&self) -> String {
+        self.inner.md_path.display().to_string()
+    }
+    #[getter]
+    fn md_text(&self) -> String {
+        self.inner.md_text.clone()
+    }
+    #[getter]
+    fn image_dir(&self) -> String {
+        self.inner.image_dir.display().to_string()
+    }
+    #[getter]
+    fn image_count(&self) -> usize {
+        self.inner.image_count
+    }
+    #[getter]
+    fn page_count(&self) -> usize {
+        self.inner.page_count
+    }
 
     fn __repr__(&self) -> String {
         format!(
             "ConvertedDocument(md_path={}, pages={}, images={})",
-            self.inner.md_path.display(), self.inner.page_count, self.inner.image_count
+            self.inner.md_path.display(),
+            self.inner.page_count,
+            self.inner.image_count
         )
     }
 }
@@ -234,19 +309,30 @@ fn ingest_document<'py>(
     should_continue: Option<Bound<'py, PyAny>>,
     on_page: Option<Bound<'py, PyAny>>,
 ) -> PyResult<PyConvertedDocument> {
-    let cbs = PyCallbacks { lint: lint_callback, should_continue, on_page };
+    let cbs = PyCallbacks {
+        lint: lint_callback,
+        should_continue,
+        on_page,
+    };
 
     let lint_fn = cbs.lint.as_ref().map(|f| {
         let f = f.clone();
         move |md: &str| -> crate::error::Result<LintOutcome> {
-            let res = f.call1((md,)).map_err(|e| crate::error::BobineError::Other(e.to_string()))?;
+            let res = f
+                .call1((md,))
+                .map_err(|e| crate::error::BobineError::Other(e.to_string()))?;
             if res.is_none() {
                 return Ok(LintOutcome::default());
             }
-            let tuple: (bool, String) = res
-                .extract()
-                .map_err(|e| crate::error::BobineError::Other(format!("lint callback must return None or (fixed, content): {e}")))?;
-            Ok(LintOutcome { fixed: tuple.0, content: tuple.1 })
+            let tuple: (bool, String) = res.extract().map_err(|e| {
+                crate::error::BobineError::Other(format!(
+                    "lint callback must return None or (fixed, content): {e}"
+                ))
+            })?;
+            Ok(LintOutcome {
+                fixed: tuple.0,
+                content: tuple.1,
+            })
         }
     });
 
@@ -293,25 +379,35 @@ fn convert_directory(
 ) -> PyResult<Vec<PyConvertedDocument>> {
     let lint_fn = lint_callback.map(|f| {
         move |md: &str| -> crate::error::Result<LintOutcome> {
-            let res = f.call1((md,)).map_err(|e| crate::error::BobineError::Other(e.to_string()))?;
+            let res = f
+                .call1((md,))
+                .map_err(|e| crate::error::BobineError::Other(e.to_string()))?;
             if res.is_none() {
                 return Ok(LintOutcome::default());
             }
-            let tuple: (bool, String) = res
-                .extract()
-                .map_err(|e| crate::error::BobineError::Other(format!("lint callback must return None or (fixed, content): {e}")))?;
-            Ok(LintOutcome { fixed: tuple.0, content: tuple.1 })
+            let tuple: (bool, String) = res.extract().map_err(|e| {
+                crate::error::BobineError::Other(format!(
+                    "lint callback must return None or (fixed, content): {e}"
+                ))
+            })?;
+            Ok(LintOutcome {
+                fixed: tuple.0,
+                content: tuple.1,
+            })
         }
     });
 
     let docs = pipeline::convert_directory(
-            std::path::Path::new(source_dir),
-            std::path::Path::new(output_dir),
-            config.map(|c| &c.inner),
-            lint_fn.as_ref().map(|f| f as &crate::pipeline::LintFn),
-        )
+        std::path::Path::new(source_dir),
+        std::path::Path::new(output_dir),
+        config.map(|c| &c.inner),
+        lint_fn.as_ref().map(|f| f as &crate::pipeline::LintFn),
+    )
     .map_err(to_py_err)?;
-    Ok(docs.into_iter().map(|inner| PyConvertedDocument { inner }).collect())
+    Ok(docs
+        .into_iter()
+        .map(|inner| PyConvertedDocument { inner })
+        .collect())
 }
 
 #[pymodule]

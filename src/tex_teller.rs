@@ -7,7 +7,7 @@ use std::path::Path;
 
 use hf_hub::HFClientSync;
 use image::DynamicImage;
-use ndarray::{s, Array4};
+use ndarray::{Array4, s};
 use ort::{inputs, session::Session};
 use tokenizers::Tokenizer;
 use tracing::{debug, info};
@@ -22,10 +22,15 @@ use crate::error::{BobineError, Result};
 const FIXED_IMG_SIZE: u32 = 448;
 const IMAGE_MEAN: f32 = 0.9545467;
 const IMAGE_STD: f32 = 0.15394445;
-const MAX_TOKENS: usize = 1024;
+pub(crate) const MAX_TOKENS: usize = 1024;
 
 /// Full TexTeller pipeline: encoder + decoder + tokenizer.
 pub struct TexTeller {
+    /// Decode step budget (defaults to MAX_TOKENS). Callers may lower it
+    /// for small crops: a crop physically cannot contain more math than
+    /// its area admits, and the cap stops runaway decodes on garbage
+    /// input (measured: a mis-cropped sliver once decoded 2606 chars).
+    pub max_tokens: usize,
     encoder: Session,
     decoder: Session,
     tokenizer: Tokenizer,
@@ -65,8 +70,8 @@ impl TexTeller {
             .split_once('/')
             .ok_or_else(|| BobineError::Ort(format!("invalid repo: {repo}")))?;
 
-        let client = HFClientSync::new()
-            .map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
+        let client =
+            HFClientSync::new().map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
         let repo_api = client.model(owner, name);
 
         let suffix = match precision {
@@ -201,16 +206,25 @@ impl TexTeller {
     ) -> Result<Self> {
         info!("Loading TexTeller encoder from {}", encoder_path.display());
         let enc_prov = encoder_providers.unwrap_or(decoder_providers);
-        let encoder = crate::engine::apply_providers(Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?, enc_prov)?
-            .commit_from_file(encoder_path)
-            .map_err(|e| BobineError::Ort(e.to_string()))?;
+        let encoder = crate::engine::apply_providers(
+            Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
+            enc_prov,
+        )?
+        .commit_from_file(encoder_path)
+        .map_err(|e| BobineError::Ort(e.to_string()))?;
 
         info!("Loading TexTeller decoder from {}", decoder_path.display());
-        let decoder = crate::engine::apply_providers(Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?, decoder_providers)?
-            .commit_from_file(decoder_path)
-            .map_err(|e| BobineError::Ort(e.to_string()))?;
+        let decoder = crate::engine::apply_providers(
+            Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
+            decoder_providers,
+        )?
+        .commit_from_file(decoder_path)
+        .map_err(|e| BobineError::Ort(e.to_string()))?;
 
-        info!("Loading TexTeller tokenizer from {}", tokenizer_path.display());
+        info!(
+            "Loading TexTeller tokenizer from {}",
+            tokenizer_path.display()
+        );
         let tokenizer = Tokenizer::from_file(tokenizer_path)
             .map_err(|e| BobineError::Tokenizer(format!("tokenizer load: {e}")))?;
 
@@ -228,13 +242,21 @@ impl TexTeller {
             "TexTeller ready"
         );
 
-        Ok(Self { encoder, decoder, tokenizer, bos_token_id, eos_token_id, kv_cache })
+        Ok(Self {
+            encoder,
+            decoder,
+            tokenizer,
+            bos_token_id,
+            eos_token_id,
+            kv_cache,
+            max_tokens: MAX_TOKENS,
+        })
     }
 
     /// Convert a single formula crop image → LaTeX string.
     pub fn recognize(&mut self, image_path: &Path) -> Result<String> {
-        let img = image::open(image_path)
-            .map_err(|e| BobineError::Ort(format!("image open: {e}")))?;
+        let img =
+            image::open(image_path).map_err(|e| BobineError::Ort(format!("image open: {e}")))?;
         let array = Self::preprocess(img)?;
 
         // Encode (scoped to release &mut self.encoder before decoder)
@@ -273,15 +295,15 @@ impl TexTeller {
         let new_w = (w as f32 * scale) as u32;
         let new_h = (h as f32 * scale) as u32;
 
-        let resized = image::imageops::resize(
-            &gray, new_w, new_h, image::imageops::FilterType::CatmullRom,
-        );
+        let resized =
+            image::imageops::resize(&gray, new_w, new_h, image::imageops::FilterType::CatmullRom);
 
         // Match upstream TexTeller: Normalize runs BEFORE padding, so the
         // pad fill must be 0.0 in NORMALIZED space (raw ~243, background
         // white) — not raw black. Array4::zeros already provides that fill;
         // we only write normalized pixels inside the resized content region.
-        let mut arr = Array4::<f32>::zeros((1, 1, FIXED_IMG_SIZE as usize, FIXED_IMG_SIZE as usize));
+        let mut arr =
+            Array4::<f32>::zeros((1, 1, FIXED_IMG_SIZE as usize, FIXED_IMG_SIZE as usize));
         for y in 0..new_h as usize {
             for x in 0..new_w as usize {
                 let p = resized.get_pixel(x as u32, y as u32);
@@ -329,10 +351,7 @@ impl TexTeller {
     // Autoregressive decode
     // ------------------------------------------------------------------
 
-    fn autoregressive_decode(
-        &mut self,
-        encoder_hidden: &ndarray::ArrayD<f32>,
-    ) -> Result<Vec<u32>> {
+    fn autoregressive_decode(&mut self, encoder_hidden: &ndarray::ArrayD<f32>) -> Result<Vec<u32>> {
         if self.kv_cache {
             self.autoregressive_decode_kv(encoder_hidden)
         } else {
@@ -352,13 +371,10 @@ impl TexTeller {
             .map_err(|e| BobineError::Ort(format!("build encoder states: {e}")))?;
         let mut token_ids: Vec<i64> = vec![self.bos_token_id as i64];
 
-        for _step in 0..MAX_TOKENS {
+        for _step in 0..self.max_tokens {
             let ids_value = Tensor::from_array(
-                ndarray::Array2::<i64>::from_shape_vec(
-                    (1, token_ids.len()),
-                    token_ids.clone(),
-                )
-                .map_err(|e| BobineError::Ort(format!("build input_ids: {e}")))?,
+                ndarray::Array2::<i64>::from_shape_vec((1, token_ids.len()), token_ids.clone())
+                    .map_err(|e| BobineError::Ort(format!("build input_ids: {e}")))?,
             )
             .map_err(|e| BobineError::Ort(format!("build input_ids: {e}")))?;
 
@@ -439,7 +455,7 @@ impl TexTeller {
         let mut enc_cache: Vec<(String, ort::value::Value<ort::value::TensorValueType<f32>>)> =
             Vec::with_capacity(LAYERS * 2);
 
-        for _step in 0..MAX_TOKENS {
+        for _step in 0..self.max_tokens {
             // Feed only the new tokens on cached steps; everything on prefill.
             let prefill = dec_cache.is_empty();
             let (feed_ids, use_cache) = if prefill {

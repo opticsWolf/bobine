@@ -37,9 +37,10 @@ fn render_table_image() -> (image::DynamicImage, [[f32; 2]; 4]) {
             }
         }
     }
-    (image::DynamicImage::ImageRgb8(img), [
-        [0.0, 0.0], [400.0, 0.0], [400.0, 200.0], [0.0, 200.0],
-    ])
+    (
+        image::DynamicImage::ImageRgb8(img),
+        [[0.0, 0.0], [400.0, 0.0], [400.0, 200.0], [0.0, 200.0]],
+    )
 }
 
 fn ocr_line(x0: f32, y0: f32, x1: f32, y1: f32, text: &str) -> OcrLine {
@@ -67,7 +68,9 @@ fn table_model_load_and_recognize() {
 
     // Access engine through converter is private; use OnnxEngine directly.
     let mut engine = bobine::OnnxEngine::new(&bobine::ConverterConfig::default(), &cache);
-    engine.set_table_model(&bobine::rapid_table::download_slanet_plus(&cache).expect("model download"));
+    engine.set_table_model(
+        &bobine::rapid_table::download_slanet_plus(&cache).expect("model download"),
+    );
     let html = engine
         .recognize_table(&img_lines.0, &lines)
         .expect("recognize_table failed")

@@ -27,15 +27,9 @@ pub(crate) fn apply_providers(
         let dispatch = match lower.as_str() {
             "cudaexecutionprovider" | "cuda" => Some(CUDA::default().build()),
             "rocmexecutionprovider" | "rocm" => Some(ROCm::default().build()),
-            "directmlexecutionprovider" | "directml" => {
-                Some(DirectML::default().build())
-            }
-            "openvinoexecutionprovider" | "openvino" => {
-                Some(OpenVINO::default().build())
-            }
-            "coremlexecutionprovider" | "coreml" => {
-                Some(CoreML::default().build())
-            }
+            "directmlexecutionprovider" | "directml" => Some(DirectML::default().build()),
+            "openvinoexecutionprovider" | "openvino" => Some(OpenVINO::default().build()),
+            "coremlexecutionprovider" | "coreml" => Some(CoreML::default().build()),
             "cpuexecutionprovider" | "cpu" => None, // implicit default
             other => {
                 tracing::warn!(provider = other, "unknown ORT provider, skipping");
@@ -93,9 +87,13 @@ fn hf_fetch(cache_dir: &Path, repo: (&str, &str), filename: &str) -> Result<Path
     if dest.exists() {
         return Ok(dest);
     }
-    info!(repo = repo.0, file = filename, "Downloading model from HuggingFace...");
-    let client = hf_hub::HFClientSync::new()
-        .map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
+    info!(
+        repo = repo.0,
+        file = filename,
+        "Downloading model from HuggingFace..."
+    );
+    let client =
+        hf_hub::HFClientSync::new().map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -212,12 +210,7 @@ impl OnnxEngine {
                     .config
                     .ort_providers
                     .iter()
-                    .chain(
-                        self.config
-                            .encoder_ort_providers
-                            .iter()
-                            .flatten(),
-                    )
+                    .chain(self.config.encoder_ort_providers.iter().flatten())
                     .any(|p| p.to_lowercase().contains("cuda"))
             {
                 tracing::warn!(
@@ -273,9 +266,22 @@ impl OnnxEngine {
     }
 
     pub fn recognize_formula(&mut self, image_path: &Path) -> Result<Option<String>> {
+        self.recognize_formula_capped(image_path, 1024)
+    }
+
+    /// Like [`recognize_formula`] but with an explicit decode-step budget.
+    /// Scale it with the crop's area - small crops cannot contain large
+    /// equations, and the cap turns pathological inputs into fast failures.
+    pub fn recognize_formula_capped(
+        &mut self,
+        image_path: &Path,
+        max_tokens: usize,
+    ) -> Result<Option<String>> {
         self.ensure_tex_teller()?;
         let tt = self.tex_teller.as_mut().unwrap();
+        tt.max_tokens = max_tokens.clamp(16, 1024);
         let latex = tt.recognize(image_path)?;
+        tt.max_tokens = crate::tex_teller::MAX_TOKENS;
         Ok(Some(latex))
     }
 
@@ -287,11 +293,7 @@ impl OnnxEngine {
         if self.layout.is_none() {
             let path = match self.layout_model_path.clone() {
                 Some(p) => p,
-                None => hf_fetch(
-                    &self.cache_dir,
-                    LAYOUT_REPO,
-                    LAYOUT_FILENAME,
-                )?,
+                None => hf_fetch(&self.cache_dir, LAYOUT_REPO, LAYOUT_FILENAME)?,
             };
             info!("Loading RapidLayout from {}...", path.display());
             let layout = RapidLayout::load(&path, &self.config.ort_providers)?;
@@ -322,8 +324,17 @@ impl OnnxEngine {
                 Some(p) => p,
                 None => hf_fetch(&self.cache_dir, OCR_REPO, OCR_REC_FILENAME)?,
             };
-            info!("Loading RapidOCR from {} and {}...", det.display(), rec.display());
-            let ocr = RapidOcr::load(&det, &rec, &self.config.ocr_lang, &self.config.ort_providers)?;
+            info!(
+                "Loading RapidOCR from {} and {}...",
+                det.display(),
+                rec.display()
+            );
+            let ocr = RapidOcr::load(
+                &det,
+                &rec,
+                &self.config.ocr_lang,
+                &self.config.ort_providers,
+            )?;
             self.ocr = Some(ocr);
         }
         Ok(())
@@ -391,7 +402,11 @@ mod tests {
         assert!(
             result.is_ok(),
             "cuda request must fall back to cpu: {}",
-            result.as_ref().err().map(|e| e.to_string()).unwrap_or_default()
+            result
+                .as_ref()
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_default()
         );
     }
 

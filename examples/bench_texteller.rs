@@ -47,7 +47,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tt = if int8.is_some() {
         bobine::TexTeller::from_pretrained_int8_split(
             &cache,
-            if enc_providers.is_empty() { None } else { Some(&enc_providers) },
+            if enc_providers.is_empty() {
+                None
+            } else {
+                Some(&enc_providers)
+            },
             &providers,
         )?
     } else {
@@ -55,7 +59,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "OleehyO/TexTeller",
             &cache,
             bobine::ModelPrecision::Fp32,
-            if enc_providers.is_empty() { None } else { Some(&enc_providers) },
+            if enc_providers.is_empty() {
+                None
+            } else {
+                Some(&enc_providers)
+            },
             &providers,
         )?
     };
@@ -63,7 +71,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "model load ({}, dec={:?}, enc={:?}): {:?}",
         if int8.is_some() { "int8" } else { "fp32+kv" },
         providers,
-        if enc_providers.is_empty() { std::borrow::Cow::Borrowed("<inherit>") } else { std::borrow::Cow::Owned(format!("{enc_providers:?}")) },
+        if enc_providers.is_empty() {
+            std::borrow::Cow::Borrowed("<inherit>")
+        } else {
+            std::borrow::Cow::Owned(format!("{enc_providers:?}"))
+        },
         t0.elapsed()
     );
 

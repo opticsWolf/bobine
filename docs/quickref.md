@@ -152,6 +152,20 @@ noise near decision boundaries, not systematic quantization or precision
 damage. **Int8 costs no measurable accuracy** - choose by hardware.
 Raw fixtures in `%TEMP%/bobine_test/bench10/`.
 
+## Formula routing in ALWAYS mode (v0.4.8)
+
+The layout model localizes formulas only at paragraph granularity on dense
+math pages (its `isolate_formula` boxes are half-page blobs at our 1024-side
+letterbox - measured, not an artifact: identical at native resolution). v0.4.7
+therefore degraded every born-digital formula region to plain text. v0.4.8
+refines instead: each layout formula region is intersected with text-layer
+math boxes, the surviving display-style crops get a budgeted TexTeller decode
+(area-proportional token cap + plausibility filter), and the LaTeX is spliced
+back into the region's text. On the 4-page fixture this makes ALWAYS output
+byte-identical to SURGICAL while keeping scans (no text layer) on the full
+crop path. Expected: ALWAYS ≈ SURGICAL cost + layout pass; no path may spend
+more than ~2 s per formula crop.
+
 ## Models
 
 | Model | Source | Size |

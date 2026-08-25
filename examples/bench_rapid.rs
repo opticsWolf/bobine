@@ -22,7 +22,9 @@ fn synthetic_page(w: u32, h: u32) -> image::DynamicImage {
     let mut y = 30u32;
     let mut seed = 12345u64;
     let mut rnd = move || {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (seed >> 33) as u32
     };
     while y < h - 60 {
@@ -82,7 +84,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for r in &warm {
                 println!(
                     "  region {:?} conf={:.2} x={:.0} y={:.0} w={:.0} h={:.0}",
-                    r.label, r.confidence, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0
+                    r.label,
+                    r.confidence,
+                    r.x0,
+                    r.y0,
+                    r.x1 - r.x0,
+                    r.y1 - r.y0
                 );
             }
         }
@@ -92,7 +99,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for _ in 0..reps {
             let _ = m.detect(&page)?;
         }
-        println!("layout 1024x1024: {:?}/run ({} regions)", t0.elapsed() / reps, regions);
+        println!(
+            "layout 1024x1024: {:?}/run ({} regions)",
+            t0.elapsed() / reps,
+            regions
+        );
     } else {
         println!("layout model missing, skipped");
     }

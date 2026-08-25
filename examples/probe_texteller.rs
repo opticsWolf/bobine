@@ -15,7 +15,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("loaded in {:?}", t0.elapsed());
     drop(tt);
 
-    for f in ["encoder_model.onnx", "decoder_model_merged.onnx", "tokenizer.json"] {
+    for f in [
+        "encoder_model.onnx",
+        "decoder_model_merged.onnx",
+        "tokenizer.json",
+    ] {
         assert!(cache.join(f).exists(), "{f} missing");
         println!("cached ok: {}", cache.join(f).display());
     }

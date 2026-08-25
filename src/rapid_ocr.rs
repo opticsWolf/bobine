@@ -23,7 +23,11 @@ fn dist(a: [f32; 2], b: [f32; 2]) -> f32 {
 
 /// Andrew's monotone chain convex hull.
 fn convex_hull(mut pts: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
-    pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap()));
+    pts.sort_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .unwrap()
+            .then(a.1.partial_cmp(&b.1).unwrap())
+    });
     pts.dedup();
     if pts.len() < 3 {
         return pts;
@@ -68,18 +72,26 @@ fn min_area_rect(hull: &[(f32, f32)]) -> Option<([[f32; 2]; 4], f32, f32)> {
         }
         let dx = (p1.0 - p0.0) / len;
         let dy = (p1.1 - p0.1) / len;
-        let (mut min_u, mut max_u, mut min_v, mut max_v) = (f32::MAX, f32::NEG_INFINITY, f32::MAX, f32::NEG_INFINITY);
+        let (mut min_u, mut max_u, mut min_v, mut max_v) =
+            (f32::MAX, f32::NEG_INFINITY, f32::MAX, f32::NEG_INFINITY);
         for p in hull {
             let u = p.0 * dx + p.1 * dy;
             let v = -p.0 * dy + p.1 * dx;
-            min_u = min_u.min(u); max_u = max_u.max(u);
-            min_v = min_v.min(v); max_v = max_v.max(v);
+            min_u = min_u.min(u);
+            max_u = max_u.max(u);
+            min_v = min_v.min(v);
+            max_v = max_v.max(v);
         }
         let area = (max_u - min_u) * (max_v - min_v);
         if area < best_area {
             best_area = area;
             // Corner positions in rotated frame.
-            let cs = [[min_u, min_v], [max_u, min_v], [max_u, max_v], [min_u, max_v]];
+            let cs = [
+                [min_u, min_v],
+                [max_u, min_v],
+                [max_u, max_v],
+                [min_u, max_v],
+            ];
             let mut corners = [[0.0f32; 2]; 4];
             for (c, s) in corners.iter_mut().zip(cs.iter()) {
                 c[0] = s[0] * dx - s[1] * dy;
@@ -94,7 +106,11 @@ fn min_area_rect(hull: &[(f32, f32)]) -> Option<([[f32; 2]; 4], f32, f32)> {
 /// Order 4 corners as [TL, TR, BR, BL] (clockwise from top-left),
 /// mirroring cv2 minAreaRect's boxPoints convention used by RapidOCR.
 fn order_clockwise(mut pts: [[f32; 2]; 4]) -> [[f32; 2]; 4] {
-    pts.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap().then(a[1].partial_cmp(&b[1]).unwrap()));
+    pts.sort_by(|a, b| {
+        a[0].partial_cmp(&b[0])
+            .unwrap()
+            .then(a[1].partial_cmp(&b[1]).unwrap())
+    });
     let (l0, l1) = (pts[0], pts[1]); // two leftmost
     let (r0, r1) = (pts[2], pts[3]); // two rightmost
     let tl_bl = if l0[1] <= l1[1] { (l0, l1) } else { (l1, l0) };
@@ -110,13 +126,31 @@ fn expand_rect(corners: [[f32; 2]; 4], delta: f32) -> [[f32; 2]; 4] {
     if w < 1e-6 || h < 1e-6 {
         return corners;
     }
-    let ux = [(corners[1][0] - corners[0][0]) / w, (corners[1][1] - corners[0][1]) / w];
-    let uy = [(corners[3][0] - corners[0][0]) / h, (corners[3][1] - corners[0][1]) / h];
+    let ux = [
+        (corners[1][0] - corners[0][0]) / w,
+        (corners[1][1] - corners[0][1]) / w,
+    ];
+    let uy = [
+        (corners[3][0] - corners[0][0]) / h,
+        (corners[3][1] - corners[0][1]) / h,
+    ];
     [
-        [corners[0][0] + (-ux[0] - uy[0]) * delta, corners[0][1] + (-ux[1] - uy[1]) * delta], // TL
-        [corners[1][0] + (ux[0] - uy[0]) * delta, corners[1][1] + (ux[1] - uy[1]) * delta],   // TR
-        [corners[2][0] + (ux[0] + uy[0]) * delta, corners[2][1] + (ux[1] + uy[1]) * delta],   // BR
-        [corners[3][0] + (-ux[0] + uy[0]) * delta, corners[3][1] + (-ux[1] + uy[1]) * delta], // BL
+        [
+            corners[0][0] + (-ux[0] - uy[0]) * delta,
+            corners[0][1] + (-ux[1] - uy[1]) * delta,
+        ], // TL
+        [
+            corners[1][0] + (ux[0] - uy[0]) * delta,
+            corners[1][1] + (ux[1] - uy[1]) * delta,
+        ], // TR
+        [
+            corners[2][0] + (ux[0] + uy[0]) * delta,
+            corners[2][1] + (ux[1] + uy[1]) * delta,
+        ], // BR
+        [
+            corners[3][0] + (-ux[0] + uy[0]) * delta,
+            corners[3][1] + (-ux[1] + uy[1]) * delta,
+        ], // BL
     ]
 }
 
@@ -126,7 +160,10 @@ fn bilinear_sample(img: &image::RgbImage, x: f32, y: f32) -> image::Rgb<u8> {
     let y0 = y.floor() as u32;
     let fx = x - x0 as f32;
     let fy = y - y0 as f32;
-    let px = |xx: u32, yy: u32| img.get_pixel(xx.min(img.width() - 1), yy.min(img.height() - 1)).0;
+    let px = |xx: u32, yy: u32| {
+        img.get_pixel(xx.min(img.width() - 1), yy.min(img.height() - 1))
+            .0
+    };
     let p00 = px(x0, y0);
     let p10 = px(x0 + 1, y0);
     let p01 = px(x0, y0 + 1);
@@ -145,7 +182,7 @@ fn bilinear_sample(img: &image::RgbImage, x: f32, y: f32) -> image::Rgb<u8> {
 // ---------------------------------------------------------------------------
 
 const DET_LIMIT_SIDE_LEN: u32 = 960;
-const DET_MEAN: [f32; 3] = [0.485, 0.456, 0.406];  // ImageNet-style
+const DET_MEAN: [f32; 3] = [0.485, 0.456, 0.406]; // ImageNet-style
 const DET_STD: [f32; 3] = [0.229, 0.224, 0.225];
 const DET_THRESH: f32 = 0.3;
 const DET_BOX_THRESH: f32 = 0.5;
@@ -199,48 +236,61 @@ fn fallback_charset(lang: &str) -> Vec<String> {
 /// Crop a (possibly rotated) quad from the image; near-axis boxes take
 /// the cheap axis-aligned path.
 fn crop_quad(img: &DynamicImage, bbox: &[[f32; 2]; 4]) -> Option<DynamicImage> {
-        let w = dist(bbox[0], bbox[1]);
-        let h = dist(bbox[1], bbox[2]);
-        if w < 4.0 || h < 4.0 {
-            return None;
-        }
-
-        // Top-edge angle; near-axis boxes take the cheap path.
-        let angle = (bbox[1][1] - bbox[0][1]).atan2(bbox[1][0] - bbox[0][0]);
-        if angle.abs() < CROP_ROTATION_TOLERANCE {
-            let x0 = bbox.iter().map(|p| p[0]).fold(f32::MAX, f32::min).max(0.0) as u32;
-            let y0 = bbox.iter().map(|p| p[1]).fold(f32::MAX, f32::min).max(0.0) as u32;
-            let x1 = bbox.iter().map(|p| p[0]).fold(0.0, f32::max).min(img.width() as f32) as u32;
-            let y1 = bbox.iter().map(|p| p[1]).fold(0.0, f32::max).min(img.height() as f32) as u32;
-            if x1 <= x0 || y1 <= y0 {
-                return None;
-            }
-            return Some(img.crop_imm(x0, y0, x1 - x0, y1 - y0));
-        }
-
-        // Rotated box: inverse-map each upright pixel into the source quad.
-        let rgb = img.to_rgb8();
-        let (iw, ih) = (rgb.width() as i32, rgb.height() as i32);
-        let (w, h) = (w.round().max(4.0) as u32, h.round().max(4.0) as u32);
-        let ex = ((angle.cos()), (angle.sin())); // unit vector TL→TR
-        let ey = (-angle.sin(), angle.cos()); // unit vector TL→BL
-        let mut out = image::RgbImage::new(w, h);
-        for v in 0..h {
-            for u in 0..w {
-                let sx = bbox[0][0] + ex.0 * u as f32 + ey.0 * v as f32;
-                let sy = bbox[0][1] + ex.1 * u as f32 + ey.1 * v as f32;
-                if sx < 0.0 || sy < 0.0 || sx >= (iw - 1) as f32 || sy >= (ih - 1) as f32 {
-                    out.put_pixel(u, v, image::Rgb([255, 255, 255]));
-                    continue;
-                }
-                out.put_pixel(u, v, bilinear_sample(&rgb, sx, sy));
-            }
-        }
-        Some(DynamicImage::ImageRgb8(out))
+    let w = dist(bbox[0], bbox[1]);
+    let h = dist(bbox[1], bbox[2]);
+    if w < 4.0 || h < 4.0 {
+        return None;
     }
 
+    // Top-edge angle; near-axis boxes take the cheap path.
+    let angle = (bbox[1][1] - bbox[0][1]).atan2(bbox[1][0] - bbox[0][0]);
+    if angle.abs() < CROP_ROTATION_TOLERANCE {
+        let x0 = bbox.iter().map(|p| p[0]).fold(f32::MAX, f32::min).max(0.0) as u32;
+        let y0 = bbox.iter().map(|p| p[1]).fold(f32::MAX, f32::min).max(0.0) as u32;
+        let x1 = bbox
+            .iter()
+            .map(|p| p[0])
+            .fold(0.0, f32::max)
+            .min(img.width() as f32) as u32;
+        let y1 = bbox
+            .iter()
+            .map(|p| p[1])
+            .fold(0.0, f32::max)
+            .min(img.height() as f32) as u32;
+        if x1 <= x0 || y1 <= y0 {
+            return None;
+        }
+        return Some(img.crop_imm(x0, y0, x1 - x0, y1 - y0));
+    }
+
+    // Rotated box: inverse-map each upright pixel into the source quad.
+    let rgb = img.to_rgb8();
+    let (iw, ih) = (rgb.width() as i32, rgb.height() as i32);
+    let (w, h) = (w.round().max(4.0) as u32, h.round().max(4.0) as u32);
+    let ex = ((angle.cos()), (angle.sin())); // unit vector TL→TR
+    let ey = (-angle.sin(), angle.cos()); // unit vector TL→BL
+    let mut out = image::RgbImage::new(w, h);
+    for v in 0..h {
+        for u in 0..w {
+            let sx = bbox[0][0] + ex.0 * u as f32 + ey.0 * v as f32;
+            let sy = bbox[0][1] + ex.1 * u as f32 + ey.1 * v as f32;
+            if sx < 0.0 || sy < 0.0 || sx >= (iw - 1) as f32 || sy >= (ih - 1) as f32 {
+                out.put_pixel(u, v, image::Rgb([255, 255, 255]));
+                continue;
+            }
+            out.put_pixel(u, v, bilinear_sample(&rgb, sx, sy));
+        }
+    }
+    Some(DynamicImage::ImageRgb8(out))
+}
+
 impl RapidOcr {
-    pub fn load(det_model: &Path, rec_model: &Path, ocr_lang: &str, providers: &[String]) -> Result<Self> {
+    pub fn load(
+        det_model: &Path,
+        rec_model: &Path,
+        ocr_lang: &str,
+        providers: &[String],
+    ) -> Result<Self> {
         info!("Loading RapidOCR det from {}", det_model.display());
         let det_session = crate::engine::apply_providers(
             Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
@@ -265,12 +315,14 @@ impl RapidOcr {
             .map(|c| c.lines().map(|s| s.to_string()).collect())
             .unwrap_or_else(|| fallback_charset(ocr_lang));
 
-        info!(
-            num_chars = characters.len(),
-            "RapidOCR ready"
-        );
+        info!(num_chars = characters.len(), "RapidOCR ready");
 
-        Ok(Self { det_session, rec_session, characters, charset_aligned: false })
+        Ok(Self {
+            det_session,
+            rec_session,
+            characters,
+            charset_aligned: false,
+        })
     }
 
     /// Run OCR on an image → text lines with bounding boxes.
@@ -323,9 +375,8 @@ impl RapidOcr {
         let new_w = ((w as f32 * ratio) as u32 / 32 * 32).max(32);
         let new_h = ((h as f32 * ratio) as u32 / 32 * 32).max(32);
 
-        let resized = image::imageops::resize(
-            img, new_w, new_h, image::imageops::FilterType::Triangle,
-        );
+        let resized =
+            image::imageops::resize(img, new_w, new_h, image::imageops::FilterType::Triangle);
 
         // Normalize: (x/255 - mean) / std, CHW
         let mut arr = Array4::<f32>::zeros((1, 3, new_h as usize, new_w as usize));
@@ -340,7 +391,8 @@ impl RapidOcr {
 
         let input = ort::value::Tensor::from_array(arr)
             .map_err(|e| BobineError::Ort(format!("det input: {e}")))?;
-        let outputs = self.det_session
+        let outputs = self
+            .det_session
             .run(inputs!["x" => input])
             .map_err(|e| BobineError::Ort(format!("det run: {e}")))?;
 
@@ -353,9 +405,7 @@ impl RapidOcr {
         let prob_w = prob.shape()[3];
 
         // Build binary mask and find boxes
-        let boxes = Self::extract_boxes_from_prob(
-            &prob, prob_h, prob_w, new_w, new_h, w, h,
-        );
+        let boxes = Self::extract_boxes_from_prob(&prob, prob_h, prob_w, new_w, new_h, w, h);
 
         Ok(boxes)
     }
@@ -365,7 +415,12 @@ impl RapidOcr {
     /// polygon unclip. Handles rotated text, unlike plain bounding boxes.
     fn extract_boxes_from_prob(
         prob: &ndarray::ArrayViewD<f32>,
-        ph: usize, pw: usize, rw: u32, rh: u32, ow: u32, oh: u32,
+        ph: usize,
+        pw: usize,
+        rw: u32,
+        rh: u32,
+        ow: u32,
+        oh: u32,
     ) -> Vec<[[f32; 2]; 4]> {
         let scale_x = ow as f32 / rw as f32;
         let scale_y = oh as f32 / rh as f32;
@@ -390,10 +445,13 @@ impl RapidOcr {
                     pixels.push((x, y));
                     prob_sum += at(x as usize, y as usize);
                     for (nx, ny) in [
-                        (x.wrapping_sub(1), y), (x + 1, y),
-                        (x, y.wrapping_sub(1)), (x, y + 1),
+                        (x.wrapping_sub(1), y),
+                        (x + 1, y),
+                        (x, y.wrapping_sub(1)),
+                        (x, y + 1),
                     ] {
-                        if nx < pw as u32 && ny < ph as u32
+                        if nx < pw as u32
+                            && ny < ph as u32
                             && !visited[ny as usize][nx as usize]
                             && at(nx as usize, ny as usize) > DET_THRESH
                         {
@@ -413,9 +471,8 @@ impl RapidOcr {
                     continue;
                 }
 
-                let hull = convex_hull(
-                    pixels.iter().map(|(x, y)| (*x as f32, *y as f32)).collect(),
-                );
+                let hull =
+                    convex_hull(pixels.iter().map(|(x, y)| (*x as f32, *y as f32)).collect());
                 let Some((corners, bw, bh)) = min_area_rect(&hull) else {
                     continue;
                 };
@@ -468,9 +525,8 @@ impl RapidOcr {
         let ratio = new_h as f32 / h as f32;
         let new_w = (w as f32 * ratio).round() as u32;
 
-        let resized = image::imageops::resize(
-            crop, new_w, new_h, image::imageops::FilterType::Triangle,
-        );
+        let resized =
+            image::imageops::resize(crop, new_w, new_h, image::imageops::FilterType::Triangle);
         let mut rgb = image::RgbImage::new(new_w, new_h);
         for y in 0..new_h {
             for x in 0..new_w {
@@ -493,7 +549,8 @@ impl RapidOcr {
 
         let input = ort::value::Tensor::from_array(arr)
             .map_err(|e| BobineError::Ort(format!("rec input: {e}")))?;
-        let outputs = self.rec_session
+        let outputs = self
+            .rec_session
             .run(inputs!["x" => input])
             .map_err(|e| BobineError::Ort(format!("rec run: {e}")))?;
 
@@ -501,7 +558,9 @@ impl RapidOcr {
         // names the softmax node differently across export versions
         // (softmax_0.tmp_0, softmax_11.tmp_0, ...) - pick the first output
         // whose name starts with "softmax", else the first output.
-        let logits_view = outputs.iter().find(|(k, _)| k.starts_with("softmax"))
+        let logits_view = outputs
+            .iter()
+            .find(|(k, _)| k.starts_with("softmax"))
             .or_else(|| outputs.iter().next())
             .map(|(_, v)| v)
             .ok_or_else(|| BobineError::Ort("rec model has no outputs".into()))?;
@@ -517,15 +576,14 @@ impl RapidOcr {
             let l = self.characters.len();
             if num_classes == l + 2 {
                 self.characters.insert(0, String::new()); // blank
-                self.characters.push(" ".to_string());    // space
+                self.characters.push(" ".to_string()); // space
             } else if num_classes == l + 1 {
                 self.characters.insert(0, String::new()); // blank
             }
             self.charset_aligned = true;
         }
-        let (_batch, timesteps, num_classes) = (
-            logits.shape()[0], logits.shape()[1], logits.shape()[2]
-        );
+        let (_batch, timesteps, num_classes) =
+            (logits.shape()[0], logits.shape()[1], logits.shape()[2]);
 
         let mut prev = num_classes; // blank
         let mut text = String::new();
@@ -557,7 +615,11 @@ impl RapidOcr {
             return Ok(None);
         }
 
-        let avg_conf = if count > 0 { total_conf / count as f32 } else { 0.0 };
+        let avg_conf = if count > 0 {
+            total_conf / count as f32
+        } else {
+            0.0
+        };
         Ok(Some((text.trim().to_string(), avg_conf)))
     }
 }
@@ -575,7 +637,12 @@ mod tests {
     // Thin wrapper so tests can call the associated fn without a session.
     fn extract_boxes_from_prob_for_test(
         prob: &ndarray::ArrayViewD<f32>,
-        ph: usize, pw: usize, rw: u32, rh: u32, ow: u32, oh: u32,
+        ph: usize,
+        pw: usize,
+        rw: u32,
+        rh: u32,
+        ow: u32,
+        oh: u32,
     ) -> Vec<[[f32; 2]; 4]> {
         RapidOcr::extract_boxes_from_prob(prob, ph, pw, rw, rh, ow, oh)
     }
@@ -656,7 +723,10 @@ mod tests {
     #[test]
     fn test_order_clockwise() {
         let pts = [
-            [10.0, 12.0], [30.0, 10.0], [32.0, 30.0], [12.0, 32.0], // jumbled quad
+            [10.0, 12.0],
+            [30.0, 10.0],
+            [32.0, 30.0],
+            [12.0, 32.0], // jumbled quad
         ];
         let ordered = order_clockwise(pts);
         assert_eq!(ordered[0], [10.0, 12.0]); // TL
@@ -714,7 +784,10 @@ mod tests {
         let bbox = [
             tl,
             [tl[0] + 60.0 * theta.cos(), tl[1] + 60.0 * theta.sin()],
-            [tl[0] + 60.0 * theta.cos() + 8.0 * (-theta.sin()), tl[1] + 60.0 * theta.sin() + 8.0 * theta.cos()],
+            [
+                tl[0] + 60.0 * theta.cos() + 8.0 * (-theta.sin()),
+                tl[1] + 60.0 * theta.sin() + 8.0 * theta.cos(),
+            ],
             [tl[0] + 8.0 * (-theta.sin()), tl[1] + 8.0 * theta.cos()],
         ];
         let crop = crop_quad(&DynamicImage::ImageRgb8(img), &bbox).unwrap();
@@ -722,7 +795,11 @@ mod tests {
         let rgb = crop.to_rgb8();
         let white = rgb.pixels().filter(|p| p.0[0] > 200).count();
         let total = (crop.width() * crop.height()) as usize;
-        assert!(white > total * 70 / 100, "white fraction {}/{}", white, total);
+        assert!(
+            white > total * 70 / 100,
+            "white fraction {}/{}",
+            white,
+            total
+        );
     }
-
 }

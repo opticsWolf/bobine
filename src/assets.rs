@@ -161,7 +161,10 @@ pub fn stage_images(
         if p.is_file() && is_image_ext(&p) {
             let dest = img_dir.join(entry.file_name());
             if std::fs::rename(&p, &dest).is_err() {
-                warn!("could not move loose image {} into asset store", p.display());
+                warn!(
+                    "could not move loose image {} into asset store",
+                    p.display()
+                );
             }
         }
     }
@@ -198,8 +201,7 @@ mod tests {
     fn test_stage_skips_remote_and_data_links() {
         let tmp = std::env::temp_dir().join(format!("bobine_t_{}", std::process::id()));
         let md = "![](http://x/y.png) ![d](data:image/png;base64,AAA) ![o](https://z/q.jpg)";
-        let (out, n) =
-            stage_images_as_okf_assets(md, &tmp, Path::new("a.pdf"), &tmp, "c").unwrap();
+        let (out, n) = stage_images_as_okf_assets(md, &tmp, Path::new("a.pdf"), &tmp, "c").unwrap();
         assert_eq!(n, 0);
         assert_eq!(out, md);
         let _ = std::fs::remove_dir_all(&tmp);
@@ -214,9 +216,14 @@ mod tests {
 
         let md = "# T\n\n![a fig](fig.png \"the title\")\n";
         let out_dir = tmp.join("out");
-        let (rewritten, n) =
-            stage_images_as_okf_assets(md, &assets, Path::new(tmp.join("src.pdf").as_os_str()), &out_dir, "src")
-                .unwrap();
+        let (rewritten, n) = stage_images_as_okf_assets(
+            md,
+            &assets,
+            Path::new(tmp.join("src.pdf").as_os_str()),
+            &out_dir,
+            "src",
+        )
+        .unwrap();
         assert_eq!(n, 1);
         assert!(rewritten.starts_with("# T\n\n![a fig](okf-asset://img_"));
         assert!(rewritten.ends_with(")\n"));
@@ -242,8 +249,7 @@ mod tests {
     fn test_unresolved_link_left_alone() {
         let tmp = std::env::temp_dir().join(format!("bobine_u_{}", std::process::id()));
         let md = "![missing](nope.png)";
-        let (out, n) =
-            stage_images_as_okf_assets(md, &tmp, Path::new("a.pdf"), &tmp, "c").unwrap();
+        let (out, n) = stage_images_as_okf_assets(md, &tmp, Path::new("a.pdf"), &tmp, "c").unwrap();
         assert_eq!(n, 0);
         assert_eq!(out, md);
         let _ = std::fs::remove_dir_all(&tmp);

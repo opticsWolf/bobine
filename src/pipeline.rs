@@ -22,14 +22,13 @@ use std::path::{Path, PathBuf};
 
 use tracing::warn;
 
-use crate::assets::{is_image_ext, stage_images, ASSET_STORE_DIRNAME};
+use crate::assets::{ASSET_STORE_DIRNAME, is_image_ext, stage_images};
 use crate::config::ConverterConfig;
 use crate::converter::{HybridConverter, ProgressHooks};
 use crate::error::{BobineError, Result};
 
 /// Extensions convertible to markdown (Office + PDF).
-pub const SUPPORTED_EXTENSIONS: &[&str] =
-    &["pdf", "docx", "xlsx", "pptx", "doc", "xls", "ppt"];
+pub const SUPPORTED_EXTENSIONS: &[&str] = &["pdf", "docx", "xlsx", "pptx", "doc", "xls", "ppt"];
 
 /// Plain-text extensions converted by reading as UTF-8.
 pub const TEXT_EXTS: &[&str] = &["txt", "md", "markdown", "rst", "text"];
@@ -136,7 +135,10 @@ pub fn ingest_document(
     };
 
     std::fs::create_dir_all(output_dir)?;
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("document");
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document");
     let cache_dir = output_dir.join(".cache");
 
     let md = convert_to_markdown(path, config, output_dir, &cache_dir, hooks)?;
@@ -313,8 +315,14 @@ mod tests {
     #[test]
     fn test_ingest_missing_file_errors() {
         let out = tmpdir("out4");
-        let err = ingest_document(Path::new("no/such.pdf"), &out, None, None, &ProgressHooks::default())
-            .unwrap_err();
+        let err = ingest_document(
+            Path::new("no/such.pdf"),
+            &out,
+            None,
+            None,
+            &ProgressHooks::default(),
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("not found"));
         fs::remove_dir_all(out).unwrap();
     }
@@ -330,7 +338,10 @@ mod tests {
         fs::write(src_dir.join("skip.bin"), "x").unwrap(); // unsupported
 
         let docs = convert_directory(&src_dir, &out_dir, None, None).unwrap();
-        let names: Vec<_> = docs.iter().map(|d| d.md_path.file_name().unwrap().to_string_lossy().to_string()).collect();
+        let names: Vec<_> = docs
+            .iter()
+            .map(|d| d.md_path.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
         assert_eq!(names, vec!["a.md", "b.md"]); // sorted, recursive, filtered
 
         fs::remove_dir_all(src_dir).unwrap();
@@ -351,8 +362,14 @@ mod tests {
             should_continue: Box::new(|| false),
             on_page: Box::new(|_, _| {}),
         };
-        let md = convert_to_markdown(&src, &ConverterConfig::default(), &out_dir, &out_dir, &hooks)
-            .unwrap();
+        let md = convert_to_markdown(
+            &src,
+            &ConverterConfig::default(),
+            &out_dir,
+            &out_dir,
+            &hooks,
+        )
+        .unwrap();
         assert_eq!(md, "x");
 
         fs::remove_dir_all(src_dir).unwrap();

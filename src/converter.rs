@@ -39,8 +39,8 @@ impl Default for ProgressHooks<'_> {
 // ---------------------------------------------------------------------------
 
 const MATH_FONT_KEYWORDS: &[&str] = &[
-    "cmmi", "cmsy", "cmex", "msam", "msbm", "math", "symbol", "mathjax",
-    "stix", "xits", "asana", "euclid",
+    "cmmi", "cmsy", "cmex", "msam", "msbm", "math", "symbol", "mathjax", "stix", "xits", "asana",
+    "euclid",
 ];
 
 const MATH_UNICODE_RANGES: &[(u32, u32)] = &[
@@ -53,12 +53,23 @@ const MATH_UNICODE_RANGES: &[(u32, u32)] = &[
 ];
 
 const MONO_FONT_KEYWORDS: &[&str] = &[
-    "mono", "courier", "consol", "menlo", "inconsolata", "sourcecode",
-    "dejavu sans mono", "fixed", "terminal",
+    "mono",
+    "courier",
+    "consol",
+    "menlo",
+    "inconsolata",
+    "sourcecode",
+    "dejavu sans mono",
+    "fixed",
+    "terminal",
 ];
 
 const MATH_LAYOUT_LABELS: &[&str] = &[
-    "equation", "display_formula", "inline_formula", "isolate_formula", "formula",
+    "equation",
+    "display_formula",
+    "inline_formula",
+    "isolate_formula",
+    "formula",
 ];
 
 // ---------------------------------------------------------------------------
@@ -109,8 +120,7 @@ impl HybridConverter {
         work_dir: &Path,
         hooks: &ProgressHooks<'_>,
     ) -> Result<String> {
-        let mut pdf = Pdf::open(path)
-            .map_err(|e| BobineError::PdfOxide(format!("open: {e}")))?;
+        let mut pdf = Pdf::open(path).map_err(|e| BobineError::PdfOxide(format!("open: {e}")))?;
         self.convert_pdf_source(&mut pdf, work_dir, hooks)
     }
 
@@ -140,12 +150,11 @@ impl HybridConverter {
                 }
             }
             let page_md = self.route_page(pdf, i, work_dir)?;
-            let final_md =
-                if self.config.extract_images && self.config.append_unreferenced_images {
-                    self.maybe_append_gallery(page_md, work_dir, i)
-                } else {
-                    page_md
-                };
+            let final_md = if self.config.extract_images && self.config.append_unreferenced_images {
+                self.maybe_append_gallery(page_md, work_dir, i)
+            } else {
+                page_md
+            };
             blocks.push(final_md);
         }
 
@@ -156,7 +165,12 @@ impl HybridConverter {
     // Per-page routing
     // ==================================================================
 
-    fn route_page(&mut self, pdf: &mut dyn PdfSource, index: usize, work_dir: &Path) -> Result<String> {
+    fn route_page(
+        &mut self,
+        pdf: &mut dyn PdfSource,
+        index: usize,
+        work_dir: &Path,
+    ) -> Result<String> {
         let md = self.route_page_inner(pdf, index, work_dir)?;
         // Code-block detection is a pure char scan — no ONNX needed.
         if self.config.detect_code_blocks {
@@ -183,9 +197,7 @@ impl HybridConverter {
         if self.config.routing_mode == RoutingMode::Surgical {
             if is_scanned(pdf, index, self.config.scanned_text_threshold) {
                 self.engine.ensure_models()?;
-                if let Ok(Some(md)) =
-                    self.full_structure_page_markdown(pdf, index, work_dir)
-                {
+                if let Ok(Some(md)) = self.full_structure_page_markdown(pdf, index, work_dir) {
                     if !md.trim().is_empty() {
                         info!("page {}: scanned → ONNX layout+OCR", index + 1);
                         return Ok(md);
@@ -227,7 +239,8 @@ impl HybridConverter {
     ) -> Result<String> {
         let fast_md = fast_page_markdown(pdf, index)?;
 
-        let mut boxes = math_boxes_from_chars(pdf, index, self.config.min_formula_math_chars);
+        let mut boxes =
+            math_boxes_from_chars(pdf, index, self.config.min_formula_math_chars, 1.5, 1.5);
         if boxes.is_empty() && self.config.formula_layout_fallback {
             // P2 fallback: use RapidLayout to find equations when text-layer
             // has no math fonts (Word/InDesign/OCR output).
@@ -238,13 +251,18 @@ impl HybridConverter {
                     boxes = regions
                         .into_iter()
                         .filter(|r| {
-                            MATH_LAYOUT_LABELS.iter()
+                            MATH_LAYOUT_LABELS
+                                .iter()
                                 .any(|k| r.label.to_lowercase().contains(k))
                         })
-                        .map(|r| Rect::new(
-                            r.x0 / scale, r.y0 / scale,
-                            (r.x1 - r.x0) / scale, (r.y1 - r.y0) / scale,
-                        ))
+                        .map(|r| {
+                            Rect::new(
+                                r.x0 / scale,
+                                r.y0 / scale,
+                                (r.x1 - r.x0) / scale,
+                                (r.y1 - r.y0) / scale,
+                            )
+                        })
                         .collect();
                 }
             }
@@ -276,7 +294,11 @@ impl HybridConverter {
             return Ok(fast_md);
         }
 
-        info!("page {}: {} formula region(s) → OCR", index + 1, crops.len());
+        info!(
+            "page {}: {} formula region(s) → OCR",
+            index + 1,
+            crops.len()
+        );
 
         let mut replacements: Vec<(String, String)> = Vec::new();
         for (bbox, crop_path) in &crops {
@@ -329,8 +351,8 @@ impl HybridConverter {
 
     pub fn convert_office(&self, path: &Path) -> Result<String> {
         use office_oxide::Document;
-        let doc = Document::open(path)
-            .map_err(|e| BobineError::OfficeOxide(format!("open: {e}")))?;
+        let doc =
+            Document::open(path).map_err(|e| BobineError::OfficeOxide(format!("open: {e}")))?;
         Ok(doc.to_markdown())
     }
 }
@@ -360,8 +382,11 @@ fn page_media_box(pdf: &mut dyn PdfSource, index: usize) -> Result<[f32; 4]> {
 
 fn estimate_line_height(pdf: &mut dyn PdfSource, index: usize, page_h: f32) -> f32 {
     if let Ok(chars) = pdf.chars(index) {
-        let mut heights: Vec<f32> =
-            chars.iter().map(|c| c.bbox.height).filter(|&h| h > 0.0).collect();
+        let mut heights: Vec<f32> = chars
+            .iter()
+            .map(|c| c.bbox.height)
+            .filter(|&h| h > 0.0)
+            .collect();
         heights.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         if !heights.is_empty() {
             return heights[heights.len() / 2];
@@ -376,7 +401,36 @@ fn estimate_line_height(pdf: &mut dyn PdfSource, index: usize, page_h: f32) -> f
 
 fn is_math_unicode(ch: char) -> bool {
     let cp = ch as u32;
-    MATH_UNICODE_RANGES.iter().any(|&(lo, hi)| cp >= lo && cp <= hi)
+    MATH_UNICODE_RANGES
+        .iter()
+        .any(|&(lo, hi)| cp >= lo && cp <= hi)
+}
+
+/// Heuristic quality gate for TexTeller output on hybrid-refined crops.
+/// Fragment/prose crops produce recognizable garbage: English words,
+/// mbox/text wrappers, or single symbol-free tokens. Real display
+/// equations carry structure (operators, sub/superscripts, fractions).
+fn plausible_display_latex(latex: &str) -> bool {
+    let l = latex.to_lowercase();
+    if l.contains("\\mbox{") || l.contains("\\text{") {
+        return false;
+    }
+    if l.contains(" the ") || l.contains(" with ") || l.contains(" and ") {
+        return false;
+    }
+    // Degenerate repetition (e.g. \mathscr{M} repeated 13x) is a classic
+    // autoregressive hallucination on garbage crops.
+    let words: std::collections::HashMap<&str, usize> =
+        l.split_whitespace().fold(Default::default(), |mut m, w| {
+            *m.entry(w).or_default() += 1;
+            m
+        });
+    if words.values().any(|&c| c > 4) {
+        return false;
+    }
+    ["=", "+", "^", "_", "\\frac", "\\sum", "\\int", "\\sqrt"]
+        .iter()
+        .any(|m| l.contains(m))
 }
 
 fn is_math_font(font_name: &str) -> bool {
@@ -424,7 +478,14 @@ fn needs_onnx(pdf: &mut dyn PdfSource, index: usize, config: &ConverterConfig) -
 // Formula box detection
 // ======================================================================
 
-fn math_boxes_from_chars(pdf: &mut dyn PdfSource, index: usize, min_chars: usize) -> Vec<Rect> {
+#[allow(clippy::too_many_arguments)]
+fn math_boxes_from_chars(
+    pdf: &mut dyn PdfSource,
+    index: usize,
+    min_chars: usize,
+    hgap_mult: f32,
+    vgap_mult: f32,
+) -> Vec<Rect> {
     let chars = match pdf.chars(index) {
         Ok(c) => c,
         Err(_) => return vec![],
@@ -443,8 +504,8 @@ fn math_boxes_from_chars(pdf: &mut dyn PdfSource, index: usize, min_chars: usize
     heights.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let med_h = heights[heights.len() / 2].max(10.0);
     let line_tol = 0.8 * med_h;
-    let hgap = 1.5 * med_h;
-    let vgap_max = 1.5 * med_h;
+    let hgap = hgap_mult * med_h;
+    let vgap_max = vgap_mult * med_h;
 
     // Group by baseline
     let mut sorted: Vec<&&SourceChar> = items.iter().collect();
@@ -477,9 +538,7 @@ fn math_boxes_from_chars(pdf: &mut dyn PdfSource, index: usize, min_chars: usize
         for r in &sorted_ln {
             let mut merged = false;
             for (run_r, count) in &mut runs {
-                if r.x <= run_r.x + run_r.width + hgap
-                    && r.x + r.width >= run_r.x - hgap
-                {
+                if r.x <= run_r.x + run_r.width + hgap && r.x + r.width >= run_r.x - hgap {
                     let new_x = run_r.x.min(r.x);
                     let new_y = run_r.y.min(r.y);
                     let new_x1 = (run_r.x + run_r.width).max(r.x + r.width);
@@ -499,8 +558,7 @@ fn math_boxes_from_chars(pdf: &mut dyn PdfSource, index: usize, min_chars: usize
 
     // Vertical merge
     boxes.sort_by(|(a, _), (b, _)| {
-        a.y
-            .partial_cmp(&b.y)
+        a.y.partial_cmp(&b.y)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal))
     });
@@ -516,7 +574,9 @@ fn math_boxes_from_chars(pdf: &mut dyn PdfSource, index: usize, min_chars: usize
                 if !hx {
                     continue;
                 }
-                let gap = (b.y - (u.y + u.height)).max(u.y - (b.y + b.height)).max(0.0);
+                let gap = (b.y - (u.y + u.height))
+                    .max(u.y - (b.y + b.height))
+                    .max(0.0);
                 if gap > vgap_max {
                     continue;
                 }
@@ -634,8 +694,19 @@ impl HybridConverter {
             Err(_) => return Ok(None),
         };
         let media = page_media_box(pdf, index)?;
-        let _page_h = media[3];
+        let page_h = media[3];
         let scale = dpi as f32 / 72.0;
+
+        // Text-layer math boxes (hybrid formula refinement). On born-digital
+        // pages these localize display equations far more precisely than the
+        // layout model, whose formula head only draws paragraph-sized blobs
+        // on dense math pages. Boxes are consumed by the first region that
+        // contains them so overlapping regions cannot emit duplicates.
+        // hgap 2.5: TeX \quad spacing inside display equations fragments runs
+        // at 1.5; vgap 0.9: never merge math from adjacent text lines.
+        let mut page_math_boxes =
+            math_boxes_from_chars(pdf, index, self.config.min_formula_math_chars, 2.5, 0.9);
+        let line_height = estimate_line_height(pdf, index, page_h);
 
         // Layout analysis
         let regions = self.engine.layout_regions(&img)?;
@@ -655,8 +726,10 @@ impl HybridConverter {
         for region in &sorted {
             // Convert layout coords (render pixels) → PDF points
             let bbox = Rect::new(
-                region.x0 / scale, region.y0 / scale,
-                (region.x1 - region.x0) / scale, (region.y1 - region.y0) / scale,
+                region.x0 / scale,
+                region.y0 / scale,
+                (region.x1 - region.x0) / scale,
+                (region.y1 - region.y0) / scale,
             );
             let lab = region.label.to_lowercase();
             // Caption labels describe OTHER regions; they are plain text.
@@ -681,11 +754,17 @@ impl HybridConverter {
                     blocks.push(t);
                 } else if let Some(crop) = crop_image(&img, bbox, dpi, 0.0) {
                     // Scanned table: OCR the crop, then SLANet-plus structure.
-                    match self.engine.ocr_lines(&crop).map(|lines| {
-                        self.engine.recognize_table(&crop, &lines)
-                    }) {
+                    match self
+                        .engine
+                        .ocr_lines(&crop)
+                        .map(|lines| self.engine.recognize_table(&crop, &lines))
+                    {
                         Ok(Ok(Some(html))) => {
-                            info!("page {}: table recognized ({}px crop)", index + 1, crop.width());
+                            info!(
+                                "page {}: table recognized ({}px crop)",
+                                index + 1,
+                                crop.width()
+                            );
                             let t = if self.config.convert_html_tables {
                                 crate::tables::html_tables_to_gfm(&html)
                             } else {
@@ -704,18 +783,143 @@ impl HybridConverter {
                     blocks.push(format!("[table: {}]", region.label));
                 }
             } else if MATH_LAYOUT_LABELS.iter().any(|k| lab.contains(k)) {
-                // Formula region → TexTeller, unless the box is implausibly
-                // large. At our 1024-side letterbox the layout model emits
-                // column/half-page "isolate_formula" boxes over ordinary
-                // text (upstream infers at native page resolution); a full
-                // autoregressive decode of body text costs tens of seconds
-                // and yields garbage LaTeX. Degrade to the text layer.
-                let page_h = img.height() as f64;
-                let page_px = img.width() as f64 * page_h;
+                let page_h_px = img.height() as f64;
+                let page_px = img.width() as f64 * page_h_px;
                 // region coords are already render pixels - no extra scale
                 let w_px = (region.x1 - region.x0) as f64;
                 let h_px = (region.y1 - region.y0) as f64;
-                if h_px > 0.25 * page_h || w_px * h_px > 0.15 * page_px {
+                let plausible = h_px <= 0.25 * page_h_px && w_px * h_px <= 0.15 * page_px;
+
+                // Hybrid refinement (born-digital pages): intersect the
+                // layout formula region with text-layer math boxes. The
+                // layout model localizes formulas only at paragraph
+                // granularity; glyph geometry pins the actual equation
+                // strips. Region prose is kept and formulas are spliced in,
+                // mirroring SURGICAL mode.
+                let margin = 6.0_f32;
+                let refined: Vec<Rect> = page_math_boxes
+                    .iter()
+                    .copied()
+                    .filter(|b| {
+                        let cx = b.x + b.width / 2.0;
+                        let cy = b.y + b.height / 2.0;
+                        cx >= bbox.x - margin
+                            && cx <= bbox.x + bbox.width + margin
+                            && cy >= bbox.y - margin
+                            && cy <= bbox.y + bbox.height + margin
+                    })
+                    .collect();
+                if !refined.is_empty() {
+                    // consume so overlapping regions cannot re-emit them
+                    let taken = refined.clone();
+                    page_math_boxes.retain(|b| !taken.iter().any(|t| t.x == b.x && t.y == b.y));
+                }
+
+                if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
+                    eprintln!(
+                        "HYBRID p{} region pt=({:.0},{:.0},{:.0},{:.0}) mathboxes={} refined={}",
+                        index + 1,
+                        bbox.x,
+                        bbox.y,
+                        bbox.width,
+                        bbox.height,
+                        page_math_boxes.len(),
+                        refined.len()
+                    );
+                    for b in page_math_boxes.iter().take(10) {
+                        eprintln!(
+                            "  mb x={:.0} y={:.0} w={:.0} h={:.0}",
+                            b.x, b.y, b.width, b.height
+                        );
+                    }
+                }
+                if !refined.is_empty() {
+                    let text = region_text(pdf, index, bbox);
+                    let mut reps: Vec<(String, String)> = Vec::new();
+                    for rb in &refined {
+                        // Gate 1: skip labels ("(4)"), artifacts and tiny
+                        // inline fragments - splicing them is pure noise.
+                        if rb.width < 40.0 {
+                            continue;
+                        }
+                        // Gate 2: display-style boxes only. Boxes taller
+                        // than ~3 lines are merged blobs of display
+                        // equations interleaved with inline-math prose
+                        // lines; cropping them yields garbage.
+                        let display = rb.height > 1.6 * line_height
+                            || rb.width > self.config.formula_inline_max_width_pts as f32;
+                        if !display || rb.height > 3.0 * line_height {
+                            continue;
+                        }
+                        // Glyph-tight boxes: no padding, padding only
+                        // bleeds neighbouring text lines into the crop.
+                        let t_rec = std::time::Instant::now();
+                        let crop_res = crop_image(&img, *rb, dpi, 0.0);
+                        if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
+                            eprintln!(
+                                "HYBRID-crop p{} w={:.0} h={:.0} (lh={:.1})",
+                                index + 1,
+                                rb.width,
+                                rb.height,
+                                line_height
+                            );
+                        }
+                        if let Some(crop) = crop_res {
+                            if crop.width() < 4 || crop.height() < 4 {
+                                continue;
+                            }
+                            let p = work_dir.join(format!(
+                                "_reg_hf_{}_{}.png",
+                                index,
+                                blocks.len() + reps.len()
+                            ));
+                            if crop.save(&p).is_ok() {
+                                // Token budget proportional to crop area: a
+                                // mis-cropped sliver cannot contain a large
+                                // equation, and the cap turns runaway
+                                // decodes (measured: 2600 chars / 28 s from
+                                // a 153x30pt fragment) into fast failures.
+                                let budget =
+                                    ((rb.width * rb.height) / 40.0).clamp(64.0, 512.0) as usize;
+                                if let Some(latex) =
+                                    self.engine.recognize_formula_capped(&p, budget)?
+                                {
+                                    if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
+                                        eprintln!("HYBRID-png {}", p.display());
+                                        eprintln!(
+                                            "HYBRID-ocr p{} {} chars in {:?}",
+                                            index + 1,
+                                            latex.len(),
+                                            t_rec.elapsed()
+                                        );
+                                    }
+                                    if plausible_display_latex(&latex) {
+                                        let needle = region_text(pdf, index, *rb);
+                                        reps.push((needle, format!("$$\n{}\n$$", latex)));
+                                    } else if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
+                                        eprintln!("HYBRID-reject p{} {:?}", index + 1, latex);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !text.trim().is_empty() {
+                        blocks.push(splice(&text, &reps));
+                        continue;
+                    }
+                    if !reps.is_empty() {
+                        for (_, wrapped) in reps {
+                            blocks.push(wrapped);
+                        }
+                        continue;
+                    }
+                }
+
+                // Fallback (scans / no text layer): TexTeller on the whole
+                // region crop, unless the box is implausibly large - a full
+                // autoregressive decode of body text costs tens of seconds
+                // and yields garbage LaTeX.
+                if !plausible {
                     tracing::warn!(
                         "page {}: implausible {} region ({:.0}x{:.0}px, {:.0}% of page); treating as text",
                         index + 1,
@@ -730,16 +934,31 @@ impl HybridConverter {
                     }
                     continue;
                 }
-                if let Some(crop) = crop_image(&img, bbox, dpi, self.config.formula_pad_pts) {
-                    if crop.width() >= 4 && crop.height() >= 4 {
-                        let p = work_dir.join(format!("_reg_f_{}.png", blocks.len()));
-                        if crop.save(&p).is_ok() {
-                            if let Some(latex) = self.engine.recognize_formula(&p)? {
-                                blocks.push(format!("$$\n{}\n$$", latex));
-                                continue;
+                // Born-digital shortcut: if the text layer has content here
+                // but the heuristic found no math boxes, the region
+                // provably contains no equation - do not spend a multi-second
+                // decode on prose. TexTeller only when the text layer is
+                // empty (scans, image-only equations), and even then the
+                // decode is budgeted by crop area.
+                let text = region_text(pdf, index, bbox);
+                if text.trim().is_empty() {
+                    if let Some(crop) = crop_image(&img, bbox, dpi, self.config.formula_pad_pts) {
+                        if crop.width() >= 4 && crop.height() >= 4 {
+                            let p = work_dir.join(format!("_reg_f_{}.png", blocks.len()));
+                            if crop.save(&p).is_ok() {
+                                let budget =
+                                    ((bbox.width * bbox.height) / 40.0).clamp(64.0, 512.0) as usize;
+                                if let Some(latex) =
+                                    self.engine.recognize_formula_capped(&p, budget)?
+                                {
+                                    blocks.push(format!("$$\n{}\n$$", latex));
+                                    continue;
+                                }
                             }
                         }
                     }
+                } else {
+                    blocks.push(text);
                 }
             } else if lab.contains("figure") || lab.contains("image") {
                 if let Some(crop) = crop_image(&img, bbox, dpi, 0.0) {
@@ -762,7 +981,8 @@ impl HybridConverter {
                     // OCR fallback for scanned regions
                     if let Some(crop) = crop_image(&img, bbox, dpi, 0.0) {
                         if let Ok(lines) = self.engine.ocr_lines(&crop) {
-                            let text: Vec<String> = lines.into_iter()
+                            let text: Vec<String> = lines
+                                .into_iter()
                                 .map(|l| l.text)
                                 .filter(|t| !t.is_empty())
                                 .collect();
@@ -844,7 +1064,10 @@ mod tests {
             FakePage::from_text("Page three text", "Helvetica"),
         ]);
         let mut conv = HybridConverter::new(
-            ConverterConfig { routing_mode: RoutingMode::Never, ..Default::default() },
+            ConverterConfig {
+                routing_mode: RoutingMode::Never,
+                ..Default::default()
+            },
             &temp_dir("never"),
         );
         let pages = std::cell::RefCell::new(0usize);
@@ -869,7 +1092,10 @@ mod tests {
             FakePage::from_text("third page words", "Helvetica"),
         ]);
         let mut conv = HybridConverter::new(
-            ConverterConfig { routing_mode: RoutingMode::Never, ..Default::default() },
+            ConverterConfig {
+                routing_mode: RoutingMode::Never,
+                ..Default::default()
+            },
             &temp_dir("cancel"),
         );
         let n = std::cell::Cell::new(0usize);
@@ -889,8 +1115,7 @@ mod tests {
     #[test]
     fn gallery_appends_unreferenced_images() {
         let img = image::DynamicImage::new_rgb8(4, 4);
-        let with_img =
-            FakePage::from_text("caption-less page", "Helvetica").with_image(img);
+        let with_img = FakePage::from_text("caption-less page", "Helvetica").with_image(img);
         let dir = temp_dir("gallery");
         let mut conv = HybridConverter::new(ConverterConfig::default(), &dir);
         let mut pdf = FakePdf::new(vec![with_img]);
@@ -913,14 +1138,23 @@ mod tests {
 
     #[test]
     fn surgical_without_math_returns_fast_markdown() {
-        let mut pdf =
-            FakePdf::new(vec![FakePage::from_text("plain body prose only", "Helvetica")]);
+        let mut pdf = FakePdf::new(vec![FakePage::from_text(
+            "plain body prose only",
+            "Helvetica",
+        )]);
         let mut conv = HybridConverter::new(
-            ConverterConfig { routing_mode: RoutingMode::Surgical, ..Default::default() },
+            ConverterConfig {
+                routing_mode: RoutingMode::Surgical,
+                ..Default::default()
+            },
             &temp_dir("surgical_plain"),
         );
         let out = conv
-            .convert_pdf_source(&mut pdf, Path::new("/tmp/nowhere"), &ProgressHooks::default())
+            .convert_pdf_source(
+                &mut pdf,
+                Path::new("/tmp/nowhere"),
+                &ProgressHooks::default(),
+            )
             .unwrap();
         assert!(out.contains("plain body prose"), "{}", out);
     }
@@ -933,7 +1167,11 @@ mod tests {
         )]);
         let mut conv = HybridConverter::new(ConverterConfig::default(), &temp_dir("auto_plain"));
         let out = conv
-            .convert_pdf_source(&mut pdf, Path::new("/tmp/nowhere"), &ProgressHooks::default())
+            .convert_pdf_source(
+                &mut pdf,
+                Path::new("/tmp/nowhere"),
+                &ProgressHooks::default(),
+            )
             .unwrap();
         assert!(out.contains("regular sentences"), "{}", out);
     }
@@ -944,7 +1182,10 @@ mod tests {
         page.md = None; // simulate to_markdown failure
         let mut pdf = FakePdf::new(vec![page]);
         let mut conv = HybridConverter::new(
-            ConverterConfig { routing_mode: RoutingMode::Never, ..Default::default() },
+            ConverterConfig {
+                routing_mode: RoutingMode::Never,
+                ..Default::default()
+            },
             &temp_dir("fallback"),
         );
         let out = conv
@@ -965,22 +1206,36 @@ mod tests {
             .collect();
         // a second math line just below -> merges vertically into the same box
         for i in 0..4 {
-            chars.push(SourceChar::new('y', 12.0 + i as f32 * 8.0, 112.0, 7.0, 11.0, "msam"));
+            chars.push(SourceChar::new(
+                'y',
+                12.0 + i as f32 * 8.0,
+                112.0,
+                7.0,
+                11.0,
+                "msam",
+            ));
         }
         // body-font chars elsewhere are ignored entirely
         for i in 0..20 {
-            chars.push(SourceChar::new('a', 10.0 + i as f32 * 8.0, 400.0, 7.0, 11.0, "Helvetica"));
+            chars.push(SourceChar::new(
+                'a',
+                10.0 + i as f32 * 8.0,
+                400.0,
+                7.0,
+                11.0,
+                "Helvetica",
+            ));
         }
         let mut fake = FakePdf::default();
         fake.pages[0].chars = chars;
 
-        let boxes = math_boxes_from_chars(&mut fake, 0, 5);
+        let boxes = math_boxes_from_chars(&mut fake, 0, 5, 1.5, 1.5);
         assert_eq!(boxes.len(), 1, "{boxes:?}");
         let b = boxes[0];
         assert!(b.y <= 100.0 && b.y + b.height >= 123.0, "{b:?}");
 
         // raising min_chars above both line sizes filters everything
-        let none = math_boxes_from_chars(&mut fake, 0, 11);
+        let none = math_boxes_from_chars(&mut fake, 0, 11, 1.5, 1.5);
         assert!(none.is_empty());
     }
 
@@ -997,9 +1252,9 @@ mod tests {
 
     #[test]
     fn math_operator_is_math() {
-        assert!(is_math_unicode('∀'));  // U+2200
-        assert!(is_math_unicode('∫'));  // U+222B
-        assert!(is_math_unicode('∑'));  // U+2211
+        assert!(is_math_unicode('∀')); // U+2200
+        assert!(is_math_unicode('∫')); // U+222B
+        assert!(is_math_unicode('∑')); // U+2211
     }
 
     #[test]
@@ -1112,11 +1367,15 @@ mod tests {
         assert!(!needs_onnx(&mut textual, 0, &cfg));
 
         // Always overrides everything; Never suppresses everything
-        let cfg_always =
-            ConverterConfig { routing_mode: RoutingMode::Always, ..Default::default() };
+        let cfg_always = ConverterConfig {
+            routing_mode: RoutingMode::Always,
+            ..Default::default()
+        };
         assert!(needs_onnx(&mut textual, 0, &cfg_always));
-        let cfg_never =
-            ConverterConfig { routing_mode: RoutingMode::Never, ..Default::default() };
+        let cfg_never = ConverterConfig {
+            routing_mode: RoutingMode::Never,
+            ..Default::default()
+        };
         assert!(!needs_onnx(&mut scanned, 0, &cfg_never));
     }
 
@@ -1125,8 +1384,14 @@ mod tests {
         let mut page = FakePage::from_text("", "Helvetica");
         page.chars.clear();
         for (i, ch) in "let x = 42;".chars().enumerate() {
-            page.chars
-                .push(SourceChar::new(ch, 50.0 + i as f32 * 8.0, 300.0, 7.0, 11.0, "Consolas"));
+            page.chars.push(SourceChar::new(
+                ch,
+                50.0 + i as f32 * 8.0,
+                300.0,
+                7.0,
+                11.0,
+                "Consolas",
+            ));
         }
         let mut fake = FakePdf::new(vec![page]);
         let blocks = wrap_code_blocks(&mut fake, 0);

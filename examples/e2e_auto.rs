@@ -12,9 +12,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    let pdf = std::env::args().nth(1).expect("usage: e2e_auto <pdf> [work_dir]");
+    let pdf = std::env::args()
+        .nth(1)
+        .expect("usage: e2e_auto <pdf> [work_dir]");
     let work = std::env::args().nth(2).unwrap_or_else(|| {
-        std::env::temp_dir().join("bobine_test").join("e2e_out").display().to_string()
+        std::env::temp_dir()
+            .join("bobine_test")
+            .join("e2e_out")
+            .display()
+            .to_string()
     });
     let cache = std::env::temp_dir().join("bobine_test").join("cache");
 
@@ -25,13 +31,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => bobine::RoutingMode::Always,
     };
     let mut conv = bobine::HybridConverter::new(
-        bobine::ConverterConfig { routing_mode: mode, ..Default::default() },
+        bobine::ConverterConfig {
+            routing_mode: mode,
+            ..Default::default()
+        },
         &cache,
     );
     println!("mode = {mode:?}");
     let t0 = Instant::now();
     let md = conv.convert_pdf(std::path::Path::new(&pdf), std::path::Path::new(&work))?;
-    println!("=== converted in {:.1?}, {} bytes markdown ===", t0.elapsed(), md.len());
+    println!(
+        "=== converted in {:.1?}, {} bytes markdown ===",
+        t0.elapsed(),
+        md.len()
+    );
     let dump = std::env::temp_dir().join(format!(
         "bobine_md_{}.md",
         std::env::var("BOB_MODE").unwrap_or_else(|_| "always".into())

@@ -75,7 +75,7 @@ md = conv.convert("notes.txt", work_dir="/tmp/out")
 | `Never`   | Fast path only (pdf_oxide). No ONNX models loaded.                        |
 | `Auto` *(default)* | Heuristics per page → full ONNX layout + OCR on flagged pages.   |
 | `Surgical`| Formula crops via TexTeller only; full pipeline just for scans.           |
-| `Always`  | Every page through the full ONNX layout + OCR pipeline.                   |
+| `Always`  | Every page through the full ONNX layout + OCR pipeline; on born-digital pages, formula regions are refined against text-layer math boxes (v0.4.8) and output matches `Surgical`. |
 
 RapidLayout and RapidOCR weights also auto-download from HuggingFace on
 first use (DocStructBench YOLO ~72 MB, PP-OCRv4 ~16 MB); explicit local

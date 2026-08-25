@@ -101,11 +101,7 @@ pub fn match_cells(cell_xyxy: &[[f32; 4]], det_xyxy: &[[f32; 4]]) -> Vec<Vec<usi
 
 /// Build the final HTML from structure tokens + matched OCR contents
 /// (port of RapidTable `get_pred_html`, `<b>` merging included).
-pub fn build_html(
-    structures: &[String],
-    matched: &[Vec<usize>],
-    ocr_texts: &[String],
-) -> String {
+pub fn build_html(structures: &[String], matched: &[Vec<usize>], ocr_texts: &[String]) -> String {
     let mut out = String::from("<html><body><table>");
     let mut td_index = 0usize;
     for tag in structures {
@@ -192,8 +188,8 @@ pub fn download_slanet_plus(cache_dir: &Path) -> Result<std::path::PathBuf> {
         return Ok(dest);
     }
     info!("Downloading slanet-plus.onnx from HuggingFace...");
-    let client = hf_hub::HFClientSync::new()
-        .map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
+    let client =
+        hf_hub::HFClientSync::new().map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
     let repo_api = client.model(SLANET_PLUS_REPO.0, SLANET_PLUS_REPO.1);
     repo_api
         .download_file()
@@ -214,7 +210,10 @@ pub struct RapidTable {
 
 impl RapidTable {
     pub fn load(model_path: &Path, providers: &[String]) -> Result<Self> {
-        info!("Loading RapidTable (SLANet-plus) from {}", model_path.display());
+        info!(
+            "Loading RapidTable (SLANet-plus) from {}",
+            model_path.display()
+        );
         let session = crate::engine::apply_providers(
             Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
             providers,
@@ -226,7 +225,12 @@ impl RapidTable {
             .metadata()
             .ok()
             .and_then(|m| m.custom("character"))
-            .map(|c| c.lines().filter(|l| !l.is_empty()).map(|s| s.to_string()).collect())
+            .map(|c| {
+                c.lines()
+                    .filter(|l| !l.is_empty())
+                    .map(|s| s.to_string())
+                    .collect()
+            })
             .ok_or_else(|| {
                 BobineError::ModelNotAvailable(
                     "table model has no `character` metadata; not a valid SLANet export".into(),
@@ -244,12 +248,21 @@ impl RapidTable {
             .ok_or_else(|| BobineError::ModelNotAvailable("charset missing eos".into()))?;
 
         info!(num_tokens = characters.len(), "RapidTable ready");
-        Ok(Self { session, characters, beg_idx, end_idx })
+        Ok(Self {
+            session,
+            characters,
+            beg_idx,
+            end_idx,
+        })
     }
 
     /// Recognize a table crop given its OCR lines; returns full HTML or
     /// `None` when no cells were decoded.
-    pub fn recognize(&mut self, img: &DynamicImage, ocr_lines: &[OcrLine]) -> Result<Option<String>> {
+    pub fn recognize(
+        &mut self,
+        img: &DynamicImage,
+        ocr_lines: &[OcrLine],
+    ) -> Result<Option<String>> {
         let input = preprocess(img)?;
         let tensor = ort::value::Tensor::from_array(input)
             .map_err(|e| BobineError::Ort(format!("table input: {e}")))?;
@@ -295,7 +308,11 @@ impl RapidTable {
         let mut cell_quads: Vec<[f32; 8]> = Vec::new();
 
         let batched_probs = ps.len() == 3;
-        let bbox_steps = if batched_probs { bb.shape()[1] } else { bb.shape()[0] };
+        let bbox_steps = if batched_probs {
+            bb.shape()[1]
+        } else {
+            bb.shape()[0]
+        };
 
         for t in 0..seq_len {
             let ti = t.min(bbox_steps - 1); // bbox head may emit fewer steps
@@ -430,7 +447,10 @@ mod tests {
         let cs = prepare_charset(dict);
         assert_eq!(cs.first().unwrap(), "sos");
         assert_eq!(cs.last().unwrap(), "eos");
-        assert!(cs.contains(&"<td></td>".to_string()), "empty-cell token added");
+        assert!(
+            cs.contains(&"<td></td>".to_string()),
+            "empty-cell token added"
+        );
         assert!(!cs.contains(&"<td>".to_string()), "bare <td> removed");
         assert_eq!(cs.len(), 1 + 4 + 1); // -1 td +1 empty +2 specials
     }
@@ -480,11 +500,19 @@ mod tests {
         let texts = vec!["hello".to_string(), "world".to_string()];
         let matched = vec![vec![0], vec![1]];
         let html = build_html(&structures, &matched, &texts);
-        assert!(html.contains("<table><tr><td>hello</td><td>world</td></tr>"), "{html}");
+        assert!(
+            html.contains("<table><tr><td>hello</td><td>world</td></tr>"),
+            "{html}"
+        );
         assert!(!html.contains("<thead>"));
 
         // multi-line merge joins with spaces
-        let texts2 = vec!["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()];
+        let texts2 = vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+            "d".to_string(),
+        ];
         let matched2 = vec![vec![0, 1], vec![2, 3]];
         let html2 = build_html(&structures, &matched2, &texts2);
         assert!(html2.contains("<td>a b</td>"), "{html2}");

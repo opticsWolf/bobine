@@ -29,10 +29,7 @@ fn one_table_to_gfm(html: &str) -> Option<String> {
     }
 
     // First row with any TH cells is the header
-    let header_idx = rows
-        .iter()
-        .position(|r| r.has_th)
-        .unwrap_or(0);
+    let header_idx = rows.iter().position(|r| r.has_th).unwrap_or(0);
     let header = &rows[header_idx];
 
     let mut out = String::new();
@@ -146,7 +143,8 @@ fn parse_simple_table(html: &str) -> Option<Vec<TableRow>> {
                     if tag_lower == "td" {
                         let al = attrs.to_lowercase();
                         if al.contains("colspan") || al.contains("rowspan") {
-                            let has_multi = al.contains("colspan=\"") && !al.contains("colspan=\"1\"")
+                            let has_multi = al.contains("colspan=\"")
+                                && !al.contains("colspan=\"1\"")
                                 || al.contains("rowspan=\"") && !al.contains("rowspan=\"1\"");
                             if has_multi {
                                 return None; // Complex table
@@ -207,11 +205,7 @@ fn parse_simple_table(html: &str) -> Option<Vec<TableRow>> {
         });
     }
 
-    if rows.is_empty() {
-        None
-    } else {
-        Some(rows)
-    }
+    if rows.is_empty() { None } else { Some(rows) }
 }
 
 #[cfg(test)]
@@ -250,7 +244,10 @@ mod tests {
 
     #[test]
     fn parse_with_th() {
-        let rows = parse_simple_table("<table><tr><th>H1</th><th>H2</th></tr><tr><td>d1</td><td>d2</td></tr></table>").unwrap();
+        let rows = parse_simple_table(
+            "<table><tr><th>H1</th><th>H2</th></tr><tr><td>d1</td><td>d2</td></tr></table>",
+        )
+        .unwrap();
         assert_eq!(rows.len(), 2);
         assert!(rows[0].has_th);
         assert!(!rows[1].has_th);
@@ -258,7 +255,9 @@ mod tests {
 
     #[test]
     fn parse_rejects_colspan() {
-        assert!(parse_simple_table("<table><tr><td colspan=\"3\">wide</td></tr></table>").is_none());
+        assert!(
+            parse_simple_table("<table><tr><td colspan=\"3\">wide</td></tr></table>").is_none()
+        );
     }
 
     #[test]

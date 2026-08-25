@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use image::{DynamicImage, GenericImageView};
-use ndarray::{s, Array4};
+use ndarray::{Array4, s};
 use ort::{inputs, session::Session};
 use tracing::info;
 
@@ -82,19 +82,19 @@ impl RapidLayout {
         let labels = Self::read_labels(&session)
             .filter(|l| !l.is_empty())
             .unwrap_or_else(|| {
-            vec![
-                "title".into(),
-                "plain text".into(),
-                "abandon".into(),
-                "figure".into(),
-                "figure_caption".into(),
-                "table".into(),
-                "table_caption".into(),
-                "table_footnote".into(),
-                "isolate_formula".into(),
-                "formula_caption".into(),
-            ]
-        });
+                vec![
+                    "title".into(),
+                    "plain text".into(),
+                    "abandon".into(),
+                    "figure".into(),
+                    "figure_caption".into(),
+                    "table".into(),
+                    "table_caption".into(),
+                    "table_footnote".into(),
+                    "isolate_formula".into(),
+                    "formula_caption".into(),
+                ]
+            });
 
         info!(
             num_labels = labels.len(),
@@ -102,7 +102,11 @@ impl RapidLayout {
             "RapidLayout ready"
         );
 
-        Ok(Self { session, labels, max_side })
+        Ok(Self {
+            session,
+            labels,
+            max_side,
+        })
     }
 
     /// Read the label list from the ONNX model.
@@ -237,15 +241,22 @@ impl RapidLayout {
     // ------------------------------------------------------------------
 
     fn preprocess(&self, img: &DynamicImage) -> Result<Array4<f32>> {
+        preprocess(img, self.max_side)
+    }
+}
+
+/// Letterbox resize + BGR/CHW + /255 normalization, shared by the model
+/// method and tests. `max_side` = 0 means pad-only at native resolution.
+fn preprocess(img: &DynamicImage, max_side: u32) -> Result<Array4<f32>> {
+    {
         let (w, h) = (img.width(), img.height());
-        let (_scale, pad_w, pad_h, canvas_w, canvas_h) =
-            letterbox_geometry(w, h, self.max_side);
+        let (_scale, pad_w, pad_h, canvas_w, canvas_h) = letterbox_geometry(w, h, max_side);
 
         // Resize: fit within max_side preserving aspect ratio (no-op when native)
-        let scale = if self.max_side == 0 {
+        let scale = if max_side == 0 {
             1.0
         } else {
-            self.max_side as f32 / w.max(h) as f32
+            max_side as f32 / w.max(h) as f32
         };
         let new_w = (w as f32 * scale).round() as u32;
         let new_h = (h as f32 * scale).round() as u32;
@@ -258,11 +269,7 @@ impl RapidLayout {
         );
 
         // Pad to canvas (center, gray 114)
-        let mut padded = image::RgbImage::from_pixel(
-            canvas_w,
-            canvas_h,
-            image::Rgb(PAD_COLOR),
-        );
+        let mut padded = image::RgbImage::from_pixel(canvas_w, canvas_h, image::Rgb(PAD_COLOR));
         let off_x = (pad_w.round()) as u32;
         let off_y = (pad_h.round()) as u32;
         for y in 0..new_h.min(canvas_h - off_y) {
@@ -326,8 +333,18 @@ fn multiclass_nms(
             }
             if detections[i].5 == detections[j].5 {
                 // Same class → check IoU
-                let box_i = (detections[i].0, detections[i].1, detections[i].2, detections[i].3);
-                let box_j = (detections[j].0, detections[j].1, detections[j].2, detections[j].3);
+                let box_i = (
+                    detections[i].0,
+                    detections[i].1,
+                    detections[i].2,
+                    detections[i].3,
+                );
+                let box_j = (
+                    detections[j].0,
+                    detections[j].1,
+                    detections[j].2,
+                    detections[j].3,
+                );
                 if iou(box_i, box_j) > iou_threshold {
                     suppressed[j] = true;
                 }
@@ -354,14 +371,14 @@ mod tests {
     #[test]
     fn preprocess_output_shape() {
         let img = test_image();
-        let tensor = RapidLayout::preprocess(&img).unwrap();
+        let tensor = preprocess(&img, 1024).unwrap();
         assert_eq!(tensor.shape(), &[1, 3, 1024, 1024]);
     }
 
     #[test]
     fn preprocess_values_in_range() {
         let img = test_image();
-        let tensor = RapidLayout::preprocess(&img).unwrap();
+        let tensor = preprocess(&img, 1024).unwrap();
         let mut found_content = false;
         for v in tensor.iter() {
             assert!(*v >= 0.0 && *v <= 1.0, "value {v} out of [0,1]");
@@ -393,7 +410,7 @@ mod tests {
     fn nms_suppresses_overlapping() {
         let dets = vec![
             (0.0, 0.0, 10.0, 10.0, 0.9, 0usize),
-            (1.0, 1.0, 9.0, 9.0, 0.8, 0usize),  // highly overlapping
+            (1.0, 1.0, 9.0, 9.0, 0.8, 0usize), // highly overlapping
             (20.0, 20.0, 30.0, 30.0, 0.7, 0usize), // disjoint, same class
         ];
         let keep = multiclass_nms(&dets, 0.5);
