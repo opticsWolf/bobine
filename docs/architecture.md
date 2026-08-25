@@ -119,6 +119,21 @@ Degradation contract: model-load failures propagate as `BobineError`, but
 missing layout.onnx never kills a conversion. `ModelPrecision::Fp16`
 selects `*_fp16.onnx` filenames (models deferred).
 
+Provider resolution (v0.4.9+): `ConverterConfig.ort_providers` is the base
+list for TexTeller sessions. Every heavy session has a per-slot override —
+`encoder_ort_providers` / `decoder_ort_providers` (TexTeller),
+`layout_ort_providers`, `ocr_ort_providers`, `table_ort_providers`; `None`
+selects the default, which encodes the measured ledger:
+
+| Slot | Default resolution | Why |
+|---|---|---|
+| layout, ocr | **auto-GPU** — CUDAExecutionProvider prepended when the loaded dylib registers it (once-locked probe) | measured 12.3x / 3.6x on CUDA |
+| table | **CPU-pinned** | SLANet measures 2-9x slower on CUDA (graph fragments across devices) |
+| tex_teller | base `ort_providers` | Int8+CUDA guarded with a warning; Fp32+CUDA opt-in via the base list |
+
+On CPU-only ONNX Runtime builds the CUDA probe is false and every slot
+resolves to plain CPU — zero cost, no config needed either way.
+
 ---
 
 ## 5. Coordinate spaces (the one real trap)

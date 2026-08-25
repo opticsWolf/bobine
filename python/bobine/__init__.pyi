@@ -29,7 +29,17 @@ class ConverterConfig:
     '''ort_providers: execution-provider priority, e.g.
     ["CUDAExecutionProvider", "CPUExecutionProvider"]. Requires pointing
     ORT_DYLIB_PATH at a GPU-enabled ONNX Runtime library; requests degrade
-    gracefully to CPU when the library lacks the provider.'''
+    gracefully to CPU when the library lacks the provider.
+
+    Per-slot overrides (all None by default):
+    - encoder_ort_providers / decoder_ort_providers: TexTeller sessions;
+      default to ort_providers.
+    - layout_ort_providers / ocr_ort_providers: default to AUTO - CUDA is
+      enabled automatically when the loaded ONNX Runtime library registers
+      it (measured 12.3x / 3.6x speedups); set to e.g.
+      ["CPUExecutionProvider"] to pin.
+    - table_ort_providers: defaults to CPU unconditionally (SLANet measures
+      2-9x slower on CUDA - the graph fragments across devices).'''
 
     def __init__(
         self,
@@ -54,11 +64,23 @@ class ConverterConfig:
         ocr_lang: str = "en",
         ort_providers: list[str] | None = None,
         encoder_ort_providers: list[str] | None = None,
+        decoder_ort_providers: list[str] | None = None,
+        layout_ort_providers: list[str] | None = None,
+        ocr_ort_providers: list[str] | None = None,
+        table_ort_providers: list[str] | None = None,
     ) -> None: ...
     @property
     def ort_providers(self) -> list[str]: ...
     @property
     def encoder_ort_providers(self) -> list[str] | None: ...
+    @property
+    def decoder_ort_providers(self) -> list[str] | None: ...
+    @property
+    def layout_ort_providers(self) -> list[str] | None: ...
+    @property
+    def ocr_ort_providers(self) -> list[str] | None: ...
+    @property
+    def table_ort_providers(self) -> list[str] | None: ...
 
     @property
     def extract_images(self) -> bool: ...

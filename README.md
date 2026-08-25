@@ -135,8 +135,16 @@ degraded recognition). Measured on a 10-formula corpus: Int8+CPU scores
 10/10, Fp32+CUDA 9/10 — occasional single-token decode noise flips between
 examples on either variant, so pick by hardware, not quality.
 
-On NVIDIA GPUs, point `ORT_DYLIB_PATH` at a GPU onnxruntime build and set
-`ort_providers=["cuda", ...]`; requests degrade gracefully to CPU.
+On NVIDIA GPUs, point `ORT_DYLIB_PATH` at a GPU onnxruntime build —
+v0.4.9+ auto-enables CUDA for the layout and OCR slots when the loaded
+library registers the CUDA execution provider (measured 12.3x / 3.6x
+speedups), and keeps table recognition pinned to CPU (SLANet measures
+2-9x slower on CUDA: its graph fragments across devices). Zero config
+needed; explicit per-slot overrides: `layout_ort_providers`,
+`ocr_ort_providers`, `table_ort_providers`, `encoder_ort_providers`,
+`decoder_ort_providers`. To also run Fp32 formula decode on the GPU, set
+`ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"]`
+(Int8 + CUDA is discouraged and warned against).
 
 Formula regions come from the PDF text layer (TeX math fonts such as
 `cmmi`/`cmsy`/`cmex`, plus unicode math codepoints), merged **line-aware** so
@@ -157,7 +165,7 @@ for unreferenced figures. For document-level workflows use
 ## Testing
 
 ```bash
-cargo test                # 81 unit tests — no native backends needed
+cargo test                # 83 unit tests — no native backends needed
 ORT_DYLIB_PATH=... cargo test   # + 9 integration tests over the PDF corpus
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```
@@ -170,8 +178,11 @@ Fixtures: trimmed CC BY 4.0 arXiv papers + a generated scanned page — see
 `ort` requires onnxruntime ≥ 1.19 and fails loudly at session creation on
 older system libraries (`BadVersion`). Set `ORT_DYLIB_PATH` explicitly in CI
 or dev environments with multiple installations. GPU support = point the same
-variable at a CUDA-enabled build; provider selection is planned via
-`ConverterConfig.ort_providers`.
+variable at a CUDA-enabled build; layout/OCR then auto-enable CUDA per
+slot (v0.4.9+) and `ConverterConfig` exposes per-slot overrides
+(`layout_ort_providers`, `ocr_ort_providers`, `table_ort_providers`,
+`encoder_ort_providers`, `decoder_ort_providers`), with `ort_providers`
+as the base list for TexTeller.
 
 ## License
 

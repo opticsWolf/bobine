@@ -64,6 +64,20 @@ pub(crate) fn apply_providers(
     }
 }
 
+/// Whether the loaded ONNX Runtime library can register the CUDA
+/// execution provider. Probed once — registration is the step that
+/// fails on a CPU-only dylib (see `apply_providers`).
+fn cuda_available() -> bool {
+    static PROBE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PROBE.get_or_init(|| {
+        let Ok(builder) = ort::session::Session::builder() else {
+            return false;
+        };
+        let cuda = ort::ep::CUDA::default().build();
+        builder.with_execution_providers(std::slice::from_ref(&cuda)).is_ok()
+    })
+}
+
 // ------------------------------------------------------------------
 // HuggingFace model acquisition (layout / OCR)
 // ------------------------------------------------------------------
@@ -141,6 +155,48 @@ pub struct OnnxEngine {
 }
 
 impl OnnxEngine {
+    /// Resolve providers for a GPU-eligible slot (layout / OCR): an
+    /// explicit override, else CUDA + CPU fallback when the loaded ORT
+    /// library registers CUDA (measured 12.3x / 3.6x speedups), else
+    /// the base `ort_providers` list.
+    fn resolve_auto_gpu_providers(
+        &self,
+        override_providers: Option<&Vec<String>>,
+        slot: &str,
+    ) -> Vec<String> {
+        match override_providers {
+            Some(p) => p.clone(),
+            None if cuda_available() => {
+                tracing::info!(
+                    slot,
+                    "CUDA registers in the loaded ONNX Runtime library: auto-enabling CUDAExecutionProvider"
+                );
+                vec![
+                    "CUDAExecutionProvider".to_string(),
+                    "CPUExecutionProvider".to_string(),
+                ]
+            }
+            None => self.config.ort_providers.clone(),
+        }
+    }
+
+    /// Resolve providers for the table slot: explicit override, else
+    /// always CPU — SLANet measures 2-9x slower on CUDA (the graph
+    /// fragments across devices).
+    fn resolve_table_providers(&self) -> Vec<String> {
+        match self.config.table_ort_providers.clone() {
+            Some(p) => p,
+            None => {
+                if cuda_available() {
+                    tracing::info!(
+                        "table slot pinned to CPUExecutionProvider (SLANet measures 2-9x slower on CUDA; set table_ort_providers to override)"
+                    );
+                }
+                vec!["CPUExecutionProvider".to_string()]
+            }
+        }
+    }
+
     pub fn new(config: &ConverterConfig, cache_dir: &Path) -> Self {
         Self {
             config: config.clone(),
@@ -211,6 +267,7 @@ impl OnnxEngine {
                     .ort_providers
                     .iter()
                     .chain(self.config.encoder_ort_providers.iter().flatten())
+                    .chain(self.config.decoder_ort_providers.iter().flatten())
                     .any(|p| p.to_lowercase().contains("cuda"))
             {
                 tracing::warn!(
@@ -218,18 +275,23 @@ impl OnnxEngine {
                 );
             }
             let enc_providers = self.config.encoder_ort_providers.as_deref();
+            let dec_providers: Vec<String> = self
+                .config
+                .decoder_ort_providers
+                .clone()
+                .unwrap_or_else(|| self.config.ort_providers.clone());
             let tt = match self.config.model_quantization {
                 crate::config::ModelQuantization::Fp32 => TexTeller::from_pretrained_split(
                     "OleehyO/TexTeller",
                     &self.cache_dir,
                     self.config.model_precision,
                     enc_providers,
-                    &self.config.ort_providers,
+                    &dec_providers,
                 )?,
                 crate::config::ModelQuantization::Int8 => TexTeller::from_pretrained_int8_split(
                     &self.cache_dir,
                     enc_providers,
-                    &self.config.ort_providers,
+                    &dec_providers,
                 )?,
             };
             self.tex_teller = Some(tt);
@@ -247,10 +309,8 @@ impl OnnxEngine {
                 Some(p) => p,
                 None => crate::rapid_table::download_slanet_plus(&self.cache_dir)?,
             };
-            self.table = Some(crate::rapid_table::RapidTable::load(
-                &path,
-                &self.config.ort_providers,
-            )?);
+            let providers = self.resolve_table_providers();
+            self.table = Some(crate::rapid_table::RapidTable::load(&path, &providers)?);
         }
         Ok(())
     }
@@ -296,7 +356,11 @@ impl OnnxEngine {
                 None => hf_fetch(&self.cache_dir, LAYOUT_REPO, LAYOUT_FILENAME)?,
             };
             info!("Loading RapidLayout from {}...", path.display());
-            let layout = RapidLayout::load(&path, &self.config.ort_providers)?;
+            let providers = self.resolve_auto_gpu_providers(
+                self.config.layout_ort_providers.as_ref(),
+                "layout",
+            );
+            let layout = RapidLayout::load(&path, &providers)?;
             self.layout = Some(layout);
         }
         Ok(())
@@ -329,12 +393,11 @@ impl OnnxEngine {
                 det.display(),
                 rec.display()
             );
-            let ocr = RapidOcr::load(
-                &det,
-                &rec,
-                &self.config.ocr_lang,
-                &self.config.ort_providers,
-            )?;
+            let providers = self.resolve_auto_gpu_providers(
+                self.config.ocr_ort_providers.as_ref(),
+                "ocr",
+            );
+            let ocr = RapidOcr::load(&det, &rec, &self.config.ocr_lang, &providers)?;
             self.ocr = Some(ocr);
         }
         Ok(())
@@ -422,5 +485,57 @@ mod tests {
             &["warp-drive".to_string(), "CPUExecutionProvider".to_string()],
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn table_slot_defaults_to_cpu_even_with_cuda_base() {
+        let cfg = ConverterConfig {
+            ort_providers: vec![
+                "CUDAExecutionProvider".into(),
+                "CPUExecutionProvider".into(),
+            ],
+            ..Default::default()
+        };
+        let engine = OnnxEngine::new(&cfg, Path::new("/tmp/bobine_test"));
+        assert_eq!(
+            engine.resolve_table_providers(),
+            vec!["CPUExecutionProvider".to_string()]
+        );
+
+        // An explicit override is honored, even against the default policy.
+        let cfg = ConverterConfig {
+            table_ort_providers: Some(vec!["CUDAExecutionProvider".into()]),
+            ..Default::default()
+        };
+        let engine = OnnxEngine::new(&cfg, Path::new("/tmp/bobine_test"));
+        assert_eq!(
+            engine.resolve_table_providers(),
+            vec!["CUDAExecutionProvider".to_string()]
+        );
+    }
+
+    #[test]
+    fn auto_gpu_slot_respects_pins_and_cuda_probe() {
+        if std::env::var("ORT_DYLIB_PATH").is_err() {
+            eprintln!("skipped: ORT_DYLIB_PATH not set");
+            return;
+        }
+        let cfg = ConverterConfig::default();
+        let engine = OnnxEngine::new(&cfg, Path::new("/tmp/bobine_test"));
+        let resolved = engine.resolve_auto_gpu_providers(None, "layout");
+        if cuda_available() {
+            // GPU dylib: CUDA first, CPU fallback behind it.
+            assert_eq!(resolved[0], "CUDAExecutionProvider");
+            assert!(resolved.contains(&"CPUExecutionProvider".to_string()));
+        } else {
+            // CPU-only dylib: untouched base list.
+            assert_eq!(resolved, vec!["CPUExecutionProvider".to_string()]);
+        }
+        // An explicit pin always wins.
+        let pinned = engine.resolve_auto_gpu_providers(
+            Some(&vec!["CPUExecutionProvider".to_string()]),
+            "ocr",
+        );
+        assert_eq!(pinned, vec!["CPUExecutionProvider".to_string()]);
     }
 }

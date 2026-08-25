@@ -107,18 +107,29 @@ bobine.ConverterConfig(model_precision=bobine.ModelPrecision.Fp16)
 # compact-memory formula recognition (~316 MB instead of ~1.25 GB):
 bobine.ConverterConfig(model_quantization=bobine.ModelQuantization.Int8)
 
-# GPU (dynamic): request CUDA with CPU fallback - same build, no rebuild needed.
-# Point ORT_DYLIB_PATH at a GPU-enabled ONNX Runtime library (onnxruntime-gpu
-# >= 1.19 + matching CUDA/cuDNN); requests degrade gracefully to CPU otherwise.
-# On a GPU, prefer Fp32 weights + all-CUDA (~2.3x faster formulas measured on
-# an RTX 3090); Int8 is CPU-oriented (quantized ops run slower on the GPU EP).
+# GPU (dynamic): point ORT_DYLIB_PATH at a GPU-enabled ONNX Runtime library
+# (onnxruntime-gpu >= 1.19 + matching CUDA/cuDNN). v0.4.9+ auto-enables CUDA
+# for the layout and OCR slots when the loaded library registers the CUDA EP
+# (measured 12.3x / 3.6x on an RTX 3090) and pins table recognition to CPU
+# (SLANet measures 2-9x slower on CUDA - its graph fragments across devices).
+# Same build, no rebuild needed; degrades gracefully to CPU otherwise.
+bobine.ConverterConfig()   # zero-config GPU defaults
+
+# Fp32 formula decode on GPU: also route TexTeller through CUDA
+# (~2.3x faster formulas measured on an RTX 3090). Int8 is CPU-oriented
+# (quantized ops run slower on the GPU EP) - do NOT combine Int8 with CUDA;
+# bobine logs a warning when it sees that combination.
 bobine.ConverterConfig(
     model_quantization=bobine.ModelQuantization.Fp32,
     ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
 
-# do NOT combine Int8 with CUDA: quantized ops lack GPU kernels and the
-# graph splits across devices (~2x slower than plain-CPU Int8). bobine
-# logs a warning when it sees this combination.
+# per-slot overrides (pin any slot, mix freely):
+bobine.ConverterConfig(
+    layout_ort_providers=["CPUExecutionProvider"],   # keep layout on CPU
+    ocr_ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    table_ort_providers=["CUDAExecutionProvider"],   # measured: avoid
+    encoder_ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    decoder_ort_providers=["CPUExecutionProvider"])
 
 # or offload only the ViT encoder to the GPU and keep the autoregressive
 # decoder on CPU (~20% faster than all-CPU):
@@ -182,7 +193,7 @@ table model only disables scanned-table recognition.
 ## Testing
 
 ```bash
-cargo test                 # 81 unit + 9 integration tests
+cargo test                 # 83 unit + 9 integration tests
 ORT_DYLIB_PATH=... cargo test   # needed for the PDF integration tests
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```

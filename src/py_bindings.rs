@@ -91,6 +91,10 @@ impl PyConverterConfig {
         ocr_lang = "en".to_string(),
         ort_providers = None,
         encoder_ort_providers = None,
+        decoder_ort_providers = None,
+        layout_ort_providers = None,
+        ocr_ort_providers = None,
+        table_ort_providers = None,
     ))]
     fn new(
         extract_images: bool,
@@ -114,6 +118,10 @@ impl PyConverterConfig {
         ocr_lang: String,
         ort_providers: Option<Vec<String>>,
         encoder_ort_providers: Option<Vec<String>>,
+        decoder_ort_providers: Option<Vec<String>>,
+        layout_ort_providers: Option<Vec<String>>,
+        ocr_ort_providers: Option<Vec<String>>,
+        table_ort_providers: Option<Vec<String>>,
     ) -> Self {
         // Execution-provider selection is resolved at runtime against the
         // loaded ONNX Runtime library (ORT_DYLIB_PATH). Requesting an
@@ -137,6 +145,10 @@ impl PyConverterConfig {
                 },
                 ort_providers,
                 encoder_ort_providers,
+                decoder_ort_providers,
+                layout_ort_providers,
+                ocr_ort_providers,
+                table_ort_providers,
                 render_dpi,
                 formula_dpi,
                 detect_headings,
@@ -186,6 +198,22 @@ impl PyConverterConfig {
     #[getter]
     fn encoder_ort_providers(&self) -> Option<Vec<String>> {
         self.inner.encoder_ort_providers.clone()
+    }
+    #[getter]
+    fn decoder_ort_providers(&self) -> Option<Vec<String>> {
+        self.inner.decoder_ort_providers.clone()
+    }
+    #[getter]
+    fn layout_ort_providers(&self) -> Option<Vec<String>> {
+        self.inner.layout_ort_providers.clone()
+    }
+    #[getter]
+    fn ocr_ort_providers(&self) -> Option<Vec<String>> {
+        self.inner.ocr_ort_providers.clone()
+    }
+    #[getter]
+    fn table_ort_providers(&self) -> Option<Vec<String>> {
+        self.inner.table_ort_providers.clone()
     }
     fn __repr__(&self) -> String {
         format!(

@@ -88,6 +88,31 @@ pub struct ConverterConfig {
     /// autoregressive decoder on CPU, e.g. `["cuda", "cpu"]`.
     pub encoder_ort_providers: Option<Vec<String>>,
 
+    /// Provider override for the TexTeller *decoder* (KV-cache graph)
+    /// session only. `None` (default) = use `ort_providers`.
+    #[serde(default)]
+    pub decoder_ort_providers: Option<Vec<String>>,
+
+    /// Provider override for the RapidLayout session.
+    /// `None` (default) = **auto**: CUDA when the loaded ONNX Runtime
+    /// library registers it (measured 12.3x faster), else the base
+    /// `ort_providers`. Set e.g. `["CPUExecutionProvider"]` to pin.
+    #[serde(default)]
+    pub layout_ort_providers: Option<Vec<String>>,
+
+    /// Provider override for the RapidOCR det + rec sessions.
+    /// `None` (default) = **auto**, same policy as layout (measured
+    /// 3.6x faster on CUDA).
+    #[serde(default)]
+    pub ocr_ort_providers: Option<Vec<String>>,
+
+    /// Provider override for the RapidTable (SLANet-plus) session.
+    /// `None` (default) = **always CPU**: SLANet's graph fragments
+    /// across devices on CUDA and measures 2-9x slower than CPU
+    /// (IMPLEMENTATION_PLAN.md).
+    #[serde(default)]
+    pub table_ort_providers: Option<Vec<String>>,
+
     /// DPI for scanned-page renders.
     pub render_dpi: u32,
 
@@ -141,6 +166,10 @@ impl Default for ConverterConfig {
             model_quantization: ModelQuantization::Int8,
             ort_providers: vec!["CPUExecutionProvider".into()],
             encoder_ort_providers: None,
+            decoder_ort_providers: None,
+            layout_ort_providers: None,
+            ocr_ort_providers: None,
+            table_ort_providers: None,
             render_dpi: 300,
             formula_dpi: 200,
             detect_headings: true,
