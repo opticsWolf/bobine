@@ -59,6 +59,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if ["equation", "display_formula", "inline_formula", "isolate_formula", "formula"].iter().any(|k| lab.contains(k)) {
             let tmp = std::env::temp_dir().join("_probe_f.png");
             image::DynamicImage::ImageRgba8(crop).save(&tmp)?;
+            if std::env::var("BOB_SKIP_FORMULA").is_ok() {
+                println!("  FORMULA skipped (BOB_SKIP_FORMULA)");
+                continue;
+            }
             let t0 = Instant::now();
             let latex = engine.recognize_formula(&tmp)?;
             println!(
