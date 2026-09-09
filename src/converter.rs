@@ -275,6 +275,68 @@ fn figure_block(
     None
 }
 
+/// Text arm (extracted from the dispatch loop): prefer the PDF text layer,
+/// fall back to OCR for scanned pages. Returns the block text (`Some`) or
+/// `None` when the region yields nothing. Terminal: no fall-through.
+///
+/// The OCR fallback runs at most once per area: regions whose base bbox is
+/// already >25% covered by a previous OCR claim are skipped (re-OCR per
+/// region used to emit every line once per overlapping layout box).
+fn text_block(
+    engine: &mut crate::engine::OnnxEngine,
+    page_chars: &[SourceChar],
+    lines: &[Vec<usize>],
+    lab: &str,
+    region: &crate::rapid_layout::LayoutRegion,
+    ocr_claimed: &mut Vec<Rect>,
+    img: &DynamicImage,
+    dpi: u32,
+) -> Option<String> {
+    let text = region_lines_to_text(page_chars, lines);
+    if !text.trim().is_empty() {
+        let mut t = text;
+        if lab.contains("title") {
+            t = format!("## {}", t);
+        }
+        return Some(t);
+    }
+    // OCR fallback for scanned pages (no text layer → no glyph ownership).
+    let base = Rect::new(
+        region.x0,
+        region.y0,
+        region.x1 - region.x0,
+        region.y1 - region.y0,
+    );
+    let base_area = (base.width * base.height).max(1e-6);
+    let already = ocr_claimed.iter().any(|r| {
+        let iw = (r.x + r.width).min(base.x + base.width) - r.x.max(base.x);
+        let ih = (r.y + r.height).min(base.y + base.height) - r.y.max(base.y);
+        iw > 0.0 && ih > 0.0 && (iw * ih) / base_area > 0.25
+    });
+    if already {
+        return None;
+    }
+    if let Some(crop) = crop_image(img, base, dpi, 0.0) {
+        if let Ok(lines) = engine.ocr_lines(&crop) {
+            let t: String = lines
+                .into_iter()
+                .map(|l| l.text)
+                .filter(|t| !t.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            if !t.trim().is_empty() {
+                ocr_claimed.push(base);
+                let mut t = t;
+                if lab.contains("title") {
+                    t = format!("## {}", t);
+                }
+                return Some(t);
+            }
+        }
+    }
+    None
+}
+
 /// Seam repair: glyphs covered by NO emitting region (seams between
 /// layout boxes, dropped by argmax ownership) are clustered into lines
 /// and offered to the nearest region whose padded box contains them.
@@ -2274,56 +2336,17 @@ impl HybridConverter {
                 ) {
                     blocks.push(link);
                 }
-            } else {
-                // Text region: prefer PDF text layer, fall back to OCR
-                let text = region_lines_to_text(&page_chars, &region_lines[ri]);
-                if !text.trim().is_empty() {
-                    let mut t = text;
-                    if lab.contains("title") {
-                        t = format!("## {}", t);
-                    }
-                    blocks.push(t);
-                } else {
-                    // OCR fallback for scanned pages (no text layer → no
-                    // glyph ownership). OCR the region's base bbox at most
-                    // once: skip when a previous region already OCR'd most
-                    // of this area, else OCR the whole box and record it.
-                    // Re-OCR per region used to emit every line once per
-                    // overlapping layout box.
-                    let base = Rect::new(
-                        region.x0,
-                        region.y0,
-                        region.x1 - region.x0,
-                        region.y1 - region.y0,
-                    );
-                    let base_area = (base.width * base.height).max(1e-6);
-                    let already = ocr_claimed.iter().any(|r| {
-                        let iw = (r.x + r.width).min(base.x + base.width) - r.x.max(base.x);
-                        let ih = (r.y + r.height).min(base.y + base.height) - r.y.max(base.y);
-                        iw > 0.0 && ih > 0.0 && (iw * ih) / base_area > 0.25
-                    });
-                    if already {
-                        continue;
-                    }
-                    if let Some(crop) = crop_image(&img, base, dpi, 0.0) {
-                        if let Ok(lines) = self.engine.ocr_lines(&crop) {
-                            let t: String = lines
-                                .into_iter()
-                                .map(|l| l.text)
-                                .filter(|t| !t.is_empty())
-                                .collect::<Vec<_>>()
-                                .join(" ");
-                            if !t.trim().is_empty() {
-                                ocr_claimed.push(base);
-                                let mut t = t;
-                                if lab.contains("title") {
-                                    t = format!("## {}", t);
-                                }
-                                blocks.push(t);
-                            }
-                        }
-                    }
-                }
+            } else if let Some(t) = text_block(
+                &mut self.engine,
+                &page_chars,
+                &region_lines[ri],
+                &lab,
+                region,
+                &mut ocr_claimed,
+                &img,
+                dpi,
+            ) {
+                blocks.push(t);
             }
         }
 
