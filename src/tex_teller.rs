@@ -24,6 +24,46 @@ const IMAGE_MEAN: f32 = 0.9545467;
 const IMAGE_STD: f32 = 0.15394445;
 pub(crate) const MAX_TOKENS: usize = 1024;
 
+/// Depth of the TexTeller RoBERTa decoder (drives the 48 past/present KV IOs).
+const LAYERS: usize = 12;
+
+/// Argmax over one logit row; `fallback` (usually EOS) when the row is empty.
+/// Pure helper so the decode policy is unit-testable without a model.
+fn argmax_next_token(last: ndarray::ArrayView1<'_, f32>, fallback: i64) -> i64 {
+    last.iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(idx, _)| idx as i64)
+        .unwrap_or(fallback)
+}
+
+/// Harvest one KV scope (`"decoder"` self-attention or `"encoder"`
+/// cross-attention) from `present.{i}.{scope}.{key|value}` into
+/// `past_key_values.*` entries for the next decode step.
+fn harvest_kv(
+    outputs: &ort::session::SessionOutputs<'_>,
+    scope: &str,
+    cache: &mut Vec<(
+        String,
+        ort::value::Value<ort::value::TensorValueType<f32>>,
+    )>,
+) -> Result<()> {
+    use ort::value::Tensor;
+    for i in 0..LAYERS {
+        for kv in ["key", "value"] {
+            let name = format!("present.{i}.{scope}.{kv}");
+            let arr = outputs[name.as_str()]
+                .try_extract_array::<f32>()
+                .map_err(|e| BobineError::Ort(format!("{name}: {e}")))?
+                .to_owned();
+            let val = Tensor::from_array(arr)
+                .map_err(|e| BobineError::Ort(format!("{name}: {e}")))?;
+            cache.push((format!("past_key_values.{i}.{scope}.{kv}"), val));
+        }
+    }
+    Ok(())
+}
+
 /// Full TexTeller pipeline: encoder + decoder + tokenizer.
 pub struct TexTeller {
     /// Decode step budget (defaults to MAX_TOKENS). Callers may lower it
@@ -396,13 +436,10 @@ impl TexTeller {
                 .try_extract_array::<f32>()
                 .map_err(|e| BobineError::Ort(format!("decoder output: {e}")))?;
             let seq_len = logits.shape()[1];
-            let last = logits.slice(ndarray::s![0, seq_len - 1, ..]);
-            let next_token = last
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(idx, _)| idx as i64)
-                .unwrap_or(self.eos_token_id as i64);
+            let next_token = argmax_next_token(
+                logits.slice(ndarray::s![0, seq_len - 1, ..]),
+                self.eos_token_id as i64,
+            );
 
             token_ids.push(next_token);
             if next_token == self.eos_token_id as i64 {
@@ -430,7 +467,6 @@ impl TexTeller {
         // Steps 1..: feed only the newest token plus the previous `present.*`
         // as `past_key_values.*` with `use_cache_branch=true` — O(1) per step
         // instead of re-running the whole prefix.
-        const LAYERS: usize = 12;
 
         let mut token_ids: Vec<i64> = vec![self.bos_token_id as i64];
 
@@ -489,13 +525,10 @@ impl TexTeller {
                 .try_extract_array::<f32>()
                 .map_err(|e| BobineError::Ort(format!("decoder output: {e}")))?;
             let seq_len = logits.shape()[1];
-            let last = logits.slice(ndarray::s![0, seq_len - 1, ..]);
-            let next_token = last
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(idx, _)| idx as i64)
-                .unwrap_or(self.eos_token_id as i64);
+            let next_token = argmax_next_token(
+                logits.slice(ndarray::s![0, seq_len - 1, ..]),
+                self.eos_token_id as i64,
+            );
 
             token_ids.push(next_token);
 
@@ -503,32 +536,10 @@ impl TexTeller {
             // encoder caches are NOT refreshed (see note above); they were
             // captured once from the prefill below.
             dec_cache.clear();
-            for i in 0..LAYERS {
-                for kv in ["key", "value"] {
-                    let name = format!("present.{i}.decoder.{kv}");
-                    let arr = outputs[name.as_str()]
-                        .try_extract_array::<f32>()
-                        .map_err(|e| BobineError::Ort(format!("{name}: {e}")))?
-                        .to_owned();
-                    let val = Tensor::from_array(arr)
-                        .map_err(|e| BobineError::Ort(format!("{name}: {e}")))?;
-                    dec_cache.push((format!("past_key_values.{i}.decoder.{kv}"), val));
-                }
-            }
+            harvest_kv(&outputs, "decoder", &mut dec_cache)?;
             if enc_cache.is_empty() && prefill {
                 // Prefill: capture the cross-attention K/V permanently.
-                for i in 0..LAYERS {
-                    for kv in ["key", "value"] {
-                        let name = format!("present.{i}.encoder.{kv}");
-                        let arr = outputs[name.as_str()]
-                            .try_extract_array::<f32>()
-                            .map_err(|e| BobineError::Ort(format!("{name}: {e}")))?
-                            .to_owned();
-                        let val = Tensor::from_array(arr)
-                            .map_err(|e| BobineError::Ort(format!("{name}: {e}")))?;
-                        enc_cache.push((format!("past_key_values.{i}.encoder.{kv}"), val));
-                    }
-                }
+                harvest_kv(&outputs, "encoder", &mut enc_cache)?;
             }
 
             if next_token == self.eos_token_id as i64 {
@@ -608,5 +619,16 @@ mod tests {
         let trimmed = TexTeller::trim_white_border_rgb(&img);
         assert_eq!(trimmed.width(), 50); // unchanged when all same color
         assert_eq!(trimmed.height(), 50);
+    }
+
+    #[test]
+    fn argmax_next_token_picks_max_or_fallback() {
+        let logits = ndarray::arr2(&[[0.1f32, 2.0, 0.5]]);
+        assert_eq!(
+            argmax_next_token(logits.slice(ndarray::s![0, ..]), -1),
+            1
+        );
+        let empty = ndarray::Array1::<f32>::zeros(0);
+        assert_eq!(argmax_next_token(empty.view(), 7), 7);
     }
 }
