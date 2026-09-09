@@ -533,7 +533,9 @@ fn caption_alt(text: &str, max_chars: usize) -> Option<String> {
     }
     // The token after the keyword should identify the figure: a number,
     // a supplementary tag ("S1"), or nothing but punctuation.
-    if !rest.chars().next().unwrap().is_ascii_digit()
+    // (`rest` is non-empty per the check above; `map_or` avoids an unwrap
+    // on untrusted caption text.)
+    if !rest.chars().next().map_or(false, |c| c.is_ascii_digit())
         && !rest.chars().any(|c| c.is_ascii_alphanumeric())
     {
         return None;
@@ -928,7 +930,11 @@ fn interleave_images(
     let mut line_i = 0usize;
 
     for asset in &candidates {
-        let bottom = asset.bbox_pts.unwrap().y + asset.bbox_pts.unwrap().height;
+        // Candidates are pre-filtered by `bbox_pts.is_some()`, but re-assert
+        // rather than unwrap: a future filter change must not panic on
+        // unplaced assets (gallery picks them up instead).
+        let Some(b) = asset.bbox_pts else { continue };
+        let bottom = b.y + b.height;
         // Index of the first line starting below the asset's bottom edge.
         let anchor = (line_i..lines.len()).find(|&li| lines[li].0 >= bottom - 0.5);
         let Some(li) = anchor else {
@@ -1702,7 +1708,10 @@ impl HybridConverter {
         for line in cluster_lines(&page_chars, &owned) {
             let mut tally: std::collections::HashMap<usize, usize> = Default::default();
             for &i in &line {
-                *tally.entry(glyph_owner[i].unwrap()).or_default() += 1;
+                // `owned` only holds `Some` indices, but never panic on a
+                // corrupt page — skip instead of shredding the line.
+                let Some(owner) = glyph_owner[i] else { continue };
+                *tally.entry(owner).or_default() += 1;
             }
             let winner = tally
                 .into_iter()
