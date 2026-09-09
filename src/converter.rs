@@ -261,11 +261,17 @@ impl HybridConverter {
         if self.config.routing_mode == RoutingMode::Surgical {
             if is_scanned(pdf, index, self.config.scanned_text_threshold) {
                 self.engine.ensure_models()?;
-                if let Ok(Some(md)) = self.full_structure_page_markdown(pdf, index, work_dir, assets) {
-                    if !md.trim().is_empty() {
+                match self.full_structure_page_markdown(pdf, index, work_dir, assets) {
+                    Ok(Some(md)) if !md.trim().is_empty() => {
                         info!("page {}: scanned → ONNX layout+OCR", index + 1);
                         return Ok(md);
                     }
+                    Err(e) => warn!(
+                        "page {}: ONNX full-structure failed ({}); falling back to fast path",
+                        index + 1,
+                        e
+                    ),
+                    _ => {}
                 }
                 return self.fast_markdown_placed(pdf, index, assets);
             }
