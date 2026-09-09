@@ -201,6 +201,7 @@ struct RegionCtx<'a> {
     page_index: usize,
     assets: &'a [EmbeddedAsset],
     median_char_h: f32,
+    line_height: f32,
 }
 
 /// Caption/footnote pre-route (extracted from the dispatch loop).
@@ -350,24 +351,21 @@ fn text_block(
 /// block: structured text-layer extraction → unstructured line dump →
 /// scanned OCR + SLANet-plus → `[table: …]` placeholder.
 fn table_block(
-    config: &ConverterConfig,
+    ctx: &RegionCtx<'_>,
     pdf: &mut dyn PdfSource,
-    engine: &mut crate::engine::OnnxEngine,
-    page_chars: &[SourceChar],
-    lines: &[Vec<usize>],
-    region_label: &str,
+    engine: &mut OnnxEngine,
+    ri: usize,
     bbox: Rect,
-    img: &DynamicImage,
-    dpi: u32,
-    page_index: usize,
 ) -> String {
+    let lines = &ctx.region_lines[ri];
+    let region_label = ctx.sorted[ri].label.as_str();
     // Stage 1 — structured extraction from the text layer: Tagged-PDF
     // structure tree or ruled-grid detection scoped to this region.
     // Preserves cell/column structure that a plain glyph dump destroys
     // (borderless tables fall through — the spatial detector rejects
     // prose-shaped candidates).
-    if config.text.structured_tables {
-        match pdf.tables_in_rect(page_index, bbox) {
+    if ctx.config.text.structured_tables {
+        match pdf.tables_in_rect(ctx.page_index, bbox) {
             Ok(tables) => {
                 let md: Vec<String> = tables
                     .iter()
@@ -377,27 +375,27 @@ fn table_block(
                 if !md.is_empty() {
                     info!(
                         "page {}: {} structured table(s) in region",
-                        page_index + 1,
+                        ctx.page_index + 1,
                         md.len()
                     );
                     return md.join("\n\n");
                 }
             }
             Err(e) => {
-                tracing::warn!("page {}: structured table probe failed: {e}", page_index + 1)
+                tracing::warn!("page {}: structured table probe failed: {e}", ctx.page_index + 1)
             }
         }
     }
     // Stage 2 — unstructured dump of the region's text lines.
-    let text = region_lines_to_text(page_chars, lines);
+    let text = region_lines_to_text(ctx.page_chars, lines);
     if !text.trim().is_empty() {
-        return if config.text.convert_html_tables {
+        return if ctx.config.text.convert_html_tables {
             crate::tables::html_tables_to_gfm(&text)
         } else {
             text
         };
     }
-    if let Some(crop) = crop_image(img, bbox, dpi, 0.0) {
+    if let Some(crop) = crop_image(ctx.img, bbox, ctx.dpi, 0.0) {
         // Scanned table: OCR the crop, then SLANet-plus structure.
         match engine
             .ocr_lines(&crop)
@@ -406,10 +404,10 @@ fn table_block(
             Ok(Ok(Some(html))) => {
                 info!(
                     "page {}: table recognized ({}px crop)",
-                    page_index + 1,
+                    ctx.page_index + 1,
                     crop.width()
                 );
-                return if config.text.convert_html_tables {
+                return if ctx.config.text.convert_html_tables {
                     crate::tables::html_tables_to_gfm(&html)
                 } else {
                     html
@@ -425,26 +423,22 @@ fn table_block(
 /// to append (0..N: hybrid refinement can emit prose + several equations).
 /// Consumes refined text-layer math boxes from `page_math_boxes` so
 /// overlapping regions cannot re-emit them.
-#[allow(clippy::too_many_arguments)]
 fn math_blocks(
-    config: &ConverterConfig,
+    ctx: &RegionCtx<'_>,
     pdf: &mut dyn PdfSource,
-    engine: &mut crate::engine::OnnxEngine,
-    page_chars: &[SourceChar],
-    lines: &[Vec<usize>],
-    region: &crate::rapid_layout::LayoutRegion,
+    engine: &mut OnnxEngine,
+    ri: usize,
     bbox: Rect,
-    img: &DynamicImage,
-    dpi: u32,
-    work_dir: &Path,
-    page_index: usize,
     block_no: usize,
     page_math_boxes: &mut Vec<Rect>,
-    line_height: f32,
 ) -> Result<Vec<String>> {
+    let lines = &ctx.region_lines[ri];
+    let region = &ctx.sorted[ri];
+    let line_height = ctx.line_height;
+    let page_index = ctx.page_index;
     let mut out: Vec<String> = Vec::new();
-    let page_h_px = img.height() as f64;
-    let page_px = img.width() as f64 * page_h_px;
+    let page_h_px = ctx.img.height() as f64;
+    let page_px = ctx.img.width() as f64 * page_h_px;
     // region coords are already render pixels - no extra scale
     let w_px = (region.x1 - region.x0) as f64;
     let h_px = (region.y1 - region.y0) as f64;
@@ -493,7 +487,7 @@ fn math_blocks(
         }
     }
     if !refined.is_empty() {
-        let text = region_lines_to_text(page_chars, lines);
+        let text = region_lines_to_text(ctx.page_chars, lines);
         let mut reps: Vec<(String, String)> = Vec::new();
         for rb in &refined {
             // Gate 1: skip labels ("(4)"), artifacts and tiny inline
@@ -505,14 +499,14 @@ fn math_blocks(
             // are merged blobs of display equations interleaved with
             // inline-math prose lines; cropping them yields garbage.
             let display = rb.height > 1.6 * line_height
-                || rb.width > config.text.formula_inline_max_width_pts as f32;
+                || rb.width > ctx.config.text.formula_inline_max_width_pts as f32;
             if !display || rb.height > 3.0 * line_height {
                 continue;
             }
             // Glyph-tight boxes: no padding, padding only bleeds
             // neighbouring text lines into the crop.
             let t_rec = std::time::Instant::now();
-            let crop_res = crop_image(img, *rb, dpi, 0.0);
+            let crop_res = crop_image(ctx.img, *rb, ctx.dpi, 0.0);
             if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
                 eprintln!(
                     "HYBRID-crop p{} w={:.0} h={:.0} (lh={:.1})",
@@ -526,7 +520,7 @@ fn math_blocks(
                 if crop.width() < 4 || crop.height() < 4 {
                     continue;
                 }
-                let p = work_dir.join(format!(
+                let p = ctx.work_dir.join(format!(
                     "_reg_hf_{}_{}.png",
                     page_index,
                     block_no + reps.len()
@@ -581,7 +575,7 @@ fn math_blocks(
             h_px,
             100.0 * (w_px * h_px) / page_px
         );
-        let text = region_lines_to_text(page_chars, lines);
+        let text = region_lines_to_text(ctx.page_chars, lines);
         if !text.trim().is_empty() {
             out.push(text);
         }
@@ -592,11 +586,11 @@ fn math_blocks(
     // equation - do not spend a multi-second decode on prose. TexTeller
     // only when the text layer is empty (scans, image-only equations),
     // and even then the decode is budgeted by crop area.
-    let text = region_lines_to_text(page_chars, lines);
+    let text = region_lines_to_text(ctx.page_chars, lines);
     if text.trim().is_empty() {
-        if let Some(crop) = crop_image(img, bbox, dpi, config.text.formula_pad_pts) {
+        if let Some(crop) = crop_image(ctx.img, bbox, ctx.dpi, ctx.config.text.formula_pad_pts) {
             if crop.width() >= 4 && crop.height() >= 4 {
-                let p = work_dir.join(format!("_reg_f_{}.png", block_no));
+                let p = ctx.work_dir.join(format!("_reg_f_{}.png", block_no));
                 if crop.save(&p).is_ok() {
                     let budget =
                         ((bbox.width * bbox.height) / 40.0).clamp(64.0, 512.0) as usize;
@@ -2334,6 +2328,7 @@ impl HybridConverter {
             page_index: index,
             assets,
             median_char_h,
+            line_height,
         };
 
         let mut blocks: Vec<String> = Vec::new();
@@ -2365,34 +2360,16 @@ impl HybridConverter {
             }
 
             if lab.contains("table") {
-                blocks.push(table_block(
-                    &self.config,
-                    pdf,
-                    &mut self.engine,
-                    &page_chars,
-                    &region_lines[ri],
-                    &region.label,
-                    bbox,
-                    &img,
-                    dpi,
-                    index,
-                ));
+                blocks.push(table_block(&ctx, pdf, &mut self.engine, ri, bbox));
             } else if MATH_LAYOUT_LABELS.iter().any(|k| lab.contains(k)) {
                 blocks.extend(math_blocks(
-                    &self.config,
+                    &ctx,
                     pdf,
                     &mut self.engine,
-                    &page_chars,
-                    &region_lines[ri],
-                    region,
+                    ri,
                     bbox,
-                    &img,
-                    dpi,
-                    work_dir,
-                    index,
                     blocks.len(),
                     &mut page_math_boxes,
-                    line_height,
                 )?);
             } else if lab.contains("figure") || lab.contains("image") {
                 if let Some(link) = figure_block(&ctx, bbox, blocks.len()) {

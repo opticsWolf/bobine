@@ -380,7 +380,7 @@ dependencies = [
 
 [[package]]
 name = "bobine"
-version = "0.4.24"
+version = "0.4.25"
 dependencies = [
  "anyhow",
  "half",
