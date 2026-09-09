@@ -38,6 +38,46 @@ impl SourceChar {
     }
 }
 
+/// Bobine-owned mirror of one structured table cell.
+///
+/// Same decoupling rationale as [`SourceChar`]: pdf_oxide's table types
+/// churn upstream, and the fakes must not depend on them.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SourceTableCell {
+    pub text: String,
+    pub colspan: u32,
+    pub rowspan: u32,
+}
+
+/// Bobine-owned mirror of one structured table row.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SourceTableRow {
+    pub cells: Vec<SourceTableCell>,
+    pub is_header: bool,
+}
+
+/// Bobine-owned mirror of a structured table extracted from the text layer
+/// (Tagged-PDF structure tree or ruled-grid spatial detection).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SourceTable {
+    pub rows: Vec<SourceTableRow>,
+    pub has_header: bool,
+    pub col_count: usize,
+    /// Bounding box in PDF points, when the detector could localize it.
+    pub bbox: Option<Rect>,
+}
+
+/// Placement info for one embedded raster image of a page.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SourceImage {
+    /// Bounding box in PDF points (None when the source cannot localize it —
+    /// e.g. images drawn through exotic XObject chains).
+    pub bbox: Option<Rect>,
+    /// Pixel dimensions of the stored bitmap.
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Abstract view of an opened PDF document.
 pub trait PdfSource {
     fn page_count(&mut self) -> Result<usize>;
@@ -60,6 +100,21 @@ pub trait PdfSource {
     fn render_png(&mut self, index: usize, dpi: u32) -> Result<Vec<u8>>;
     /// `[x0, y0, width, height]` of the page in points.
     fn media_box(&mut self, index: usize) -> Result<[f32; 4]>;
+
+    /// Structured tables whose bbox intersects `rect` (PDF points), drawn
+    /// from the Tagged-PDF structure tree or ruled-grid spatial detection.
+    /// Default: none (sources without grid detection). Used by the
+    /// born-digital table cascade in the full-structure path.
+    fn tables_in_rect(&mut self, _index: usize, _rect: Rect) -> Result<Vec<SourceTable>> {
+        Ok(Vec::new())
+    }
+
+    /// Placement info for the page's embedded raster images, in extraction
+    /// order (the same order `extract_image_files` writes files in).
+    /// Default: none.
+    fn images(&mut self, _index: usize) -> Result<Vec<SourceImage>> {
+        Ok(Vec::new())
+    }
 }
 
 impl PdfSource for Pdf {
@@ -108,11 +163,28 @@ impl PdfSource for Pdf {
         let objs = self
             .extract_images(index)
             .map_err(|e| BobineError::PdfOxide(format!("extract_images: {e}")))?;
+        std::fs::create_dir_all(dir)
+            .map_err(|e| BobineError::Io(e))?;
         let mut out = Vec::with_capacity(objs.len());
         for (n, obj) in objs.iter().enumerate() {
-            let p = dir.join(format!("{prefix}{n}.png"));
-            obj.save_as_png(&p)
-                .map_err(|e| BobineError::PdfOxide(format!("save image: {e}")))?;
+            // Preserve original bytes for JPEG-encoded images (the dominant
+            // embed type): no recompression, smaller files. Everything else
+            // is transcoded to lossless PNG.
+            let (p, res) = match obj.data() {
+                pdf_oxide::extractors::ImageData::Jpeg(bytes) => {
+                    let p = dir.join(format!("{prefix}{n}.jpg"));
+                    let res = std::fs::write(&p, bytes).map_err(BobineError::Io);
+                    (p, res)
+                }
+                _ => {
+                    let p = dir.join(format!("{prefix}{n}.png"));
+                    let res = obj
+                        .save_as_png(&p)
+                        .map_err(|e| BobineError::PdfOxide(format!("save image: {e}")));
+                    (p, res)
+                }
+            };
+            res?;
             out.push(p);
         }
         Ok(out)
@@ -130,6 +202,54 @@ impl PdfSource for Pdf {
         self.page_media_box(index)
             .map_err(|e| BobineError::PdfOxide(format!("media_box: {e}")))
     }
+
+    fn tables_in_rect(&mut self, index: usize, rect: Rect) -> Result<Vec<SourceTable>> {
+        // Whole-page extraction with the balanced default config, then scope
+        // to the requested rect by bbox. (extract_tables_in_rect would apply
+        // the relaxed text-only strategy, which misses ruled grids.)
+        let tables = self
+            .extract_tables(index)
+            .map_err(|e| BobineError::PdfOxide(format!("extract_tables: {e}")))?;
+        Ok(tables
+            .into_iter()
+            .filter(|t| t.bbox.map_or(false, |b| b.intersects(&rect)))
+            .map(|t| SourceTable {
+                has_header: t.has_header,
+                col_count: t.col_count,
+                bbox: t.bbox,
+                rows: t
+                    .rows
+                    .into_iter()
+                    .map(|r| SourceTableRow {
+                        is_header: r.is_header,
+                        cells: r
+                            .cells
+                            .into_iter()
+                            .map(|c| SourceTableCell {
+                                text: c.text,
+                                colspan: c.colspan,
+                                rowspan: c.rowspan,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            })
+            .collect())
+    }
+
+    fn images(&mut self, index: usize) -> Result<Vec<SourceImage>> {
+        let objs = self
+            .extract_images(index)
+            .map_err(|e| BobineError::PdfOxide(format!("extract_images: {e}")))?;
+        Ok(objs
+            .iter()
+            .map(|o| SourceImage {
+                bbox: o.bbox().cloned(),
+                width: o.width(),
+                height: o.height(),
+            })
+            .collect())
+    }
 }
 
 // ======================================================================
@@ -146,7 +266,12 @@ pub(crate) mod fake {
         pub md: Option<String>,
         pub chars: Vec<SourceChar>,
         pub images: Vec<image::DynamicImage>,
+        /// Placement bboxes (PDF points) aligned with `images`.
+        pub image_bboxes: Vec<Option<Rect>>,
         pub regions: Vec<(Rect, String)>,
+        /// Structured tables served by `tables_in_rect` when their bbox
+        /// intersects the query rect.
+        pub tables: Vec<(Rect, SourceTable)>,
         pub media_box: [f32; 4],
         /// PNG bytes returned by `render_png` (a tiny valid PNG by default).
         pub rendered: Vec<u8>,
@@ -182,11 +307,24 @@ pub(crate) mod fake {
 
         pub fn with_image(mut self, img: image::DynamicImage) -> Self {
             self.images.push(img);
+            self.image_bboxes.push(None);
+            self
+        }
+
+        /// Embedded image with a known placement bbox (PDF points).
+        pub fn with_image_at(mut self, img: image::DynamicImage, rect: Rect) -> Self {
+            self.images.push(img);
+            self.image_bboxes.push(Some(rect));
             self
         }
 
         pub fn with_region(mut self, rect: Rect, text: &str) -> Self {
             self.regions.push((rect, text.to_string()));
+            self
+        }
+
+        pub fn with_table(mut self, rect: Rect, table: SourceTable) -> Self {
+            self.tables.push((rect, table));
             self
         }
 
@@ -264,6 +402,7 @@ pub(crate) mod fake {
             dir: &std::path::Path,
             prefix: &str,
         ) -> Result<Vec<std::path::PathBuf>> {
+            std::fs::create_dir_all(dir).map_err(|e| BobineError::Other(format!("fake mkdir: {e}")))?;
             let mut out = Vec::new();
             for (n, img) in self.pages[index].images.iter().enumerate() {
                 let p = dir.join(format!("{prefix}{n}.png"));
@@ -280,6 +419,34 @@ pub(crate) mod fake {
 
         fn media_box(&mut self, index: usize) -> Result<[f32; 4]> {
             Ok(self.pages[index].media_box)
+        }
+
+        fn images(&mut self, index: usize) -> Result<Vec<SourceImage>> {
+            Ok(self.pages[index]
+                .images
+                .iter()
+                .zip(self.pages[index].image_bboxes.iter())
+                .map(|(img, bbox)| SourceImage {
+                    bbox: *bbox,
+                    width: img.width(),
+                    height: img.height(),
+                })
+                .collect())
+        }
+
+        fn tables_in_rect(&mut self, index: usize, rect: Rect) -> Result<Vec<SourceTable>> {
+            let hit = |r: &Rect| {
+                !(rect.x > r.x + r.width
+                    || rect.x + rect.width < r.x
+                    || rect.y > r.y + r.height
+                    || rect.y + rect.height < r.y)
+            };
+            Ok(self.pages[index]
+                .tables
+                .iter()
+                .filter(|(r, _)| hit(r))
+                .map(|(_, t)| t.clone())
+                .collect())
         }
     }
 }

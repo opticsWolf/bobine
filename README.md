@@ -14,6 +14,8 @@ Version 2.0 — you may choose either (see [LICENSE](LICENSE)).
 
 - [**Quick reference**](docs/quickref.md) — install, API, config, common tasks
 - [**Architecture**](docs/architecture.md) — modules, data flow, coordinate spaces, model acquisition
+- [**Benchmarks & test results**](docs/benchmarks.md) — CPU vs CUDA timings, TexTeller fp32/int8, environment setup
+- [**Proposal: figures/tables/layout**](docs/proposal_media_tables.md) — plan for reading-order image placement and structured table extraction
 - [**Implementation plan**](IMPLEMENTATION_PLAN.md) — status, gap inventory, phased roadmap
 
 ## Why bobine?

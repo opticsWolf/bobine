@@ -79,6 +79,11 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `render_dpi` | `300` | Renders for scanned-page OCR / layout |
 | `formula_dpi` | `200` | Renders for formula crops |
 | `detect_headings` | `True` | `#` headings from fast path |
+| `structured_tables` | `True` | Grid-extract table regions before text-dump fallback |
+| `min_figure_area_pts` | `100.0` | Smaller embedded images count as decoration |
+| `image_output_dir` | `"assets"` | Asset tree root: `<dir>/p{page}/img{k}.{ext}` |
+| `promote_headings` | `True` | Scholarly section patterns (`I.`, `3.1`, `A.`) → markdown headings |
+| `promote_title` | `True` | Document title → `# ` (first short block or top title-like heading) |
 | `convert_html_tables` | `True` | HTML tables → GFM pipes |
 | `min_formula_math_chars` | `5` | Min math chars for a text-layer formula box |
 | `formula_inline_max_width_pts` | `220.0` | Box wider → `$$…$$` display math |
@@ -200,6 +205,13 @@ maturin develop && python -c "import bobine"   # bindings smoke test
 
 Fixtures: `tests/fixtures/` — CC BY 4.0 arXiv papers (attribution in
 `SOURCES.md`) + generated scanned page.
+
+## Benchmarks
+
+Measured CPU/CUDA numbers (RTX 3090, ORT 1.28.1), TexTeller fp32 vs int8
+timings, and the `ORT_DYLIB_PATH` / stale-System32-dll pitfall are documented in
+[benchmarks.md](benchmarks.md).
+
 
 ## Env vars
 

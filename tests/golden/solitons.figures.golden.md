@@ -259,6 +259,10 @@ r j
 
 r 2 j The dispersion relation α k k [0 2π), can be nu-merically computed on a finite 1D domain in r. Figure 2 shows this dispersion relation for N = 30 sites withr the bulk (continuous) spectrum shown in blue and the edge (discrete) spectrum shown in red. The T symmetry implies that the band structures, both bulk and edge, are 4
 
+
+
+![](assets/p3/img0.png)
+
 symmetric with respect to k π [67]. This generalized Kramers’ theorem implies that any eigenvector at (k, α has a Kramers partner at (2π k, α), and together they form a Kramers pair. Since the unit cell has three sites, there are three bulk bands and two band gaps. For any α in a band gap, there is a Kramers pair of topologically protected edge states. This pair of edge states are called helical since they have opposite group velocities.
 
 ## DERIVATION AND SOLUTIONS OF COUPLED NONLINEAR SCHRODINGER EQUATION
@@ -345,6 +349,10 @@ where α α k β β k ), and 0
 
 **X**(1) 4 σ
 
+
+
+![](assets/p3/img2.png)
+
 **X**⁽¹⁾**X**(2) 2 1
 
 2
@@ -378,3 +386,7 @@ r r 2 2β
 0
 
 Note that setting A = 0 or B = 0 in Eq. (11) recovers the scalar nonlinear Schr¨odinger (NLS) equation in Ref. [57]. The two-component CNLS equation is the universal envelope equation for nonlinear interactions between two quasi-monochromatic plane waves [68, 69]. Over decades,
+
+
+![](assets/p3/img1.png)
+![](assets/p3/img3.png)

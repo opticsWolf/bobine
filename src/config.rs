@@ -125,8 +125,34 @@ pub struct ConverterConfig {
     /// Convert HTML tables to GFM pipe tables.
     pub convert_html_tables: bool,
 
+    /// Probe layout table regions with structured grid extraction
+    /// (Tagged-PDF structure tree / ruled-grid detection) before falling
+    /// back to a plain text dump. Preserves cell/column structure.
+    pub structured_tables: bool,
+
+    /// Embedded images whose placement bbox is smaller than this many
+    /// square points are treated as decoration (logos, rules, bullets):
+    /// excluded from inline figure matching and from the unreferenced-image
+    /// gallery.
+    pub min_figure_area_pts: f64,
+
+    /// Directory (relative to the work dir) where extracted figure assets
+    /// are written, structured as `<dir>/p{page}/img{k}.{ext}`.
+    pub image_output_dir: String,
+
     /// Detect monospaced code blocks.
     pub detect_code_blocks: bool,
+
+    /// Promote scholarly section headings ("I. INTRODUCTION", "3.1 Encoder
+    /// Stacks") that pdf_oxide's font heuristics leave as bold/plain text to
+    /// proper markdown headings. Purely pattern-based, guarded against prose
+    /// false positives.
+    pub promote_headings: bool,
+
+    /// Promote the document title: if the first block of the document is a
+    /// short, non-sentence line it becomes `# …`; otherwise the first heading
+    /// found near the top of the document is promoted to level 1.
+    pub promote_title: bool,
 
     /// Minimum math chars to consider a region a formula box.
     pub min_formula_math_chars: usize,
@@ -174,7 +200,12 @@ impl Default for ConverterConfig {
             formula_dpi: 200,
             detect_headings: true,
             convert_html_tables: true,
+            structured_tables: true,
+            min_figure_area_pts: 100.0,
+            image_output_dir: "assets".to_string(),
             detect_code_blocks: true,
+            promote_headings: true,
+            promote_title: true,
             min_formula_math_chars: 5,
             formula_inline_max_width_pts: 220.0,
             formula_pad_pts: 4.0,

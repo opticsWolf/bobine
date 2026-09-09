@@ -94,3 +94,71 @@ fn corpus_matches_goldens() {
         mismatches.join("\n")
     );
 }
+
+/// Figure-heavy corpus: same fixtures WITH image extraction and the
+/// unreferenced-image gallery enabled. Locks in the interleaved links,
+/// page-scoped asset paths (`assets/p{n}/img{k}.{ext}`) and gallery output.
+#[test]
+fn figure_corpus_matches_goldens() {
+    let golden_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    std::fs::create_dir_all(&golden_dir).unwrap();
+    let update = std::env::var("BOBINE_UPDATE_GOLDENS").is_ok();
+
+    let config = ConverterConfig {
+        routing_mode: RoutingMode::Never,
+        extract_images: true,
+        append_unreferenced_images: true,
+        detect_code_blocks: false,
+        ..Default::default()
+    };
+
+    // Only fixtures that actually embed rasters.
+    let names = ["2608.05540", "solitons"];
+
+    let mut mismatches: Vec<String> = Vec::new();
+    for name in names {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(format!("{name}.pdf"));
+        let golden_path = golden_dir.join(format!("{name}.figures.golden.md"));
+
+        let work = std::env::temp_dir().join(format!("bobine_golden_fig_{name}"));
+        let _ = std::fs::remove_dir_all(&work);
+        std::fs::create_dir_all(&work).unwrap();
+
+        let mut conv = HybridConverter::new(config.clone(), &work);
+        let md = conv.convert_pdf(&fixture, &work).unwrap();
+        let normalized = normalize(&md);
+
+        if update || !golden_path.exists() {
+            std::fs::write(&golden_path, &normalized).unwrap();
+            println!("golden written: {}", golden_path.display());
+            continue;
+        }
+
+        let expected = normalize(&std::fs::read_to_string(&golden_path).unwrap());
+        if expected != normalized {
+            let diff = expected
+                .lines()
+                .zip(normalized.lines())
+                .position(|(a, b)| a != b)
+                .map(|i| {
+                    format!(
+                        "line {}: expected {:?}, got {:?}",
+                        i + 1,
+                        expected.lines().nth(i).unwrap_or("<eof>"),
+                        normalized.lines().nth(i).unwrap_or("<eof>")
+                    )
+                })
+                .unwrap_or_else(|| "length mismatch".to_string());
+            mismatches.push(format!("{name}: {diff}"));
+        }
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "figure-golden regressions detected ({}):\n{}",
+        mismatches.len(),
+        mismatches.join("\n")
+    );
+}

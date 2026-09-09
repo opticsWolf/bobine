@@ -206,6 +206,14 @@ as Python.
    - math labels → crop → TexTeller → `$$…$$`.
    - `figure`/`image` → crop saved to work_dir, `![](name.png)` link.
    - else → text layer first, `ocr_lines` fallback; `title` → `## heading`.
+4. **Seam repair**: glyphs owned by no region are clustered into lines and
+   re-assigned to the nearest region whose padded box contains them;
+   only truly homeless lines fall through to a trailing block.
+5. **Post-passes** (all modes): `promote_headings` maps scholarly section
+   patterns (`I. X`, `3.1 Y`, `3.1.1 Z`, `A. W`) to `##`–`####`, guarded
+   against prose/lists/axis labels; `promote_title` promotes the document
+   title to `#` (first short block, or the first title-like heading on
+   page 1).
 
 ---
 
