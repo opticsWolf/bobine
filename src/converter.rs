@@ -412,6 +412,198 @@ fn table_block(
     format!("[table: {}]", region_label)
 }
 
+/// Math/formula arm (extracted from the dispatch loop). Returns the blocks
+/// to append (0..N: hybrid refinement can emit prose + several equations).
+/// Consumes refined text-layer math boxes from `page_math_boxes` so
+/// overlapping regions cannot re-emit them.
+#[allow(clippy::too_many_arguments)]
+fn math_blocks(
+    config: &ConverterConfig,
+    pdf: &mut dyn PdfSource,
+    engine: &mut crate::engine::OnnxEngine,
+    page_chars: &[SourceChar],
+    lines: &[Vec<usize>],
+    region: &crate::rapid_layout::LayoutRegion,
+    bbox: Rect,
+    img: &DynamicImage,
+    dpi: u32,
+    work_dir: &Path,
+    page_index: usize,
+    block_no: usize,
+    page_math_boxes: &mut Vec<Rect>,
+    line_height: f32,
+) -> Result<Vec<String>> {
+    let mut out: Vec<String> = Vec::new();
+    let page_h_px = img.height() as f64;
+    let page_px = img.width() as f64 * page_h_px;
+    // region coords are already render pixels - no extra scale
+    let w_px = (region.x1 - region.x0) as f64;
+    let h_px = (region.y1 - region.y0) as f64;
+    let plausible = h_px <= 0.25 * page_h_px && w_px * h_px <= 0.15 * page_px;
+
+    // Hybrid refinement (born-digital pages): intersect the layout formula
+    // region with text-layer math boxes. The layout model localizes
+    // formulas only at paragraph granularity; glyph geometry pins the
+    // actual equation strips. Region prose is kept and formulas are
+    // spliced in, mirroring SURGICAL mode.
+    let margin = 6.0_f32;
+    let refined: Vec<Rect> = page_math_boxes
+        .iter()
+        .copied()
+        .filter(|b| {
+            let cx = b.x + b.width / 2.0;
+            let cy = b.y + b.height / 2.0;
+            cx >= bbox.x - margin
+                && cx <= bbox.x + bbox.width + margin
+                && cy >= bbox.y - margin
+                && cy <= bbox.y + bbox.height + margin
+        })
+        .collect();
+    if !refined.is_empty() {
+        // consume so overlapping regions cannot re-emit them
+        let taken = refined.clone();
+        page_math_boxes.retain(|b| !taken.iter().any(|t| t.x == b.x && t.y == b.y));
+    }
+
+    if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
+        eprintln!(
+            "HYBRID p{} region pt=({:.0},{:.0},{:.0},{:.0}) mathboxes={} refined={}",
+            page_index + 1,
+            bbox.x,
+            bbox.y,
+            bbox.width,
+            bbox.height,
+            page_math_boxes.len(),
+            refined.len()
+        );
+        for b in page_math_boxes.iter().take(10) {
+            eprintln!(
+                "  mb x={:.0} y={:.0} w={:.0} h={:.0}",
+                b.x, b.y, b.width, b.height
+            );
+        }
+    }
+    if !refined.is_empty() {
+        let text = region_lines_to_text(page_chars, lines);
+        let mut reps: Vec<(String, String)> = Vec::new();
+        for rb in &refined {
+            // Gate 1: skip labels ("(4)"), artifacts and tiny inline
+            // fragments - splicing them is pure noise.
+            if rb.width < 40.0 {
+                continue;
+            }
+            // Gate 2: display-style boxes only. Boxes taller than ~3 lines
+            // are merged blobs of display equations interleaved with
+            // inline-math prose lines; cropping them yields garbage.
+            let display = rb.height > 1.6 * line_height
+                || rb.width > config.formula_inline_max_width_pts as f32;
+            if !display || rb.height > 3.0 * line_height {
+                continue;
+            }
+            // Glyph-tight boxes: no padding, padding only bleeds
+            // neighbouring text lines into the crop.
+            let t_rec = std::time::Instant::now();
+            let crop_res = crop_image(img, *rb, dpi, 0.0);
+            if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
+                eprintln!(
+                    "HYBRID-crop p{} w={:.0} h={:.0} (lh={:.1})",
+                    page_index + 1,
+                    rb.width,
+                    rb.height,
+                    line_height
+                );
+            }
+            if let Some(crop) = crop_res {
+                if crop.width() < 4 || crop.height() < 4 {
+                    continue;
+                }
+                let p = work_dir.join(format!(
+                    "_reg_hf_{}_{}.png",
+                    page_index,
+                    block_no + reps.len()
+                ));
+                if crop.save(&p).is_ok() {
+                    // Token budget proportional to crop area: a mis-cropped
+                    // sliver cannot contain a large equation, and the cap
+                    // turns runaway decodes (measured: 2600 chars / 28 s
+                    // from a 153x30pt fragment) into fast failures.
+                    let budget = ((rb.width * rb.height) / 40.0).clamp(64.0, 512.0) as usize;
+                    if let Some(latex) = engine.recognize_formula_capped(&p, budget)? {
+                        if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
+                            eprintln!("HYBRID-png {}", p.display());
+                            eprintln!(
+                                "HYBRID-ocr p{} {} chars in {:?}",
+                                page_index + 1,
+                                latex.len(),
+                                t_rec.elapsed()
+                            );
+                        }
+                        if plausible_display_latex(&latex) {
+                            let needle = region_text(pdf, page_index, *rb);
+                            reps.push((needle, format!("$$\n{}\n$$", latex)));
+                        } else if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
+                            eprintln!("HYBRID-reject p{} {:?}", page_index + 1, latex);
+                        }
+                    }
+                }
+            }
+        }
+        if !text.trim().is_empty() {
+            out.push(splice(&text, &reps));
+            return Ok(out);
+        }
+        if !reps.is_empty() {
+            for (_, wrapped) in reps {
+                out.push(wrapped);
+            }
+            return Ok(out);
+        }
+    }
+
+    // Fallback (scans / no text layer): TexTeller on the whole region crop,
+    // unless the box is implausibly large - a full autoregressive decode of
+    // body text costs tens of seconds and yields garbage LaTeX.
+    if !plausible {
+        tracing::warn!(
+            "page {}: implausible {} region ({:.0}x{:.0}px, {:.0}% of page); treating as text",
+            page_index + 1,
+            region.label,
+            w_px,
+            h_px,
+            100.0 * (w_px * h_px) / page_px
+        );
+        let text = region_lines_to_text(page_chars, lines);
+        if !text.trim().is_empty() {
+            out.push(text);
+        }
+        return Ok(out);
+    }
+    // Born-digital shortcut: if the text layer has content here but the
+    // heuristic found no math boxes, the region provably contains no
+    // equation - do not spend a multi-second decode on prose. TexTeller
+    // only when the text layer is empty (scans, image-only equations),
+    // and even then the decode is budgeted by crop area.
+    let text = region_lines_to_text(page_chars, lines);
+    if text.trim().is_empty() {
+        if let Some(crop) = crop_image(img, bbox, dpi, config.formula_pad_pts) {
+            if crop.width() >= 4 && crop.height() >= 4 {
+                let p = work_dir.join(format!("_reg_f_{}.png", block_no));
+                if crop.save(&p).is_ok() {
+                    let budget =
+                        ((bbox.width * bbox.height) / 40.0).clamp(64.0, 512.0) as usize;
+                    if let Some(latex) = engine.recognize_formula_capped(&p, budget)? {
+                        out.push(format!("$$\n{}\n$$", latex));
+                        return Ok(out);
+                    }
+                }
+            }
+        }
+    } else {
+        out.push(text);
+    }
+    Ok(out)
+}
+
 /// Seam repair: glyphs covered by NO emitting region (seams between
 /// layout boxes, dropped by argmax ownership) are clustered into lines
 /// and offered to the nearest region whose padded box contains them.
@@ -2161,183 +2353,22 @@ impl HybridConverter {
                     index,
                 ));
             } else if MATH_LAYOUT_LABELS.iter().any(|k| lab.contains(k)) {
-                let page_h_px = img.height() as f64;
-                let page_px = img.width() as f64 * page_h_px;
-                // region coords are already render pixels - no extra scale
-                let w_px = (region.x1 - region.x0) as f64;
-                let h_px = (region.y1 - region.y0) as f64;
-                let plausible = h_px <= 0.25 * page_h_px && w_px * h_px <= 0.15 * page_px;
-
-                // Hybrid refinement (born-digital pages): intersect the
-                // layout formula region with text-layer math boxes. The
-                // layout model localizes formulas only at paragraph
-                // granularity; glyph geometry pins the actual equation
-                // strips. Region prose is kept and formulas are spliced in,
-                // mirroring SURGICAL mode.
-                let margin = 6.0_f32;
-                let refined: Vec<Rect> = page_math_boxes
-                    .iter()
-                    .copied()
-                    .filter(|b| {
-                        let cx = b.x + b.width / 2.0;
-                        let cy = b.y + b.height / 2.0;
-                        cx >= bbox.x - margin
-                            && cx <= bbox.x + bbox.width + margin
-                            && cy >= bbox.y - margin
-                            && cy <= bbox.y + bbox.height + margin
-                    })
-                    .collect();
-                if !refined.is_empty() {
-                    // consume so overlapping regions cannot re-emit them
-                    let taken = refined.clone();
-                    page_math_boxes.retain(|b| !taken.iter().any(|t| t.x == b.x && t.y == b.y));
-                }
-
-                if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
-                    eprintln!(
-                        "HYBRID p{} region pt=({:.0},{:.0},{:.0},{:.0}) mathboxes={} refined={}",
-                        index + 1,
-                        bbox.x,
-                        bbox.y,
-                        bbox.width,
-                        bbox.height,
-                        page_math_boxes.len(),
-                        refined.len()
-                    );
-                    for b in page_math_boxes.iter().take(10) {
-                        eprintln!(
-                            "  mb x={:.0} y={:.0} w={:.0} h={:.0}",
-                            b.x, b.y, b.width, b.height
-                        );
-                    }
-                }
-                if !refined.is_empty() {
-                    let text = region_lines_to_text(&page_chars, &region_lines[ri]);
-                    let mut reps: Vec<(String, String)> = Vec::new();
-                    for rb in &refined {
-                        // Gate 1: skip labels ("(4)"), artifacts and tiny
-                        // inline fragments - splicing them is pure noise.
-                        if rb.width < 40.0 {
-                            continue;
-                        }
-                        // Gate 2: display-style boxes only. Boxes taller
-                        // than ~3 lines are merged blobs of display
-                        // equations interleaved with inline-math prose
-                        // lines; cropping them yields garbage.
-                        let display = rb.height > 1.6 * line_height
-                            || rb.width > self.config.formula_inline_max_width_pts as f32;
-                        if !display || rb.height > 3.0 * line_height {
-                            continue;
-                        }
-                        // Glyph-tight boxes: no padding, padding only
-                        // bleeds neighbouring text lines into the crop.
-                        let t_rec = std::time::Instant::now();
-                        let crop_res = crop_image(&img, *rb, dpi, 0.0);
-                        if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
-                            eprintln!(
-                                "HYBRID-crop p{} w={:.0} h={:.0} (lh={:.1})",
-                                index + 1,
-                                rb.width,
-                                rb.height,
-                                line_height
-                            );
-                        }
-                        if let Some(crop) = crop_res {
-                            if crop.width() < 4 || crop.height() < 4 {
-                                continue;
-                            }
-                            let p = work_dir.join(format!(
-                                "_reg_hf_{}_{}.png",
-                                index,
-                                blocks.len() + reps.len()
-                            ));
-                            if crop.save(&p).is_ok() {
-                                // Token budget proportional to crop area: a
-                                // mis-cropped sliver cannot contain a large
-                                // equation, and the cap turns runaway
-                                // decodes (measured: 2600 chars / 28 s from
-                                // a 153x30pt fragment) into fast failures.
-                                let budget =
-                                    ((rb.width * rb.height) / 40.0).clamp(64.0, 512.0) as usize;
-                                if let Some(latex) =
-                                    self.engine.recognize_formula_capped(&p, budget)?
-                                {
-                                    if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
-                                        eprintln!("HYBRID-png {}", p.display());
-                                        eprintln!(
-                                            "HYBRID-ocr p{} {} chars in {:?}",
-                                            index + 1,
-                                            latex.len(),
-                                            t_rec.elapsed()
-                                        );
-                                    }
-                                    if plausible_display_latex(&latex) {
-                                        let needle = region_text(pdf, index, *rb);
-                                        reps.push((needle, format!("$$\n{}\n$$", latex)));
-                                    } else if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
-                                        eprintln!("HYBRID-reject p{} {:?}", index + 1, latex);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if !text.trim().is_empty() {
-                        blocks.push(splice(&text, &reps));
-                        continue;
-                    }
-                    if !reps.is_empty() {
-                        for (_, wrapped) in reps {
-                            blocks.push(wrapped);
-                        }
-                        continue;
-                    }
-                }
-
-                // Fallback (scans / no text layer): TexTeller on the whole
-                // region crop, unless the box is implausibly large - a full
-                // autoregressive decode of body text costs tens of seconds
-                // and yields garbage LaTeX.
-                if !plausible {
-                    tracing::warn!(
-                        "page {}: implausible {} region ({:.0}x{:.0}px, {:.0}% of page); treating as text",
-                        index + 1,
-                        region.label,
-                        w_px,
-                        h_px,
-                        100.0 * (w_px * h_px) / page_px
-                    );
-                    let text = region_lines_to_text(&page_chars, &region_lines[ri]);
-                    if !text.trim().is_empty() {
-                        blocks.push(text);
-                    }
-                    continue;
-                }
-                // Born-digital shortcut: if the text layer has content here
-                // but the heuristic found no math boxes, the region
-                // provably contains no equation - do not spend a multi-second
-                // decode on prose. TexTeller only when the text layer is
-                // empty (scans, image-only equations), and even then the
-                // decode is budgeted by crop area.
-                let text = region_lines_to_text(&page_chars, &region_lines[ri]);
-                if text.trim().is_empty() {
-                    if let Some(crop) = crop_image(&img, bbox, dpi, self.config.formula_pad_pts) {
-                        if crop.width() >= 4 && crop.height() >= 4 {
-                            let p = work_dir.join(format!("_reg_f_{}.png", blocks.len()));
-                            if crop.save(&p).is_ok() {
-                                let budget =
-                                    ((bbox.width * bbox.height) / 40.0).clamp(64.0, 512.0) as usize;
-                                if let Some(latex) =
-                                    self.engine.recognize_formula_capped(&p, budget)?
-                                {
-                                    blocks.push(format!("$$\n{}\n$$", latex));
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    blocks.push(text);
-                }
+                blocks.extend(math_blocks(
+                    &self.config,
+                    pdf,
+                    &mut self.engine,
+                    &page_chars,
+                    &region_lines[ri],
+                    region,
+                    bbox,
+                    &img,
+                    dpi,
+                    work_dir,
+                    index,
+                    blocks.len(),
+                    &mut page_math_boxes,
+                    line_height,
+                )?);
             } else if lab.contains("figure") || lab.contains("image") {
                 if let Some(link) = figure_block(
                     &self.config,
