@@ -98,6 +98,134 @@ const MATH_LAYOUT_LABELS: &[&str] = &[
 ];
 
 // ---------------------------------------------------------------------------
+// Glyph ownership (extracted from `full_structure_page_markdown`)
+//
+// Overlap dedup happens at GLYPH level, not rectangle level: every
+// character of the page is assigned to exactly one owning region — the
+// region with the largest overlap over that glyph, ties broken by claim
+// priority (specific routing before generic: math > table > caption >
+// text), then reading order. Figure regions never own glyphs: they emit
+// crops, not text. See the longer rationale at the call site.
+// ---------------------------------------------------------------------------
+
+/// Claim order + rank lookup for a sorted region list.
+/// Earlier claim_order position = more specific routing = wins ties.
+fn claim_ranks(sorted: &[crate::rapid_layout::LayoutRegion]) -> (Vec<usize>, Vec<usize>) {
+    let mut claim_order: Vec<usize> = (0..sorted.len()).collect();
+    claim_order.sort_by(|&a, &b| {
+        region_claim_priority(&sorted[a].label)
+            .cmp(&region_claim_priority(&sorted[b].label))
+            .then_with(|| {
+                sorted[a]
+                    .y0
+                    .partial_cmp(&sorted[b].y0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| {
+                        sorted[a]
+                            .x0
+                            .partial_cmp(&sorted[b].x0)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+            })
+    });
+    let mut rank = vec![0usize; sorted.len()];
+    for (pos, &i) in claim_order.iter().enumerate() {
+        rank[i] = pos;
+    }
+    (claim_order, rank)
+}
+
+/// Each char belongs to its argmax-overlap non-figure region; ties break
+/// toward the earlier claim_order position (`rank`). Layout coords are
+/// render pixels; char boxes are scaled up by `scale` (dpi / 72).
+fn assign_glyph_owners(
+    page_chars: &[SourceChar],
+    sorted: &[crate::rapid_layout::LayoutRegion],
+    rank: &[usize],
+    scale: f32,
+) -> Vec<Option<usize>> {
+    let mut glyph_owner: Vec<Option<usize>> = vec![None; page_chars.len()];
+    for (ci, c) in page_chars.iter().enumerate() {
+        let mut best: Option<(f32, usize)> = None; // (overlap area px², region idx)
+        for (ri, region) in sorted.iter().enumerate() {
+            if region_claim_priority(&region.label) == CLAIM_NONE {
+                continue;
+            }
+            let iw = region.x1.min((c.bbox.x + c.bbox.width) * scale)
+                - region.x0.max(c.bbox.x * scale);
+            if iw <= 0.0 {
+                continue;
+            }
+            let ih = region.y1.min((c.bbox.y + c.bbox.height) * scale)
+                - region.y0.max(c.bbox.y * scale);
+            if ih <= 0.0 {
+                continue;
+            }
+            let area = iw * ih;
+            let take = match best {
+                None => true,
+                Some((ba, bri)) => {
+                    area > ba || ((area - ba).abs() <= ba * 1e-6 && rank[ri] < rank[bri])
+                }
+            };
+            if take {
+                best = Some((area, ri));
+            }
+        }
+        if let Some((_, ri)) = best {
+            glyph_owner[ci] = Some(ri);
+        }
+    }
+    glyph_owner
+}
+
+/// Assign WHOLE LINES, not glyphs: cluster all owned glyphs into visual
+/// lines first, then give each line to its majority owner. Per-glyph
+/// ownership alone can switch regions mid-line where two model boxes
+/// disagree, shredding words across output blocks. Lines come back in
+/// reading order within each region.
+fn assign_region_lines(
+    page_chars: &[SourceChar],
+    glyph_owner: &[Option<usize>],
+    rank: &[usize],
+    num_regions: usize,
+) -> Vec<Vec<Vec<usize>>> {
+    let owned: Vec<usize> = (0..page_chars.len())
+        .filter(|&i| glyph_owner[i].is_some())
+        .collect();
+    let mut region_lines: Vec<Vec<Vec<usize>>> = vec![Vec::new(); num_regions];
+    for line in cluster_lines(page_chars, &owned) {
+        let mut tally: std::collections::HashMap<usize, usize> = Default::default();
+        for &i in &line {
+            // `owned` only holds `Some` indices, but never panic on a
+            // corrupt page — skip instead of shredding the line.
+            let Some(owner) = glyph_owner[i] else { continue };
+            *tally.entry(owner).or_default() += 1;
+        }
+        let winner = tally
+            .into_iter()
+            .max_by(|a, b| a.1.cmp(&b.1).then_with(|| rank[b.0].cmp(&rank[a.0])));
+        if let Some((ri, _)) = winner {
+            region_lines[ri].push(line);
+        }
+    }
+    for rl in region_lines.iter_mut() {
+        rl.sort_by(|a, b| {
+            let ay = a
+                .iter()
+                .map(|&i| page_chars[i].bbox.y)
+                .fold(f32::INFINITY, f32::min);
+            let by = b
+                .iter()
+                .map(|&i| page_chars[i].bbox.y)
+                .fold(f32::INFINITY, f32::min);
+            ay.partial_cmp(&by).unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+    region_lines
+}
+
+// ---------------------------------------------------------------------------
 // HybridConverter
 // ---------------------------------------------------------------------------
 
@@ -1638,99 +1766,15 @@ impl HybridConverter {
         // across shared strip edges) or shredded them mid-word (glyph-centre
         // rules on thin strips). Owning glyphs directly keeps every emitted
         // line intact while guaranteeing each glyph is emitted once.
-        let mut claim_order: Vec<usize> = (0..sorted.len()).collect();
-        claim_order.sort_by(|&a, &b| {
-            region_claim_priority(&sorted[a].label)
-                .cmp(&region_claim_priority(&sorted[b].label))
-                .then_with(|| {
-                    sorted[a]
-                        .y0
-                        .partial_cmp(&sorted[b].y0)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then_with(|| {
-                            sorted[a]
-                                .x0
-                                .partial_cmp(&sorted[b].x0)
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        })
-                })
-        });
+        // Glyph ownership is resolved once per page (see `claim_ranks` /
+        // `assign_glyph_owners` / `assign_region_lines` above for the
+        // rationale). `owners` was removed: nothing ever read it.
+        let (_claim_order, rank) = claim_ranks(&sorted);
         // One chars() pass for all glyph-exact region extraction below.
         let page_chars = pdf.chars(index).unwrap_or_default();
-
-        // Glyph ownership: each char belongs to its argmax-overlap non-figure
-        // region; ties break toward the earlier claim_order position.
-        let mut rank = vec![0usize; sorted.len()];
-        for (pos, &i) in claim_order.iter().enumerate() {
-            rank[i] = pos;
-        }
-        let mut owners: Vec<Vec<usize>> = vec![Vec::new(); sorted.len()];
-        let mut glyph_owner: Vec<Option<usize>> = vec![None; page_chars.len()];
-        for (ci, c) in page_chars.iter().enumerate() {
-            let mut best: Option<(f32, usize)> = None; // (overlap area px², region idx)
-            for (ri, region) in sorted.iter().enumerate() {
-                if region_claim_priority(&region.label) == CLAIM_NONE {
-                    continue;
-                }
-                // layout coords are render pixels; scale char boxes up
-                let iw = region.x1.min((c.bbox.x + c.bbox.width) * scale)
-                    - region.x0.max(c.bbox.x * scale);
-                if iw <= 0.0 {
-                    continue;
-                }
-                let ih = region.y1.min((c.bbox.y + c.bbox.height) * scale)
-                    - region.y0.max(c.bbox.y * scale);
-                if ih <= 0.0 {
-                    continue;
-                }
-                let area = iw * ih;
-                let take = match best {
-                    None => true,
-                    Some((ba, bri)) => {
-                        area > ba || ((area - ba).abs() <= ba * 1e-6 && rank[ri] < rank[bri])
-                    }
-                };
-                if take {
-                    best = Some((area, ri));
-                }
-            }
-            if let Some((_, ri)) = best {
-                glyph_owner[ci] = Some(ri);
-            }
-        }
-
-        // Assign WHOLE LINES, not glyphs: cluster all owned glyphs into
-        // visual lines first, then give each line to its majority owner.
-        // Per-glyph ownership alone can switch regions mid-line where two
-        // model boxes disagree, shredding words across output blocks.
-        let owned: Vec<usize> = (0..page_chars.len()).filter(|&i| glyph_owner[i].is_some()).collect();
-        let mut region_lines: Vec<Vec<Vec<usize>>> = vec![Vec::new(); sorted.len()];
-        for line in cluster_lines(&page_chars, &owned) {
-            let mut tally: std::collections::HashMap<usize, usize> = Default::default();
-            for &i in &line {
-                // `owned` only holds `Some` indices, but never panic on a
-                // corrupt page — skip instead of shredding the line.
-                let Some(owner) = glyph_owner[i] else { continue };
-                *tally.entry(owner).or_default() += 1;
-            }
-            let winner = tally
-                .into_iter()
-                .max_by(|a, b| a.1.cmp(&b.1).then_with(|| rank[b.0].cmp(&rank[a.0])));
-            if let Some((ri, _)) = winner {
-                region_lines[ri].push(line);
-            }
-        }
-        for rl in region_lines.iter_mut() {
-            rl.sort_by(|a, b| {
-                let ay = a.iter()
-                    .map(|&i| page_chars[i].bbox.y)
-                    .fold(f32::INFINITY, f32::min);
-                let by = b.iter()
-                    .map(|&i| page_chars[i].bbox.y)
-                    .fold(f32::INFINITY, f32::min);
-                ay.partial_cmp(&by).unwrap_or(std::cmp::Ordering::Equal)
-            });
-        }
+        let glyph_owner = assign_glyph_owners(&page_chars, &sorted, &rank, scale);
+        let mut region_lines =
+            assign_region_lines(&page_chars, &glyph_owner, &rank, sorted.len());
 
         // Median glyph height ≈ line height — used as the caption-association
         // distance budget.
