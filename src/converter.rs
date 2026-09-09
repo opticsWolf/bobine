@@ -12,6 +12,7 @@ use crate::config::{ConverterConfig, RoutingMode};
 use crate::engine::OnnxEngine;
 use crate::error::{BobineError, Result};
 use crate::pdf_source::{PdfSource, SourceChar};
+use crate::rapid_layout::LayoutRegion;
 
 /// Progress / cancellation hooks for long-running conversions.
 ///
@@ -179,6 +180,29 @@ fn assign_glyph_owners(
     glyph_owner
 }
 
+// ---------------------------------------------------------------------------
+// Region dispatch context (P0 follow-up)
+//
+// The per-region arms (`caption/figure/text/table/math_block`) all read the
+// same page-level inputs. Bundling the immutable ones here drops the
+// 10–14 parameter lists to 2–4; the mutable handles (`engine`, `pdf`,
+// `page_math_boxes`, `ocr_claimed`, `blocks`) stay explicit parameters so
+// the borrow checker — and the reader — can see the mutation surface.
+// ---------------------------------------------------------------------------
+struct RegionCtx<'a> {
+    config: &'a ConverterConfig,
+    page_chars: &'a [SourceChar],
+    sorted: &'a [LayoutRegion],
+    region_lines: &'a [Vec<Vec<usize>>],
+    scale: f32,
+    img: &'a DynamicImage,
+    dpi: u32,
+    work_dir: &'a Path,
+    page_index: usize,
+    assets: &'a [EmbeddedAsset],
+    median_char_h: f32,
+}
+
 /// Caption/footnote pre-route (extracted from the dispatch loop).
 /// Caption labels describe OTHER regions, so they always render as plain
 /// text. Returns `Some(text)` when the region owns non-empty text (caller
@@ -203,31 +227,16 @@ fn caption_block(page_chars: &[SourceChar], lines: &[Vec<usize>], lab: &str) -> 
 /// image link (`Some`) or `None` when neither an embedded raster nor a
 /// render crop could be produced. Terminal: no fall-through — `None` simply
 /// emits nothing for this region.
-#[allow(clippy::too_many_arguments)]
-fn figure_block(
-    config: &ConverterConfig,
-    sorted: &[crate::rapid_layout::LayoutRegion],
-    region_lines: &[Vec<Vec<usize>>],
-    page_chars: &[SourceChar],
-    bbox: Rect,
-    scale: f32,
-    median_char_h: f32,
-    assets: &[EmbeddedAsset],
-    img: &DynamicImage,
-    dpi: u32,
-    work_dir: &Path,
-    page_index: usize,
-    block_no: usize,
-) -> Option<String> {
+fn figure_block(ctx: &RegionCtx<'_>, bbox: Rect, block_no: usize) -> Option<String> {
     // Caption association: the nearest caption region (below or above
     // within ~3 line heights) becomes the alt text.
     let cap_alt = nearby_caption_text(
-        sorted,
-        region_lines,
-        page_chars,
+        ctx.sorted,
+        ctx.region_lines,
+        ctx.page_chars,
         &bbox,
-        scale,
-        3.0 * median_char_h,
+        ctx.scale,
+        3.0 * ctx.median_char_h,
     )
     .and_then(|t| caption_alt(&t, 120));
     let mk_img = |src: &str| match &cap_alt {
@@ -239,34 +248,35 @@ fn figure_block(
     // resolution beat a 300-dpi render crop that bakes in surrounding
     // content. Crops remain for vector/mixed art. Decoration-sized
     // assets are excluded from matching.
-    let matched = best_embedded_match(&bbox, assets, 0.6)
-        .and_then(|ai| assets.get(ai))
+    let matched = best_embedded_match(&bbox, ctx.assets, 0.6)
+        .and_then(|ai| ctx.assets.get(ai))
         .filter(|a| {
             a.bbox_pts.map_or(false, |b| {
-                (b.width as f64) * (b.height as f64) >= config.render.min_figure_area_pts
+                (b.width as f64) * (b.height as f64) >= ctx.config.render.min_figure_area_pts
             })
         });
     if let Some(a) = matched {
         info!(
             "page {}: figure → embedded asset {}",
-            page_index + 1,
+            ctx.page_index + 1,
             a.rel_path
         );
         return Some(mk_img(&a.rel_path));
     }
-    if let Some(crop) = crop_image(img, bbox, dpi, 0.0) {
+    if let Some(crop) = crop_image(ctx.img, bbox, ctx.dpi, 0.0) {
         // Page-scoped structured name: every page restarts its block
         // counter and all pages share one asset tree.
-        let p = work_dir
-            .join(&config.render.image_output_dir)
-            .join(format!("p{}", page_index))
+        let p = ctx
+            .work_dir
+            .join(&ctx.config.render.image_output_dir)
+            .join(format!("p{}", ctx.page_index))
             .join(format!("crop{}.png", block_no));
         std::fs::create_dir_all(p.parent().unwrap()).ok();
         if crop.save(&p).is_ok() {
             let rel = format!(
                 "{}/p{}/{}",
-                config.render.image_output_dir,
-                page_index,
+                ctx.config.render.image_output_dir,
+                ctx.page_index,
                 p.file_name().unwrap().to_string_lossy()
             );
             return Some(mk_img(&rel));
@@ -283,16 +293,15 @@ fn figure_block(
 /// already >25% covered by a previous OCR claim are skipped (re-OCR per
 /// region used to emit every line once per overlapping layout box).
 fn text_block(
-    engine: &mut crate::engine::OnnxEngine,
-    page_chars: &[SourceChar],
-    lines: &[Vec<usize>],
-    lab: &str,
-    region: &crate::rapid_layout::LayoutRegion,
+    ctx: &RegionCtx<'_>,
+    engine: &mut OnnxEngine,
+    ri: usize,
     ocr_claimed: &mut Vec<Rect>,
-    img: &DynamicImage,
-    dpi: u32,
 ) -> Option<String> {
-    let text = region_lines_to_text(page_chars, lines);
+    let lines = &ctx.region_lines[ri];
+    let region = &ctx.sorted[ri];
+    let lab = region.label.to_lowercase();
+    let text = region_lines_to_text(ctx.page_chars, lines);
     if !text.trim().is_empty() {
         let mut t = text;
         if lab.contains("title") {
@@ -316,7 +325,7 @@ fn text_block(
     if already {
         return None;
     }
-    if let Some(crop) = crop_image(img, base, dpi, 0.0) {
+    if let Some(crop) = crop_image(ctx.img, base, ctx.dpi, 0.0) {
         if let Ok(lines) = engine.ocr_lines(&crop) {
             let t: String = lines
                 .into_iter()
@@ -2311,6 +2320,22 @@ impl HybridConverter {
         char_heights.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let median_char_h = char_heights.get(char_heights.len() / 2).copied().unwrap_or(11.0);
 
+        // Shared immutable dispatch context (see `RegionCtx`); mutable
+        // handles are passed per-arm so mutation stays visible.
+        let ctx = RegionCtx {
+            config: &self.config,
+            page_chars: &page_chars,
+            sorted: &sorted,
+            region_lines: &region_lines,
+            scale,
+            img: &img,
+            dpi,
+            work_dir,
+            page_index: index,
+            assets,
+            median_char_h,
+        };
+
         let mut blocks: Vec<String> = Vec::new();
         let dbg_blocks = std::env::var("BOB_DEBUG_BLOCKS").is_ok();
         // Areas already OCR'd by an earlier region's scanned-page fallback.
@@ -2370,33 +2395,10 @@ impl HybridConverter {
                     line_height,
                 )?);
             } else if lab.contains("figure") || lab.contains("image") {
-                if let Some(link) = figure_block(
-                    &self.config,
-                    &sorted,
-                    &region_lines,
-                    &page_chars,
-                    bbox,
-                    scale,
-                    median_char_h,
-                    assets,
-                    &img,
-                    dpi,
-                    work_dir,
-                    index,
-                    blocks.len(),
-                ) {
+                if let Some(link) = figure_block(&ctx, bbox, blocks.len()) {
                     blocks.push(link);
                 }
-            } else if let Some(t) = text_block(
-                &mut self.engine,
-                &page_chars,
-                &region_lines[ri],
-                &lab,
-                region,
-                &mut ocr_claimed,
-                &img,
-                dpi,
-            ) {
+            } else if let Some(t) = text_block(&ctx, &mut self.engine, ri, &mut ocr_claimed) {
                 blocks.push(t);
             }
         }
