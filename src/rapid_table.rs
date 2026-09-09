@@ -313,9 +313,25 @@ impl RapidTable {
         } else {
             bb.shape()[0]
         };
+        if bbox_steps == 0 {
+            return Err(BobineError::ModelNotAvailable(
+                "empty SLANet bbox head".into(),
+            ));
+        }
 
         for t in 0..seq_len {
-            let ti = t.min(bbox_steps - 1); // bbox head may emit fewer steps
+            if t >= bbox_steps {
+                // Structure and bbox heads disagree in length: reusing the
+                // last bbox keeps indices in-bounds but can misalign
+                // trailing cells, so make it visible in logs.
+                tracing::debug!(
+                    t,
+                    bbox_steps,
+                    seq_len,
+                    "table bbox head shorter than structure head; reusing last bbox"
+                );
+            }
+            let ti = t.min(bbox_steps.saturating_sub(1)); // bbox head may emit fewer steps
             let row_probs: ndarray::ArrayView1<f32> = if batched_probs {
                 bs.slice(ndarray::s![0, t, ..])
             } else {
