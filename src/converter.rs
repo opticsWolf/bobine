@@ -243,7 +243,7 @@ fn figure_block(
         .and_then(|ai| assets.get(ai))
         .filter(|a| {
             a.bbox_pts.map_or(false, |b| {
-                (b.width as f64) * (b.height as f64) >= config.min_figure_area_pts
+                (b.width as f64) * (b.height as f64) >= config.render.min_figure_area_pts
             })
         });
     if let Some(a) = matched {
@@ -258,14 +258,14 @@ fn figure_block(
         // Page-scoped structured name: every page restarts its block
         // counter and all pages share one asset tree.
         let p = work_dir
-            .join(&config.image_output_dir)
+            .join(&config.render.image_output_dir)
             .join(format!("p{}", page_index))
             .join(format!("crop{}.png", block_no));
         std::fs::create_dir_all(p.parent().unwrap()).ok();
         if crop.save(&p).is_ok() {
             let rel = format!(
                 "{}/p{}/{}",
-                config.image_output_dir,
+                config.render.image_output_dir,
                 page_index,
                 p.file_name().unwrap().to_string_lossy()
             );
@@ -357,7 +357,7 @@ fn table_block(
     // Preserves cell/column structure that a plain glyph dump destroys
     // (borderless tables fall through — the spatial detector rejects
     // prose-shaped candidates).
-    if config.structured_tables {
+    if config.text.structured_tables {
         match pdf.tables_in_rect(page_index, bbox) {
             Ok(tables) => {
                 let md: Vec<String> = tables
@@ -382,7 +382,7 @@ fn table_block(
     // Stage 2 — unstructured dump of the region's text lines.
     let text = region_lines_to_text(page_chars, lines);
     if !text.trim().is_empty() {
-        return if config.convert_html_tables {
+        return if config.text.convert_html_tables {
             crate::tables::html_tables_to_gfm(&text)
         } else {
             text
@@ -400,7 +400,7 @@ fn table_block(
                     page_index + 1,
                     crop.width()
                 );
-                return if config.convert_html_tables {
+                return if config.text.convert_html_tables {
                     crate::tables::html_tables_to_gfm(&html)
                 } else {
                     html
@@ -496,7 +496,7 @@ fn math_blocks(
             // are merged blobs of display equations interleaved with
             // inline-math prose lines; cropping them yields garbage.
             let display = rb.height > 1.6 * line_height
-                || rb.width > config.formula_inline_max_width_pts as f32;
+                || rb.width > config.text.formula_inline_max_width_pts as f32;
             if !display || rb.height > 3.0 * line_height {
                 continue;
             }
@@ -585,7 +585,7 @@ fn math_blocks(
     // and even then the decode is budgeted by crop area.
     let text = region_lines_to_text(page_chars, lines);
     if text.trim().is_empty() {
-        if let Some(crop) = crop_image(img, bbox, dpi, config.formula_pad_pts) {
+        if let Some(crop) = crop_image(img, bbox, dpi, config.text.formula_pad_pts) {
             if crop.width() >= 4 && crop.height() >= 4 {
                 let p = work_dir.join(format!("_reg_f_{}.png", block_no));
                 if crop.save(&p).is_ok() {
@@ -829,7 +829,7 @@ impl HybridConverter {
             // interleave, the figure branch and the gallery tail all see the
             // same placements. Paths come straight from the pre-pass (which
             // picks the extension), bboxes from the same extraction order.
-            let assets = if self.config.extract_images {
+            let assets = if self.config.render.extract_images {
                 match self.extract_page_images(pdf, i, work_dir) {
                     Ok(paths) => {
                         let infos = pdf.images(i).unwrap_or_default();
@@ -839,7 +839,7 @@ impl HybridConverter {
                             .map(|(path, im)| EmbeddedAsset {
                                 rel_path: format!(
                                     "{}/p{}/{}",
-                                    self.config.image_output_dir,
+                                    self.config.render.image_output_dir,
                                     i,
                                     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
                                 ),
@@ -856,7 +856,7 @@ impl HybridConverter {
                 Vec::new()
             };
             let page_md = self.route_page(pdf, i, work_dir, &assets)?;
-            let final_md = if self.config.extract_images && self.config.append_unreferenced_images {
+            let final_md = if self.config.render.extract_images && self.config.render.append_unreferenced_images {
                 maybe_append_gallery(page_md, &assets)
             } else {
                 page_md
@@ -865,7 +865,7 @@ impl HybridConverter {
         }
 
         let joined = blocks.join("\n\n---\n\n");
-        Ok(if self.config.promote_title {
+        Ok(if self.config.text.promote_title {
             promote_document_title(&joined)
         } else {
             joined
@@ -886,13 +886,13 @@ impl HybridConverter {
         let md = self.route_page_inner(pdf, index, work_dir, assets)?;
         // Pattern-based section-heading promotion runs on every mode's output
         // (font heuristics miss numbered sections in all of them).
-        let md = if self.config.promote_headings {
+        let md = if self.config.text.promote_headings {
             promote_headings(&md)
         } else {
             md
         };
         // Code-block detection is a pure char scan — no ONNX needed.
-        if self.config.detect_code_blocks {
+        if self.config.text.detect_code_blocks {
             let mut md = md;
             for block in wrap_code_blocks(pdf, index) {
                 md.push_str("\n\n");
@@ -910,12 +910,12 @@ impl HybridConverter {
         work_dir: &Path,
         assets: &[EmbeddedAsset],
     ) -> Result<String> {
-        if !self.config.use_onnx || self.config.routing_mode == RoutingMode::Never {
+        if !self.config.routing.use_onnx || self.config.routing.routing_mode == RoutingMode::Never {
             return self.fast_markdown_placed(pdf, index, assets);
         }
 
-        if self.config.routing_mode == RoutingMode::Surgical {
-            if is_scanned(pdf, index, self.config.scanned_text_threshold) {
+        if self.config.routing.routing_mode == RoutingMode::Surgical {
+            if is_scanned(pdf, index, self.config.text.scanned_text_threshold) {
                 self.engine.ensure_models()?;
                 match self.full_structure_page_markdown(pdf, index, work_dir, assets) {
                     Ok(Some(md)) if !md.trim().is_empty() => {
@@ -935,7 +935,7 @@ impl HybridConverter {
             return Ok(interleave_images(
                 pdf,
                 index,
-                self.config.min_figure_area_pts,
+                self.config.render.min_figure_area_pts,
                 &md,
                 assets,
             ));
@@ -972,7 +972,7 @@ impl HybridConverter {
         Ok(interleave_images(
             pdf,
             index,
-            self.config.min_figure_area_pts,
+            self.config.render.min_figure_area_pts,
             &md,
             assets,
         ))
@@ -991,11 +991,11 @@ impl HybridConverter {
         let fast_md = fast_page_markdown(pdf, index)?;
 
         let mut boxes =
-            math_boxes_from_chars(pdf, index, self.config.min_formula_math_chars, 1.5, 1.5);
-        if boxes.is_empty() && self.config.formula_layout_fallback {
+            math_boxes_from_chars(pdf, index, self.config.text.min_formula_math_chars, 1.5, 1.5);
+        if boxes.is_empty() && self.config.text.formula_layout_fallback {
             // P2 fallback: use RapidLayout to find equations when text-layer
             // has no math fonts (Word/InDesign/OCR output).
-            let dpi = self.config.formula_dpi;
+            let dpi = self.config.render.formula_dpi;
             if let Ok(img) = render_page_image(pdf, index, dpi) {
                 let scale = dpi as f32 / 72.0;
                 if let Ok(regions) = self.engine.layout_regions(&img) {
@@ -1022,7 +1022,7 @@ impl HybridConverter {
             return Ok(fast_md);
         }
 
-        let dpi = self.config.formula_dpi;
+        let dpi = self.config.render.formula_dpi;
         let img = render_page_image(pdf, index, dpi)?;
         let media = page_media_box(pdf, index)?;
         let page_h = media[3];
@@ -1032,7 +1032,7 @@ impl HybridConverter {
         // Crop + OCR each box
         let mut crops: Vec<(Rect, PathBuf)> = Vec::new();
         for (j, &bbox) in boxes.iter().enumerate() {
-            if let Some(crop) = crop_image(&img, bbox, dpi, self.config.formula_pad_pts) {
+            if let Some(crop) = crop_image(&img, bbox, dpi, self.config.text.formula_pad_pts) {
                 if crop.width() >= 4 && crop.height() >= 4 {
                     let p = work_dir.join(format!("_formula_p{}_{}.png", index, j));
                     if crop.save(&p).is_ok() {
@@ -1056,7 +1056,7 @@ impl HybridConverter {
             if let Some(latex) = self.engine.recognize_formula(crop_path)? {
                 let needle = region_text(pdf, index, *bbox);
                 let display = (bbox.height) > 1.6 * line_height
-                    || bbox.width > self.config.formula_inline_max_width_pts as f32;
+                    || bbox.width > self.config.text.formula_inline_max_width_pts as f32;
                 let wrapped = if display {
                     format!("$$\n{}\n$$", latex)
                 } else {
@@ -1081,7 +1081,7 @@ impl HybridConverter {
     ) -> Result<Vec<std::path::PathBuf>> {
         // Structured layout: <work>/<image_output_dir>/p{page}/img{k}.{ext}
         let out_dir = dir
-            .join(&self.config.image_output_dir)
+            .join(&self.config.render.image_output_dir)
             .join(format!("p{}", index));
         pdf.extract_image_files(index, &out_dir, "img")
     }
@@ -1764,17 +1764,17 @@ fn is_scanned(pdf: &mut dyn PdfSource, index: usize, threshold: usize) -> bool {
 }
 
 fn needs_onnx(pdf: &mut dyn PdfSource, index: usize, config: &ConverterConfig) -> bool {
-    if !config.use_onnx || config.routing_mode == RoutingMode::Never {
+    if !config.routing.use_onnx || config.routing.routing_mode == RoutingMode::Never {
         return false;
     }
-    if config.routing_mode == RoutingMode::Always {
+    if config.routing.routing_mode == RoutingMode::Always {
         return true;
     }
     let (math, total) = page_math_signal(pdf, index);
-    if math > config.math_char_threshold && (total == 0 || math as f64 / total as f64 > 0.02) {
+    if math > config.text.math_char_threshold && (total == 0 || math as f64 / total as f64 > 0.02) {
         return true;
     }
-    is_scanned(pdf, index, config.scanned_text_threshold)
+    is_scanned(pdf, index, config.text.scanned_text_threshold)
 }
 
 // ======================================================================
@@ -2238,7 +2238,7 @@ impl HybridConverter {
         work_dir: &Path,
         assets: &[EmbeddedAsset],
     ) -> Result<Option<String>> {
-        let dpi = self.config.render_dpi;
+        let dpi = self.config.render.render_dpi;
         let img = match render_page_image(pdf, index, dpi) {
             Ok(i) => i,
             Err(_) => return Ok(None),
@@ -2255,7 +2255,7 @@ impl HybridConverter {
         // hgap 2.5: TeX \quad spacing inside display equations fragments runs
         // at 1.5; vgap 0.9: never merge math from adjacent text lines.
         let mut page_math_boxes =
-            math_boxes_from_chars(pdf, index, self.config.min_formula_math_chars, 2.5, 0.9);
+            math_boxes_from_chars(pdf, index, self.config.text.min_formula_math_chars, 2.5, 0.9);
         let line_height = estimate_line_height(pdf, index, page_h);
 
         // Layout analysis
@@ -2462,6 +2462,7 @@ fn is_mono_font(font_name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::RoutingOpts;
     use crate::pdf_source::fake::{FakePage, FakePdf};
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -2484,7 +2485,10 @@ mod tests {
         ]);
         let mut conv = HybridConverter::new(
             ConverterConfig {
-                routing_mode: RoutingMode::Never,
+                routing: RoutingOpts {
+                    routing_mode: RoutingMode::Never,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             &temp_dir("never"),
@@ -2512,7 +2516,10 @@ mod tests {
         ]);
         let mut conv = HybridConverter::new(
             ConverterConfig {
-                routing_mode: RoutingMode::Never,
+                routing: RoutingOpts {
+                    routing_mode: RoutingMode::Never,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             &temp_dir("cancel"),
@@ -2750,7 +2757,10 @@ Second paragraph text."
         )]);
         let mut conv = HybridConverter::new(
             ConverterConfig {
-                routing_mode: RoutingMode::Surgical,
+                routing: RoutingOpts {
+                    routing_mode: RoutingMode::Surgical,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             &temp_dir("surgical_plain"),
@@ -2789,7 +2799,10 @@ Second paragraph text."
         let mut pdf = FakePdf::new(vec![page]);
         let mut conv = HybridConverter::new(
             ConverterConfig {
-                routing_mode: RoutingMode::Never,
+                routing: RoutingOpts {
+                    routing_mode: RoutingMode::Never,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             &temp_dir("fallback"),
@@ -2974,12 +2987,18 @@ Second paragraph text."
 
         // Always overrides everything; Never suppresses everything
         let cfg_always = ConverterConfig {
-            routing_mode: RoutingMode::Always,
+            routing: RoutingOpts {
+                routing_mode: RoutingMode::Always,
+                ..Default::default()
+            },
             ..Default::default()
         };
         assert!(needs_onnx(&mut textual, 0, &cfg_always));
         let cfg_never = ConverterConfig {
-            routing_mode: RoutingMode::Never,
+            routing: RoutingOpts {
+                routing_mode: RoutingMode::Never,
+                ..Default::default()
+            },
             ..Default::default()
         };
         assert!(!needs_onnx(&mut scanned, 0, &cfg_never));

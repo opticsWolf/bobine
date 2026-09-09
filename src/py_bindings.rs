@@ -3,7 +3,8 @@
 use pyo3::prelude::*;
 
 use crate::config::{
-    ConverterConfig, FormulaBackend, ModelPrecision, ModelQuantization, RoutingMode,
+    ConverterConfig, FormulaBackend, ModelOpts, ModelPrecision, ModelQuantization, ProviderOpts,
+    RenderOpts, RoutingMode, RoutingOpts, TextOpts,
 };
 use crate::converter::{HybridConverter, ProgressHooks};
 
@@ -140,100 +141,110 @@ impl PyConverterConfig {
 
         PyConverterConfig {
             inner: ConverterConfig {
-                extract_images,
-                append_unreferenced_images,
-                use_onnx,
-                routing_mode: routing_mode.into(),
-                formula_backend: FormulaBackend::TexTeller,
-                model_precision: match model_precision {
-                    PyModelPrecision::Fp32 => ModelPrecision::Fp32,
-                    PyModelPrecision::Fp16 => ModelPrecision::Fp16,
+                routing: RoutingOpts {
+                    use_onnx,
+                    routing_mode: routing_mode.into(),
                 },
-                model_quantization: match model_quantization {
-                    PyModelQuantization::Fp32 => ModelQuantization::Fp32,
-                    PyModelQuantization::Int8 => ModelQuantization::Int8,
+                models: ModelOpts {
+                    formula_backend: FormulaBackend::TexTeller,
+                    model_precision: match model_precision {
+                        PyModelPrecision::Fp32 => ModelPrecision::Fp32,
+                        PyModelPrecision::Fp16 => ModelPrecision::Fp16,
+                    },
+                    model_quantization: match model_quantization {
+                        PyModelQuantization::Fp32 => ModelQuantization::Fp32,
+                        PyModelQuantization::Int8 => ModelQuantization::Int8,
+                    },
+                    ocr_lang,
                 },
-                ort_providers,
-                encoder_ort_providers,
-                decoder_ort_providers,
-                layout_ort_providers,
-                ocr_ort_providers,
-                table_ort_providers,
-                render_dpi,
-                formula_dpi,
-                detect_headings,
-                convert_html_tables,
-                structured_tables,
-                min_figure_area_pts,
-                image_output_dir,
-                detect_code_blocks,
-                promote_headings,
-                promote_title,
-                min_formula_math_chars,
-                formula_inline_max_width_pts,
-                formula_pad_pts,
-                formula_layout_fallback,
-                math_char_threshold,
-                scanned_text_threshold,
-                ocr_lang,
+                providers: ProviderOpts {
+                    ort_providers,
+                    encoder_ort_providers,
+                    decoder_ort_providers,
+                    layout_ort_providers,
+                    ocr_ort_providers,
+                    table_ort_providers,
+                },
+                render: RenderOpts {
+                    extract_images,
+                    append_unreferenced_images,
+                    render_dpi,
+                    formula_dpi,
+                    min_figure_area_pts,
+                    image_output_dir,
+                },
+                text: TextOpts {
+                    detect_headings,
+                    convert_html_tables,
+                    structured_tables,
+                    detect_code_blocks,
+                    promote_headings,
+                    promote_title,
+                    min_formula_math_chars,
+                    formula_inline_max_width_pts,
+                    formula_pad_pts,
+                    formula_layout_fallback,
+                    math_char_threshold,
+                    scanned_text_threshold,
+                },
             },
         }
     }
 
     #[getter]
     fn extract_images(&self) -> bool {
-        self.inner.extract_images
+        self.inner.render.extract_images
     }
     #[getter]
     fn routing_mode(&self) -> PyRoutingMode {
-        self.inner.routing_mode.into()
+        self.inner.routing.routing_mode.into()
     }
     #[getter]
     fn ocr_lang(&self) -> String {
-        self.inner.ocr_lang.clone()
+        self.inner.models.ocr_lang.clone()
     }
     #[getter]
     fn model_precision(&self) -> PyModelPrecision {
-        match self.inner.model_precision {
+        match self.inner.models.model_precision {
             ModelPrecision::Fp32 => PyModelPrecision::Fp32,
             ModelPrecision::Fp16 => PyModelPrecision::Fp16,
         }
     }
     #[getter]
     fn model_quantization(&self) -> PyModelQuantization {
-        match self.inner.model_quantization {
+        match self.inner.models.model_quantization {
             ModelQuantization::Fp32 => PyModelQuantization::Fp32,
             ModelQuantization::Int8 => PyModelQuantization::Int8,
         }
     }
     #[getter]
     fn ort_providers(&self) -> Vec<String> {
-        self.inner.ort_providers.clone()
+        self.inner.providers.ort_providers.clone()
     }
     #[getter]
     fn encoder_ort_providers(&self) -> Option<Vec<String>> {
-        self.inner.encoder_ort_providers.clone()
+        self.inner.providers.encoder_ort_providers.clone()
     }
     #[getter]
     fn decoder_ort_providers(&self) -> Option<Vec<String>> {
-        self.inner.decoder_ort_providers.clone()
+        self.inner.providers.decoder_ort_providers.clone()
     }
     #[getter]
     fn layout_ort_providers(&self) -> Option<Vec<String>> {
-        self.inner.layout_ort_providers.clone()
+        self.inner.providers.layout_ort_providers.clone()
     }
     #[getter]
     fn ocr_ort_providers(&self) -> Option<Vec<String>> {
-        self.inner.ocr_ort_providers.clone()
+        self.inner.providers.ocr_ort_providers.clone()
     }
     #[getter]
     fn table_ort_providers(&self) -> Option<Vec<String>> {
-        self.inner.table_ort_providers.clone()
+        self.inner.providers.table_ort_providers.clone()
     }
     fn __repr__(&self) -> String {
         format!(
             "ConverterConfig(routing={:?}, precision={:?})",
-            self.inner.routing_mode, self.inner.model_precision
+            self.inner.routing.routing_mode, self.inner.models.model_precision
         )
     }
 }

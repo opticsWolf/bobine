@@ -32,7 +32,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut conv = bobine::HybridConverter::new(
         bobine::ConverterConfig {
-            routing_mode: mode,
+            routing: bobine::RoutingOpts {
+                routing_mode: mode,
+                ..Default::default()
+            },
             ..Default::default()
         },
         &cache,

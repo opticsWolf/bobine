@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use bobine::{ConverterConfig, HybridConverter, RoutingMode};
+use bobine::{ConverterConfig, HybridConverter, RenderOpts, RoutingMode, RoutingOpts, TextOpts};
 
 fn normalize(md: &str) -> String {
     md.replace("\r\n", "\n")
@@ -88,9 +88,18 @@ fn corpus_matches_goldens() {
     let update = std::env::var("BOBINE_UPDATE_GOLDENS").is_ok();
 
     let config = ConverterConfig {
-        routing_mode: RoutingMode::Never,
-        extract_images: false,
-        detect_code_blocks: false,
+        routing: RoutingOpts {
+            routing_mode: RoutingMode::Never,
+            ..Default::default()
+        },
+        render: RenderOpts {
+            extract_images: false,
+            ..Default::default()
+        },
+        text: TextOpts {
+            detect_code_blocks: false,
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -127,10 +136,19 @@ fn figure_corpus_matches_goldens() {
     let update = std::env::var("BOBINE_UPDATE_GOLDENS").is_ok();
 
     let config = ConverterConfig {
-        routing_mode: RoutingMode::Never,
-        extract_images: true,
-        append_unreferenced_images: true,
-        detect_code_blocks: false,
+        routing: RoutingOpts {
+            routing_mode: RoutingMode::Never,
+            ..Default::default()
+        },
+        render: RenderOpts {
+            extract_images: true,
+            append_unreferenced_images: true,
+            ..Default::default()
+        },
+        text: TextOpts {
+            detect_code_blocks: false,
+            ..Default::default()
+        },
         ..Default::default()
     };
 

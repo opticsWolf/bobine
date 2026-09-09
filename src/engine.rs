@@ -176,7 +176,7 @@ impl OnnxEngine {
                     "CPUExecutionProvider".to_string(),
                 ]
             }
-            None => self.config.ort_providers.clone(),
+            None => self.config.providers.ort_providers.clone(),
         }
     }
 
@@ -184,7 +184,7 @@ impl OnnxEngine {
     /// always CPU — SLANet measures 2-9x slower on CUDA (the graph
     /// fragments across devices).
     fn resolve_table_providers(&self) -> Vec<String> {
-        match self.config.table_ort_providers.clone() {
+        match self.config.providers.table_ort_providers.clone() {
             Some(p) => p,
             None => {
                 if cuda_available() {
@@ -231,10 +231,10 @@ impl OnnxEngine {
 
     /// Load models required by the current routing mode.
     pub fn ensure_models(&mut self) -> Result<()> {
-        if !self.config.use_onnx {
+        if !self.config.routing.use_onnx {
             return Ok(());
         }
-        match self.config.routing_mode {
+        match self.config.routing.routing_mode {
             RoutingMode::Never => {}
             RoutingMode::Surgical => {
                 self.ensure_tex_teller()?;
@@ -256,35 +256,37 @@ impl OnnxEngine {
         if self.tex_teller.is_none() {
             info!(
                 "Loading TexTeller ({:?}) from OleehyO/TexTeller...",
-                self.config.model_precision
+                self.config.models.model_precision
             );
             // Quantized ops have no CUDA kernels - requesting CUDA with
             // Int8 weights makes ORT split the graph across devices
             // (171-267 Memcpy nodes) and runs ~2x SLOWER than plain CPU.
-            if self.config.model_quantization == crate::config::ModelQuantization::Int8
+            if self.config.models.model_quantization == crate::config::ModelQuantization::Int8
                 && self
                     .config
+                    .providers
                     .ort_providers
                     .iter()
-                    .chain(self.config.encoder_ort_providers.iter().flatten())
-                    .chain(self.config.decoder_ort_providers.iter().flatten())
+                    .chain(self.config.providers.encoder_ort_providers.iter().flatten())
+                    .chain(self.config.providers.decoder_ort_providers.iter().flatten())
                     .any(|p| p.to_lowercase().contains("cuda"))
             {
                 tracing::warn!(
                     "model_quantization=Int8 combined with CUDA providers: quantized ops                      fall back across devices (Memcpy-node overhead) and measure ~2x slower                      than CPU. Prefer model_quantization=Fp32 when running on a GPU."
                 );
             }
-            let enc_providers = self.config.encoder_ort_providers.as_deref();
+            let enc_providers = self.config.providers.encoder_ort_providers.as_deref();
             let dec_providers: Vec<String> = self
                 .config
+                .providers
                 .decoder_ort_providers
                 .clone()
-                .unwrap_or_else(|| self.config.ort_providers.clone());
-            let tt = match self.config.model_quantization {
+                .unwrap_or_else(|| self.config.providers.ort_providers.clone());
+            let tt = match self.config.models.model_quantization {
                 crate::config::ModelQuantization::Fp32 => TexTeller::from_pretrained_split(
                     "OleehyO/TexTeller",
                     &self.cache_dir,
-                    self.config.model_precision,
+                    self.config.models.model_precision,
                     enc_providers,
                     &dec_providers,
                 )?,
@@ -358,7 +360,7 @@ impl OnnxEngine {
             };
             info!("Loading RapidLayout from {}...", path.display());
             let providers = self.resolve_auto_gpu_providers(
-                self.config.layout_ort_providers.as_ref(),
+                self.config.providers.layout_ort_providers.as_ref(),
                 "layout",
             );
             let layout = RapidLayout::load(&path, &providers)?;
@@ -395,10 +397,10 @@ impl OnnxEngine {
                 rec.display()
             );
             let providers = self.resolve_auto_gpu_providers(
-                self.config.ocr_ort_providers.as_ref(),
+                self.config.providers.ocr_ort_providers.as_ref(),
                 "ocr",
             );
-            let ocr = RapidOcr::load(&det, &rec, &self.config.ocr_lang, &providers)?;
+            let ocr = RapidOcr::load(&det, &rec, &self.config.models.ocr_lang, &providers)?;
             self.ocr = Some(ocr);
         }
         Ok(())
@@ -446,6 +448,7 @@ impl OnnxEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ProviderOpts;
 
     /// Requesting CUDA on a machine/library without it must degrade to CPU
     /// gracefully (Ok), never fail the session build.
@@ -489,10 +492,13 @@ mod tests {
     #[test]
     fn table_slot_defaults_to_cpu_even_with_cuda_base() {
         let cfg = ConverterConfig {
-            ort_providers: vec![
-                "CUDAExecutionProvider".into(),
-                "CPUExecutionProvider".into(),
-            ],
+            providers: ProviderOpts {
+                ort_providers: vec![
+                    "CUDAExecutionProvider".into(),
+                    "CPUExecutionProvider".into(),
+                ],
+                ..Default::default()
+            },
             ..Default::default()
         };
         let engine = OnnxEngine::new(&cfg, Path::new("/tmp/bobine_test"));
@@ -503,7 +509,10 @@ mod tests {
 
         // An explicit override is honored, even against the default policy.
         let cfg = ConverterConfig {
-            table_ort_providers: Some(vec!["CUDAExecutionProvider".into()]),
+            providers: ProviderOpts {
+                table_ort_providers: Some(vec!["CUDAExecutionProvider".into()]),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let engine = OnnxEngine::new(&cfg, Path::new("/tmp/bobine_test"));

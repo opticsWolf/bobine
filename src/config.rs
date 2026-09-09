@@ -53,30 +53,23 @@ pub enum ModelQuantization {
     Int8,
 }
 
-/// Tunable knobs for the HybridConverter pipeline.
+/// Page-routing knobs: which pages take the ONNX heavy path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConverterConfig {
-    /// Extract embedded images from pages.
-    pub extract_images: bool,
-
-    /// Append unreferenced images as a gallery.
-    pub append_unreferenced_images: bool,
-
+pub struct RoutingOpts {
     /// Whether ONNX models are loaded at all.
     pub use_onnx: bool,
 
     /// Page routing strategy.
     pub routing_mode: RoutingMode,
+}
 
-    /// Formula recognition backend.
-    pub formula_backend: FormulaBackend,
-
-    /// Numeric precision for ONNX model weights.
-    pub model_precision: ModelPrecision,
-    /// Formula-recognizer weight selection (accuracy vs memory). See
-    /// [`ModelQuantization`].
-    pub model_quantization: ModelQuantization,
-
+/// ONNX Runtime execution-provider selection, with per-model overrides.
+///
+/// Layout/OCR slots auto-enable CUDA when the loaded library registers it
+/// (measured 12.3x / 3.6x); the table slot stays CPU-pinned unless
+/// overridden (SLANet measures 2-9x slower on CUDA).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderOpts {
     /// ONNX Runtime execution providers e.g. ["CPUExecutionProvider"].
     /// Requesting an accelerator the loaded ORT library lacks degrades
     /// gracefully to CPU.
@@ -112,23 +105,22 @@ pub struct ConverterConfig {
     /// (IMPLEMENTATION_PLAN.md).
     #[serde(default)]
     pub table_ort_providers: Option<Vec<String>>,
+}
+
+/// Render / asset-staging knobs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenderOpts {
+    /// Extract embedded images from pages.
+    pub extract_images: bool,
+
+    /// Append unreferenced images as a gallery.
+    pub append_unreferenced_images: bool,
 
     /// DPI for scanned-page renders.
     pub render_dpi: u32,
 
     /// DPI for formula-crop renders.
     pub formula_dpi: u32,
-
-    /// Detect markdown headings from fonts.
-    pub detect_headings: bool,
-
-    /// Convert HTML tables to GFM pipe tables.
-    pub convert_html_tables: bool,
-
-    /// Probe layout table regions with structured grid extraction
-    /// (Tagged-PDF structure tree / ruled-grid detection) before falling
-    /// back to a plain text dump. Preserves cell/column structure.
-    pub structured_tables: bool,
 
     /// Embedded images whose placement bbox is smaller than this many
     /// square points are treated as decoration (logos, rules, bullets):
@@ -139,6 +131,41 @@ pub struct ConverterConfig {
     /// Directory (relative to the work dir) where extracted figure assets
     /// are written, structured as `<dir>/p{page}/img{k}.{ext}`.
     pub image_output_dir: String,
+}
+
+/// Model-selection knobs (weights, backends, language).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelOpts {
+    /// Formula recognition backend.
+    pub formula_backend: FormulaBackend,
+
+    /// Numeric precision for ONNX model weights.
+    pub model_precision: ModelPrecision,
+    /// Formula-recognizer weight selection (accuracy vs memory). See
+    /// [`ModelQuantization`].
+    pub model_quantization: ModelQuantization,
+
+    /// OCR recognition language hint (e.g. "en", "ch", "ja", "latin").
+    ///
+    /// Used to select a CTC charset fallback when the rec model carries no
+    /// `character` metadata. Models loaded via explicit paths usually embed
+    /// their charset, making this a no-op for them.
+    pub ocr_lang: String,
+}
+
+/// Text-layer / markdown-shaping knobs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextOpts {
+    /// Detect markdown headings from fonts.
+    pub detect_headings: bool,
+
+    /// Convert HTML tables to GFM pipe tables.
+    pub convert_html_tables: bool,
+
+    /// Probe layout table regions with structured grid extraction
+    /// (Tagged-PDF structure tree / ruled-grid detection) before falling
+    /// back to a plain text dump. Preserves cell/column structure.
+    pub structured_tables: bool,
 
     /// Detect monospaced code blocks.
     pub detect_code_blocks: bool,
@@ -171,38 +198,84 @@ pub struct ConverterConfig {
 
     /// Fewer chars than this + has images → scanned page.
     pub scanned_text_threshold: usize,
-
-    /// OCR recognition language hint (e.g. "en", "ch", "ja", "latin").
-    ///
-    /// Used to select a CTC charset fallback when the rec model carries no
-    /// `character` metadata. Models loaded via explicit paths usually embed
-    /// their charset, making this a no-op for them.
-    pub ocr_lang: String,
 }
 
-impl Default for ConverterConfig {
+/// Tunable knobs for the HybridConverter pipeline.
+///
+/// Grouped into sub-structs by concern; `#[serde(flatten)]` keeps the
+/// serialized (JSON/TOML) form flat, so files written by older versions
+/// still parse.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConverterConfig {
+    /// Page-routing knobs.
+    #[serde(flatten)]
+    pub routing: RoutingOpts,
+    /// Execution-provider selection.
+    #[serde(flatten)]
+    pub providers: ProviderOpts,
+    /// Render / asset-staging knobs.
+    #[serde(flatten)]
+    pub render: RenderOpts,
+    /// Model-selection knobs.
+    #[serde(flatten)]
+    pub models: ModelOpts,
+    /// Text-layer / markdown-shaping knobs.
+    #[serde(flatten)]
+    pub text: TextOpts,
+}
+
+impl Default for RoutingOpts {
     fn default() -> Self {
         Self {
-            extract_images: true,
-            append_unreferenced_images: true,
             use_onnx: true,
             routing_mode: RoutingMode::Auto,
-            formula_backend: FormulaBackend::TexTeller,
-            model_precision: ModelPrecision::Fp32,
-            model_quantization: ModelQuantization::Int8,
+        }
+    }
+}
+
+impl Default for ProviderOpts {
+    fn default() -> Self {
+        Self {
             ort_providers: vec!["CPUExecutionProvider".into()],
             encoder_ort_providers: None,
             decoder_ort_providers: None,
             layout_ort_providers: None,
             ocr_ort_providers: None,
             table_ort_providers: None,
+        }
+    }
+}
+
+impl Default for RenderOpts {
+    fn default() -> Self {
+        Self {
+            extract_images: true,
+            append_unreferenced_images: true,
             render_dpi: 300,
             formula_dpi: 200,
+            min_figure_area_pts: 100.0,
+            image_output_dir: "assets".to_string(),
+        }
+    }
+}
+
+impl Default for ModelOpts {
+    fn default() -> Self {
+        Self {
+            formula_backend: FormulaBackend::TexTeller,
+            model_precision: ModelPrecision::Fp32,
+            model_quantization: ModelQuantization::Int8,
+            ocr_lang: "en".to_string(),
+        }
+    }
+}
+
+impl Default for TextOpts {
+    fn default() -> Self {
+        Self {
             detect_headings: true,
             convert_html_tables: true,
             structured_tables: true,
-            min_figure_area_pts: 100.0,
-            image_output_dir: "assets".to_string(),
             detect_code_blocks: true,
             promote_headings: true,
             promote_title: true,
@@ -212,7 +285,18 @@ impl Default for ConverterConfig {
             formula_layout_fallback: false,
             math_char_threshold: 30,
             scanned_text_threshold: 50,
-            ocr_lang: "en".to_string(),
+        }
+    }
+}
+
+impl Default for ConverterConfig {
+    fn default() -> Self {
+        Self {
+            routing: RoutingOpts::default(),
+            providers: ProviderOpts::default(),
+            render: RenderOpts::default(),
+            models: ModelOpts::default(),
+            text: TextOpts::default(),
         }
     }
 }
@@ -224,21 +308,49 @@ mod tests {
     #[test]
     fn default_config_routing() {
         let c = ConverterConfig::default();
-        assert_eq!(c.routing_mode, RoutingMode::Auto);
-        assert_eq!(c.formula_backend, FormulaBackend::TexTeller);
-        assert_eq!(c.model_precision, ModelPrecision::Fp32);
+        assert_eq!(c.routing.routing_mode, RoutingMode::Auto);
+        assert_eq!(c.models.formula_backend, FormulaBackend::TexTeller);
+        assert_eq!(c.models.model_precision, ModelPrecision::Fp32);
     }
 
     #[test]
     fn config_fields_match_python() {
         let c = ConverterConfig::default();
-        assert_eq!(c.render_dpi, 300);
-        assert_eq!(c.formula_dpi, 200);
-        assert_eq!(c.formula_inline_max_width_pts, 220.0);
-        assert_eq!(c.formula_pad_pts, 4.0);
-        assert_eq!(c.min_formula_math_chars, 5);
-        assert_eq!(c.math_char_threshold, 30);
-        assert_eq!(c.scanned_text_threshold, 50);
+        assert_eq!(c.render.render_dpi, 300);
+        assert_eq!(c.render.formula_dpi, 200);
+        assert_eq!(c.text.formula_inline_max_width_pts, 220.0);
+        assert_eq!(c.text.formula_pad_pts, 4.0);
+        assert_eq!(c.text.min_formula_math_chars, 5);
+        assert_eq!(c.text.math_char_threshold, 30);
+        assert_eq!(c.text.scanned_text_threshold, 50);
+    }
+
+    #[test]
+    fn grouped_config_serde_stays_flat() {
+        // The grouped struct must serialize exactly like the old flat one
+        // so config files written by older versions still parse.
+        let c = ConverterConfig::default();
+        let v = serde_json::to_value(&c).unwrap();
+        for key in [
+            "routing_mode",
+            "use_onnx",
+            "ort_providers",
+            "encoder_ort_providers",
+            "render_dpi",
+            "formula_dpi",
+            "extract_images",
+            "model_precision",
+            "ocr_lang",
+            "detect_headings",
+            "scanned_text_threshold",
+        ] {
+            assert!(v.get(key).is_some(), "missing flat key {key}");
+        }
+        for group in ["routing", "providers", "render", "models", "text"] {
+            assert!(v.get(group).is_none(), "nested group {group} leaked");
+        }
+        let back: ConverterConfig = serde_json::from_value(v).unwrap();
+        assert_eq!(format!("{:?}", back), format!("{:?}", c));
     }
 
     #[test]

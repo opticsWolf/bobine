@@ -19,7 +19,10 @@ pub mod tex_teller;
 #[cfg(feature = "extension-module")]
 mod py_bindings;
 
-pub use config::{ConverterConfig, FormulaBackend, ModelPrecision, ModelQuantization, RoutingMode};
+pub use config::{
+    ConverterConfig, FormulaBackend, ModelOpts, ModelPrecision, ModelQuantization, ProviderOpts,
+    RenderOpts, RoutingMode, RoutingOpts, TextOpts,
+};
 pub use converter::{HybridConverter, ProgressHooks};
 pub use engine::OnnxEngine;
 pub use error::BobineError;
