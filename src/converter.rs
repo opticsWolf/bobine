@@ -199,6 +199,82 @@ fn caption_block(page_chars: &[SourceChar], lines: &[Vec<usize>], lab: &str) -> 
     }
 }
 
+/// Figure/image arm (extracted from the dispatch loop). Returns the markdown
+/// image link (`Some`) or `None` when neither an embedded raster nor a
+/// render crop could be produced. Terminal: no fall-through — `None` simply
+/// emits nothing for this region.
+#[allow(clippy::too_many_arguments)]
+fn figure_block(
+    config: &ConverterConfig,
+    sorted: &[crate::rapid_layout::LayoutRegion],
+    region_lines: &[Vec<Vec<usize>>],
+    page_chars: &[SourceChar],
+    bbox: Rect,
+    scale: f32,
+    median_char_h: f32,
+    assets: &[EmbeddedAsset],
+    img: &DynamicImage,
+    dpi: u32,
+    work_dir: &Path,
+    page_index: usize,
+    block_no: usize,
+) -> Option<String> {
+    // Caption association: the nearest caption region (below or above
+    // within ~3 line heights) becomes the alt text.
+    let cap_alt = nearby_caption_text(
+        sorted,
+        region_lines,
+        page_chars,
+        &bbox,
+        scale,
+        3.0 * median_char_h,
+    )
+    .and_then(|t| caption_alt(&t, 120));
+    let mk_img = |src: &str| match &cap_alt {
+        Some(a) => format!("![{}]({})", a, src),
+        None => format!("![]({})", src),
+    };
+    // Prefer the ORIGINAL embedded raster when this region covers it
+    // (≥ 60% of the raster inside the box): lossless bytes at native
+    // resolution beat a 300-dpi render crop that bakes in surrounding
+    // content. Crops remain for vector/mixed art. Decoration-sized
+    // assets are excluded from matching.
+    let matched = best_embedded_match(&bbox, assets, 0.6)
+        .and_then(|ai| assets.get(ai))
+        .filter(|a| {
+            a.bbox_pts.map_or(false, |b| {
+                (b.width as f64) * (b.height as f64) >= config.min_figure_area_pts
+            })
+        });
+    if let Some(a) = matched {
+        info!(
+            "page {}: figure → embedded asset {}",
+            page_index + 1,
+            a.rel_path
+        );
+        return Some(mk_img(&a.rel_path));
+    }
+    if let Some(crop) = crop_image(img, bbox, dpi, 0.0) {
+        // Page-scoped structured name: every page restarts its block
+        // counter and all pages share one asset tree.
+        let p = work_dir
+            .join(&config.image_output_dir)
+            .join(format!("p{}", page_index))
+            .join(format!("crop{}.png", block_no));
+        std::fs::create_dir_all(p.parent().unwrap()).ok();
+        if crop.save(&p).is_ok() {
+            let rel = format!(
+                "{}/p{}/{}",
+                config.image_output_dir,
+                page_index,
+                p.file_name().unwrap().to_string_lossy()
+            );
+            return Some(mk_img(&rel));
+        }
+    }
+    None
+}
+
 /// Seam repair: glyphs covered by NO emitting region (seams between
 /// layout boxes, dropped by argmax ownership) are clustered into lines
 /// and offered to the nearest region whose padded box contains them.
@@ -2181,57 +2257,22 @@ impl HybridConverter {
                     blocks.push(text);
                 }
             } else if lab.contains("figure") || lab.contains("image") {
-                // Caption association: the nearest caption region (below or
-                // above within ~3 line heights) becomes the alt text.
-                let cap_alt = nearby_caption_text(
+                if let Some(link) = figure_block(
+                    &self.config,
                     &sorted,
                     &region_lines,
                     &page_chars,
-                    &bbox,
+                    bbox,
                     scale,
-                    3.0 * median_char_h,
-                )
-                .and_then(|t| caption_alt(&t, 120));
-                let mk_img = |src: &str| match &cap_alt {
-                    Some(a) => format!("![{}]({})", a, src),
-                    None => format!("![]({})", src),
-                };
-                // Prefer the ORIGINAL embedded raster when this region covers
-                // it (≥ 60% of the raster inside the box): lossless bytes at
-                // native resolution beat a 300-dpi render crop that bakes in
-                // surrounding content. Crops remain for vector/mixed art.
-                // Decoration-sized assets are excluded from matching.
-                let matched = best_embedded_match(&bbox, assets, 0.6)
-                    .and_then(|ai| assets.get(ai))
-                    .filter(|a| {
-                        a.bbox_pts.map_or(false, |b| {
-                            (b.width as f64) * (b.height as f64)
-                                >= self.config.min_figure_area_pts
-                        })
-                    });
-                if let Some(a) = matched {
-                    info!("page {}: figure → embedded asset {}", index + 1, a.rel_path);
-                    blocks.push(mk_img(&a.rel_path));
-                    continue;
-                }
-                if let Some(crop) = crop_image(&img, bbox, dpi, 0.0) {
-                    // Page-scoped structured name: every page restarts its
-                    // block counter and all pages share one asset tree.
-                    let p = work_dir
-                        .join(&self.config.image_output_dir)
-                        .join(format!("p{}", index))
-                        .join(format!("crop{}.png", blocks.len()));
-                    std::fs::create_dir_all(p.parent().unwrap()).ok();
-                    if crop.save(&p).is_ok() {
-                        let rel = format!(
-                            "{}/p{}/{}",
-                            self.config.image_output_dir,
-                            index,
-                            p.file_name().unwrap().to_string_lossy()
-                        );
-                        blocks.push(mk_img(&rel));
-                        continue;
-                    }
+                    median_char_h,
+                    assets,
+                    &img,
+                    dpi,
+                    work_dir,
+                    index,
+                    blocks.len(),
+                ) {
+                    blocks.push(link);
                 }
             } else {
                 // Text region: prefer PDF text layer, fall back to OCR
