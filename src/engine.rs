@@ -339,10 +339,11 @@ impl OnnxEngine {
     ) -> Result<Option<String>> {
         self.ensure_tex_teller()?;
         let tt = self.tex_teller.as_mut().unwrap();
-        tt.max_tokens = max_tokens.clamp(16, 1024);
-        let latex = tt.recognize(image_path)?;
-        tt.max_tokens = crate::tex_teller::MAX_TOKENS;
-        Ok(Some(latex))
+        let prev = std::mem::replace(&mut tt.max_tokens, max_tokens.clamp(16, 1024));
+        let r = tt.recognize(image_path);
+        // Restore even on error so a failed crop cannot clamp later pages.
+        self.tex_teller.as_mut().unwrap().max_tokens = prev;
+        Ok(Some(r?))
     }
 
     // ------------------------------------------------------------------
@@ -429,14 +430,12 @@ impl OnnxEngine {
         let mut md_pages: Vec<String> = Vec::new();
 
         for i in 0..n_pages {
-            let md = match self.config.routing_mode {
-                RoutingMode::Never | RoutingMode::Auto => doc
-                    .to_markdown(i as usize, &Default::default())
-                    .unwrap_or_else(|_| doc.extract_text(i as usize).unwrap_or_default()),
-                RoutingMode::Surgical | RoutingMode::Always => doc
-                    .to_markdown(i as usize, &Default::default())
-                    .unwrap_or_else(|_| doc.extract_text(i as usize).unwrap_or_default()),
-            };
+            // NOTE: routing (Never/Auto/Surgical/Always) lives in
+            // HybridConverter::route_page_inner; this fast-path helper
+            // intentionally ignores it.
+            let md = doc
+                .to_markdown(i as usize, &Default::default())
+                .unwrap_or_else(|_| doc.extract_text(i as usize).unwrap_or_default());
             md_pages.push(md);
         }
 
