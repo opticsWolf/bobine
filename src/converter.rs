@@ -179,6 +179,109 @@ fn assign_glyph_owners(
     glyph_owner
 }
 
+/// Seam repair: glyphs covered by NO emitting region (seams between
+/// layout boxes, dropped by argmax ownership) are clustered into lines
+/// and offered to the nearest region whose padded box contains them.
+/// Only truly homeless lines are appended to `blocks` directly.
+///
+/// NOTE (behavior quirk, preserved): this runs AFTER the per-region
+/// dispatch loop, so lines adopted into `region_lines` here are never
+/// re-emitted into `blocks` — only homeless lines reach the output.
+/// Moving this before dispatch would change output (goldens); do that
+/// as a deliberate behavior fix, not a refactor.
+fn repair_seams(
+    page_chars: &[SourceChar],
+    sorted: &[crate::rapid_layout::LayoutRegion],
+    glyph_owner: &[Option<usize>],
+    region_lines: &mut [Vec<Vec<usize>>],
+    blocks: &mut Vec<String>,
+    scale: f32,
+    page_index: usize,
+) {
+    let unowned: Vec<usize> = (0..page_chars.len())
+        .filter(|&i| glyph_owner[i].is_none())
+        .collect();
+    if unowned.is_empty() {
+        return;
+    }
+    let pad_px = 8.0 * scale; // tolerance around each layout box (px)
+    let mut homeless = 0usize;
+    for line in cluster_lines(page_chars, &unowned) {
+        let lx0 = line
+            .iter()
+            .map(|&i| page_chars[i].bbox.x)
+            .fold(f32::INFINITY, f32::min);
+        let ly0 = line
+            .iter()
+            .map(|&i| page_chars[i].bbox.y)
+            .fold(f32::INFINITY, f32::min);
+        let lx1 = line
+            .iter()
+            .map(|&i| page_chars[i].bbox.x + page_chars[i].bbox.width)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let ly1 = line
+            .iter()
+            .map(|&i| page_chars[i].bbox.y + page_chars[i].bbox.height)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let cx = (lx0 + lx1) * 0.5 * scale;
+        let cy = (ly0 + ly1) * 0.5 * scale;
+        // Regions whose PADDED box contains the line center; nearest
+        // vertical edge wins (seams are mostly horizontal slivers).
+        let mut best: Option<(f32, usize)> = None;
+        for (ri, region) in sorted.iter().enumerate() {
+            if region_claim_priority(&region.label) == CLAIM_NONE {
+                continue;
+            }
+            if cx >= region.x0 - pad_px
+                && cx <= region.x1 + pad_px
+                && cy >= region.y0 - pad_px
+                && cy <= region.y1 + pad_px
+            {
+                let d = if cy < region.y0 {
+                    region.y0 - cy
+                } else if cy > region.y1 {
+                    cy - region.y1
+                } else {
+                    0.0
+                };
+                if best.map_or(true, |(bd, _)| d < bd) {
+                    best = Some((d, ri));
+                }
+            }
+        }
+        match best {
+            Some((_, ri)) => {
+                region_lines[ri].push(line);
+                // Re-sort this region's lines back into reading order.
+                region_lines[ri].sort_by(|a, b| {
+                    let ay = a
+                        .iter()
+                        .map(|&i| page_chars[i].bbox.y)
+                        .fold(f32::INFINITY, f32::min);
+                    let by = b
+                        .iter()
+                        .map(|&i| page_chars[i].bbox.y)
+                        .fold(f32::INFINITY, f32::min);
+                    ay.partial_cmp(&by).unwrap_or(std::cmp::Ordering::Equal)
+                });
+            }
+            None => {
+                homeless += line.len();
+                let t = region_lines_to_text(page_chars, &[line]);
+                if !t.trim().is_empty() {
+                    blocks.push(t);
+                }
+            }
+        }
+    }
+    if homeless > 0 {
+        info!(
+            "page {}: {} chars outside every layout region (appended)",
+            page_index + 1,
+            homeless
+        );
+    }
+}
 /// Assign WHOLE LINES, not glyphs: cluster all owned glyphs into visual
 /// lines first, then give each line to its majority owner. Per-glyph
 /// ownership alone can switch regions mid-line where two model boxes
@@ -2169,85 +2272,17 @@ impl HybridConverter {
             }
         }
 
-        // Seam repair: glyphs covered by NO emitting region (seams between
-        // layout boxes, dropped by argmax ownership) are clustered into lines
-        // and offered to the nearest region whose padded box contains them,
-        // so text shredded across box seams rejoins its neighbours in reading
-        // order. Only truly homeless lines fall through to the trailing block.
-        let unowned: Vec<usize> = (0..page_chars.len())
-            .filter(|&i| glyph_owner[i].is_none())
-            .collect();
-        if !unowned.is_empty() {
-            let pad_px = 8.0 * scale; // tolerance around each layout box (px)
-            let mut homeless = 0usize;
-            for line in cluster_lines(&page_chars, &unowned) {
-                let lx0 = line.iter().map(|&i| page_chars[i].bbox.x).fold(f32::INFINITY, f32::min);
-                let ly0 = line.iter().map(|&i| page_chars[i].bbox.y).fold(f32::INFINITY, f32::min);
-                let lx1 = line
-                    .iter()
-                    .map(|&i| page_chars[i].bbox.x + page_chars[i].bbox.width)
-                    .fold(f32::NEG_INFINITY, f32::max);
-                let ly1 = line
-                    .iter()
-                    .map(|&i| page_chars[i].bbox.y + page_chars[i].bbox.height)
-                    .fold(f32::NEG_INFINITY, f32::max);
-                let cx = (lx0 + lx1) * 0.5 * scale;
-                let cy = (ly0 + ly1) * 0.5 * scale;
-                // Regions whose PADDED box contains the line center; nearest
-                // vertical edge wins (seams are mostly horizontal slivers).
-                let mut best: Option<(f32, usize)> = None;
-                for (ri, region) in sorted.iter().enumerate() {
-                    if region_claim_priority(&region.label) == CLAIM_NONE {
-                        continue;
-                    }
-                    if cx >= region.x0 - pad_px
-                        && cx <= region.x1 + pad_px
-                        && cy >= region.y0 - pad_px
-                        && cy <= region.y1 + pad_px
-                    {
-                        let d = if cy < region.y0 {
-                            region.y0 - cy
-                        } else if cy > region.y1 {
-                            cy - region.y1
-                        } else {
-                            0.0
-                        };
-                        if best.map_or(true, |(bd, _)| d < bd) {
-                            best = Some((d, ri));
-                        }
-                    }
-                }
-                match best {
-                    Some((_, ri)) => {
-                        region_lines[ri].push(line);
-                        // Re-sort this region's lines back into reading order.
-                        region_lines[ri].sort_by(|a, b| {
-                            let ay = a.iter()
-                                .map(|&i| page_chars[i].bbox.y)
-                                .fold(f32::INFINITY, f32::min);
-                            let by = b.iter()
-                                .map(|&i| page_chars[i].bbox.y)
-                                .fold(f32::INFINITY, f32::min);
-                            ay.partial_cmp(&by).unwrap_or(std::cmp::Ordering::Equal)
-                        });
-                    }
-                    None => {
-                        homeless += line.len();
-                        let t = region_lines_to_text(&page_chars, &[line]);
-                        if !t.trim().is_empty() {
-                            blocks.push(t);
-                        }
-                    }
-                }
-            }
-            if homeless > 0 {
-                info!(
-                    "page {}: {} chars outside every layout region (appended)",
-                    index + 1,
-                    homeless
-                );
-            }
-        }
+        // Seam repair (see `repair_seams`): homeless glyph lines are
+        // appended; region-adopted lines rejoin `region_lines`.
+        repair_seams(
+            &page_chars,
+            &sorted,
+            &glyph_owner,
+            &mut region_lines,
+            &mut blocks,
+            scale,
+            index,
+        );
 
         let md = blocks.join("\n\n");
         if dbg_blocks {
