@@ -179,6 +179,26 @@ fn assign_glyph_owners(
     glyph_owner
 }
 
+/// Caption/footnote pre-route (extracted from the dispatch loop).
+/// Caption labels describe OTHER regions, so they always render as plain
+/// text. Returns `Some(text)` when the region owns non-empty text (caller
+/// pushes it and `continue`s); `None` lets dispatch fall through to the
+/// label chain — this preserves the inline behavior, including the edge
+/// case where an empty caption (e.g. `table_caption`) still reaches the
+/// table arm below. The check must precede the math/table/figure routes
+/// because e.g. "formula" substring-matches "formula_caption".
+fn caption_block(page_chars: &[SourceChar], lines: &[Vec<usize>], lab: &str) -> Option<String> {
+    if !(lab.contains("caption") || lab.contains("footnote")) {
+        return None;
+    }
+    let text = region_lines_to_text(page_chars, lines);
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
 /// Seam repair: glyphs covered by NO emitting region (seams between
 /// layout boxes, dropped by argmax ownership) are clustered into lines
 /// and offered to the nearest region whose padded box contains them.
@@ -1909,15 +1929,9 @@ impl HybridConverter {
                 (region.y1 - region.y0) / scale,
             );
             let lab = region.label.to_lowercase();
-            // Caption labels describe OTHER regions; they are plain text.
-            // ("formula" substring-matches "formula_caption", so this check
-            // must precede the math/table/figure routes.)
-            if lab.contains("caption") || lab.contains("footnote") {
-                let text = region_lines_to_text(&page_chars, &region_lines[ri]);
-                if !text.trim().is_empty() {
-                    blocks.push(text);
-                    continue;
-                }
+            if let Some(text) = caption_block(&page_chars, &region_lines[ri], &lab) {
+                blocks.push(text);
+                continue;
             }
 
             if lab.contains("table") {
