@@ -337,6 +337,81 @@ fn text_block(
     None
 }
 
+/// Table arm (extracted from the dispatch loop). Always returns exactly one
+/// block: structured text-layer extraction → unstructured line dump →
+/// scanned OCR + SLANet-plus → `[table: …]` placeholder.
+fn table_block(
+    config: &ConverterConfig,
+    pdf: &mut dyn PdfSource,
+    engine: &mut crate::engine::OnnxEngine,
+    page_chars: &[SourceChar],
+    lines: &[Vec<usize>],
+    region_label: &str,
+    bbox: Rect,
+    img: &DynamicImage,
+    dpi: u32,
+    page_index: usize,
+) -> String {
+    // Stage 1 — structured extraction from the text layer: Tagged-PDF
+    // structure tree or ruled-grid detection scoped to this region.
+    // Preserves cell/column structure that a plain glyph dump destroys
+    // (borderless tables fall through — the spatial detector rejects
+    // prose-shaped candidates).
+    if config.structured_tables {
+        match pdf.tables_in_rect(page_index, bbox) {
+            Ok(tables) => {
+                let md: Vec<String> = tables
+                    .iter()
+                    .filter(|t| crate::tables::is_plausible_table(t))
+                    .filter_map(crate::tables::source_table_markdown)
+                    .collect();
+                if !md.is_empty() {
+                    info!(
+                        "page {}: {} structured table(s) in region",
+                        page_index + 1,
+                        md.len()
+                    );
+                    return md.join("\n\n");
+                }
+            }
+            Err(e) => {
+                tracing::warn!("page {}: structured table probe failed: {e}", page_index + 1)
+            }
+        }
+    }
+    // Stage 2 — unstructured dump of the region's text lines.
+    let text = region_lines_to_text(page_chars, lines);
+    if !text.trim().is_empty() {
+        return if config.convert_html_tables {
+            crate::tables::html_tables_to_gfm(&text)
+        } else {
+            text
+        };
+    }
+    if let Some(crop) = crop_image(img, bbox, dpi, 0.0) {
+        // Scanned table: OCR the crop, then SLANet-plus structure.
+        match engine
+            .ocr_lines(&crop)
+            .map(|lines| engine.recognize_table(&crop, &lines))
+        {
+            Ok(Ok(Some(html))) => {
+                info!(
+                    "page {}: table recognized ({}px crop)",
+                    page_index + 1,
+                    crop.width()
+                );
+                return if config.convert_html_tables {
+                    crate::tables::html_tables_to_gfm(&html)
+                } else {
+                    html
+                };
+            }
+            Ok(Ok(None)) | Ok(Err(_)) | Err(_) => {}
+        }
+    }
+    format!("[table: {}]", region_label)
+}
+
 /// Seam repair: glyphs covered by NO emitting region (seams between
 /// layout boxes, dropped by argmax ownership) are clustered into lines
 /// and offered to the nearest region whose padded box contains them.
@@ -2073,73 +2148,18 @@ impl HybridConverter {
             }
 
             if lab.contains("table") {
-                // Stage 1 — structured extraction from the text layer:
-                // Tagged-PDF structure tree or ruled-grid detection scoped
-                // to this region. Preserves cell/column structure that a
-                // plain glyph dump destroys (borderless tables fall through
-                // — the spatial detector rejects prose-shaped candidates).
-                if self.config.structured_tables {
-                    match pdf.tables_in_rect(index, bbox) {
-                        Ok(tables) => {
-                            let md: Vec<String> = tables
-                                .iter()
-                                .filter(|t| crate::tables::is_plausible_table(t))
-                                .filter_map(crate::tables::source_table_markdown)
-                                .collect();
-                            if !md.is_empty() {
-                                info!(
-                                    "page {}: {} structured table(s) in region",
-                                    index + 1,
-                                    md.len()
-                                );
-                                blocks.push(md.join("\n\n"));
-                                continue;
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("page {}: structured table probe failed: {e}", index + 1)
-                        }
-                    }
-                }
-                // Stage 2 — unstructured dump of the region's text lines.
-                let text = region_lines_to_text(&page_chars, &region_lines[ri]);
-                if !text.trim().is_empty() {
-                    let t = if self.config.convert_html_tables {
-                        crate::tables::html_tables_to_gfm(&text)
-                    } else {
-                        text
-                    };
-                    blocks.push(t);
-                } else if let Some(crop) = crop_image(&img, bbox, dpi, 0.0) {
-                    // Scanned table: OCR the crop, then SLANet-plus structure.
-                    match self
-                        .engine
-                        .ocr_lines(&crop)
-                        .map(|lines| self.engine.recognize_table(&crop, &lines))
-                    {
-                        Ok(Ok(Some(html))) => {
-                            info!(
-                                "page {}: table recognized ({}px crop)",
-                                index + 1,
-                                crop.width()
-                            );
-                            let t = if self.config.convert_html_tables {
-                                crate::tables::html_tables_to_gfm(&html)
-                            } else {
-                                html
-                            };
-                            blocks.push(t);
-                        }
-                        Ok(Ok(None)) | Ok(Err(_)) => {
-                            blocks.push(format!("[table: {}]", region.label));
-                        }
-                        Err(_) => {
-                            blocks.push(format!("[table: {}]", region.label));
-                        }
-                    }
-                } else {
-                    blocks.push(format!("[table: {}]", region.label));
-                }
+                blocks.push(table_block(
+                    &self.config,
+                    pdf,
+                    &mut self.engine,
+                    &page_chars,
+                    &region_lines[ri],
+                    &region.label,
+                    bbox,
+                    &img,
+                    dpi,
+                    index,
+                ));
             } else if MATH_LAYOUT_LABELS.iter().any(|k| lab.contains(k)) {
                 let page_h_px = img.height() as f64;
                 let page_px = img.width() as f64 * page_h_px;
