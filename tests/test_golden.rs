@@ -35,6 +35,52 @@ fn fixtures() -> Vec<PathBuf> {
     out
 }
 
+fn first_diff(expected: &str, normalized: &str) -> String {
+    // First differing line for a useful failure message.
+    expected
+        .lines()
+        .zip(normalized.lines())
+        .position(|(a, b)| a != b)
+        .map(|i| {
+            format!(
+                "line {}: expected {:?}, got {:?}",
+                i + 1,
+                expected.lines().nth(i).unwrap_or("<eof>"),
+                normalized.lines().nth(i).unwrap_or("<eof>")
+            )
+        })
+        .unwrap_or_else(|| "length mismatch".to_string())
+}
+
+fn check_fixture(
+    name: &str,
+    fixture: &Path,
+    golden_path: &Path,
+    config: &ConverterConfig,
+    update: bool,
+    work_prefix: &str,
+    mismatches: &mut Vec<String>,
+) {
+    let work = std::env::temp_dir().join(format!("{work_prefix}{name}"));
+    let _ = std::fs::remove_dir_all(&work);
+    std::fs::create_dir_all(&work).unwrap();
+
+    let mut conv = HybridConverter::new(config.clone(), &work);
+    let md = conv.convert_pdf(fixture, &work).unwrap();
+    let normalized = normalize(&md);
+
+    if update || !golden_path.exists() {
+        std::fs::write(golden_path, &normalized).unwrap();
+        println!("golden written: {}", golden_path.display());
+        return;
+    }
+
+    let expected = normalize(&std::fs::read_to_string(golden_path).unwrap());
+    if expected != normalized {
+        mismatches.push(format!("{name}: {}", first_diff(&expected, &normalized)));
+    }
+}
+
 #[test]
 fn corpus_matches_goldens() {
     let golden_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
@@ -52,39 +98,15 @@ fn corpus_matches_goldens() {
     for fixture in fixtures() {
         let name = fixture.file_stem().unwrap().to_string_lossy().to_string();
         let golden_path = golden_dir.join(format!("{name}.golden.md"));
-
-        let work = std::env::temp_dir().join(format!("bobine_golden_{name}"));
-        let _ = std::fs::remove_dir_all(&work);
-        std::fs::create_dir_all(&work).unwrap();
-
-        let mut conv = HybridConverter::new(config.clone(), &work);
-        let md = conv.convert_pdf(&fixture, &work).unwrap();
-        let normalized = normalize(&md);
-
-        if update || !golden_path.exists() {
-            std::fs::write(&golden_path, &normalized).unwrap();
-            println!("golden written: {}", golden_path.display());
-            continue;
-        }
-
-        let expected = normalize(&std::fs::read_to_string(&golden_path).unwrap());
-        if expected != normalized {
-            // First differing line for a useful failure message.
-            let diff = expected
-                .lines()
-                .zip(normalized.lines())
-                .position(|(a, b)| a != b)
-                .map(|i| {
-                    format!(
-                        "line {}: expected {:?}, got {:?}",
-                        i + 1,
-                        expected.lines().nth(i).unwrap_or("<eof>"),
-                        normalized.lines().nth(i).unwrap_or("<eof>")
-                    )
-                })
-                .unwrap_or_else(|| "length mismatch".to_string());
-            mismatches.push(format!("{name}: {diff}"));
-        }
+        check_fixture(
+            &name,
+            &fixture,
+            &golden_path,
+            &config,
+            update,
+            "bobine_golden_",
+            &mut mismatches,
+        );
     }
 
     assert!(
@@ -121,38 +143,15 @@ fn figure_corpus_matches_goldens() {
             .join("tests/fixtures")
             .join(format!("{name}.pdf"));
         let golden_path = golden_dir.join(format!("{name}.figures.golden.md"));
-
-        let work = std::env::temp_dir().join(format!("bobine_golden_fig_{name}"));
-        let _ = std::fs::remove_dir_all(&work);
-        std::fs::create_dir_all(&work).unwrap();
-
-        let mut conv = HybridConverter::new(config.clone(), &work);
-        let md = conv.convert_pdf(&fixture, &work).unwrap();
-        let normalized = normalize(&md);
-
-        if update || !golden_path.exists() {
-            std::fs::write(&golden_path, &normalized).unwrap();
-            println!("golden written: {}", golden_path.display());
-            continue;
-        }
-
-        let expected = normalize(&std::fs::read_to_string(&golden_path).unwrap());
-        if expected != normalized {
-            let diff = expected
-                .lines()
-                .zip(normalized.lines())
-                .position(|(a, b)| a != b)
-                .map(|i| {
-                    format!(
-                        "line {}: expected {:?}, got {:?}",
-                        i + 1,
-                        expected.lines().nth(i).unwrap_or("<eof>"),
-                        normalized.lines().nth(i).unwrap_or("<eof>")
-                    )
-                })
-                .unwrap_or_else(|| "length mismatch".to_string());
-            mismatches.push(format!("{name}: {diff}"));
-        }
+        check_fixture(
+            name,
+            &fixture,
+            &golden_path,
+            &config,
+            update,
+            "bobine_golden_fig_",
+            &mut mismatches,
+        );
     }
 
     assert!(
