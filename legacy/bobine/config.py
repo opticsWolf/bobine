@@ -50,6 +50,11 @@ class ConverterConfig:
     # -- fast path ----------------------------------------------------------
     detect_headings: bool = True
     convert_html_tables: bool = True
+    structured_tables: bool = True  # grid-extract layout table regions before text dump
+    min_figure_area_pts: float = 100.0  # smaller embedded images are decoration
+    image_output_dir: str = "assets"  # <dir>/p{page}/img{k}.{ext}
+    promote_headings: bool = True  # scholarly section patterns → markdown headings
+    promote_title: bool = True  # first short block / top heading becomes `# `
 
     # -- AUTO / scan detection thresholds -----------------------------------
     math_char_threshold: int = 30

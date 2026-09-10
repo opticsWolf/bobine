@@ -14,6 +14,8 @@ Version 2.0 — you may choose either (see [LICENSE](LICENSE)).
 
 - [**Quick reference**](docs/quickref.md) — install, API, config, common tasks
 - [**Architecture**](docs/architecture.md) — modules, data flow, coordinate spaces, model acquisition
+- [**Benchmarks & test results**](docs/benchmarks.md) — CPU vs CUDA timings, TexTeller fp32/int8, environment setup
+- [**Proposal: figures/tables/layout**](docs/proposal_media_tables.md) — plan for reading-order image placement and structured table extraction
 - [**Implementation plan**](IMPLEMENTATION_PLAN.md) — status, gap inventory, phased roadmap
 
 ## Why bobine?
@@ -75,10 +77,12 @@ md = conv.convert("notes.txt", work_dir="/tmp/out")
 | `Never`   | Fast path only (pdf_oxide). No ONNX models loaded.                        |
 | `Auto` *(default)* | Heuristics per page → full ONNX layout + OCR on flagged pages.   |
 | `Surgical`| Formula crops via TexTeller only; full pipeline just for scans.           |
-| `Always`  | Every page through the full ONNX layout + OCR pipeline.                   |
+| `Always`  | Every page through the full ONNX layout + OCR pipeline; on born-digital pages, formula regions are refined against text-layer math boxes (v0.4.8) and output matches `Surgical`. |
 
-Missing layout/OCR models degrade gracefully to the fast path per page — a
-conversion never fails because of them.
+RapidLayout and RapidOCR weights also auto-download from HuggingFace on
+first use (DocStructBench YOLO ~72 MB, PP-OCRv4 ~16 MB); explicit local
+paths can override them. Missing/broken heavy models degrade gracefully to
+the fast path per page — a conversion never fails because of them.
 
 ## Quick start (Rust)
 
@@ -104,7 +108,12 @@ src/
 ├── tex_teller.rs     TexTeller ONNX — ViT encoder → RoBERTa decoder
 ├── rapid_layout.rs   DocLayout-YOLO page layout analysis
 ├── rapid_ocr.rs      PaddleOCR det + rec (DBNet / CRNN, CTC decode)
+├── rapid_table.rs    SLANet-plus table-structure recognition (scans)
+├── pdf_source.rs     PdfSource trait — page text without a real PDF file
 ├── tables.rs         HTML table → GFM pipe-table converter
+├── assets.rs         okf-asset://\ staging store
+├── documents.rs      ConvertedDocument + frontmatter
+├── pipeline.rs       ingest_document / convert_directory / ProgressHooks
 ├── error.rs          BobineError
 └── py_bindings.rs    PyO3 surface (behind the extension-module feature)
 python/bobine/        Python shim + type stubs        (import bobine)
@@ -113,11 +122,31 @@ legacy/               frozen pure-Python bobine v0.2.0 (reference implementation
 
 ### Formula OCR (SURGICAL mode)
 
-Formulas are recognized by **TexTeller** (80M training pairs): encoder–decoder
-ONNX (~1.25 GB) auto-downloaded from HuggingFace `OleehyO/TexTeller` into the
-converter's cache dir on first use — roughly 5× faster per crop than the
-RapidLaTeXOCR backend used by the legacy Python package, with markedly better
-accuracy.
+Formulas are recognized by **TexTeller** (80M training pairs), decoded with
+KV-cache over a ViT encoder → RoBERTa decoder ONNX graph — roughly 5× faster
+per crop than the RapidLaTeXOCR backend used by the legacy Python package,
+with markedly better accuracy.
+
+By default bobine downloads the quantized export
+(~319 MB total, HF `Ji-Ha/TexTeller3-ONNX-dynamic`) into the converter's
+cache dir on first use; set `model_quantization=ModelQuantization::Fp32` to
+use full-precision weights (~1.25 GB, HF `OleehyO/TexTeller`) instead.
+Preprocessing matches upstream TexTeller exactly, including its
+normalize-before-pad order (v0.4.4 fixed black pad fill, which measurably
+degraded recognition). Measured on a 10-formula corpus: Int8+CPU scores
+10/10, Fp32+CUDA 9/10 — occasional single-token decode noise flips between
+examples on either variant, so pick by hardware, not quality.
+
+On NVIDIA GPUs, point `ORT_DYLIB_PATH` at a GPU onnxruntime build —
+v0.4.9+ auto-enables CUDA for the layout and OCR slots when the loaded
+library registers the CUDA execution provider (measured 12.3x / 3.6x
+speedups), and keeps table recognition pinned to CPU (SLANet measures
+2-9x slower on CUDA: its graph fragments across devices). Zero config
+needed; explicit per-slot overrides: `layout_ort_providers`,
+`ocr_ort_providers`, `table_ort_providers`, `encoder_ort_providers`,
+`decoder_ort_providers`. To also run Fp32 formula decode on the GPU, set
+`ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"]`
+(Int8 + CUDA is discouraged and warned against).
 
 Formula regions come from the PDF text layer (TeX math fonts such as
 `cmmi`/`cmsy`/`cmex`, plus unicode math codepoints), merged **line-aware** so
@@ -130,16 +159,16 @@ layout model for equation regions instead (off by default).
 
 `convert_pdf` returns one markdown string: inline `$…$` / display `$$…$$`
 LaTeX spliced in place, GFM pipe tables, fenced code blocks from monospaced
-font runs, embedded images written to `work_dir`. The `okf-asset://` staging
-store of the legacy package is being ported next (see
-[roadmap](IMPLEMENTATION_PLAN.md), Phase 2) — `ingest_document`,
-`convert_directory` and the document/lint layer follow in the same phase.
+font runs, embedded images written to `work_dir`, plus an `okf-asset://` staging store
+for unreferenced figures. For document-level workflows use
+`ingest_document` / `convert_directory`, which return versioned
+`ConvertedDocument`s with frontmatter and lint hooks.
 
 ## Testing
 
 ```bash
-cargo test                # 38 unit tests — no native backends needed
-ORT_DYLIB_PATH=... cargo test   # + 7 integration tests over the PDF corpus
+cargo test                # 83 unit tests — no native backends needed
+ORT_DYLIB_PATH=... cargo test   # + 9 integration tests over the PDF corpus
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```
 
@@ -151,8 +180,11 @@ Fixtures: trimmed CC BY 4.0 arXiv papers + a generated scanned page — see
 `ort` requires onnxruntime ≥ 1.19 and fails loudly at session creation on
 older system libraries (`BadVersion`). Set `ORT_DYLIB_PATH` explicitly in CI
 or dev environments with multiple installations. GPU support = point the same
-variable at a CUDA-enabled build; provider selection is planned via
-`ConverterConfig.ort_providers`.
+variable at a CUDA-enabled build; layout/OCR then auto-enable CUDA per
+slot (v0.4.9+) and `ConverterConfig` exposes per-slot overrides
+(`layout_ort_providers`, `ocr_ort_providers`, `table_ort_providers`,
+`encoder_ort_providers`, `decoder_ort_providers`), with `ort_providers`
+as the base list for TexTeller.
 
 ## License
 

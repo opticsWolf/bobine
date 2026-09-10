@@ -34,21 +34,32 @@ flows, and the non-obvious invariants.
 ```
 src/
 ├── lib.rs            crate root, re-exports
-├── config.rs         ConverterConfig, RoutingMode, FormulaBackend, ModelPrecision
+├── config.rs         ConverterConfig, RoutingMode, FormulaBackend,
+│                     ModelPrecision, ModelQuantization
 ├── error.rs          BobineError enum
 ├── engine.rs         OnnxEngine — lazy model manager (TexTeller/RapidLayout/RapidOCR)
 ├── converter.rs      HybridConverter — core PDF/Office pipeline (~700 LOC)
+│                     (internals generic over PdfSource)
+├── pdf_source.rs     PdfSource trait: converter ↔ PDF backend seam;
+│                     pdf_oxide adapter + in-memory FakePdf test fakes
 ├── tex_teller.rs     TexTeller ONNX: preprocess → encoder → autoregressive decode
 ├── rapid_layout.rs   DocLayout-YOLO: LetterBox(1024) → NMS → LayoutRegion
-├── rapid_ocr.rs      PaddleOCR DBNet + CRNN: contour boxes → CTC decode
+├── rapid_ocr.rs      PaddleOCR DBNet + CRNN: DB unclip (min-area rect +
+│                     polygon offset), rotation-aware crops, CTC decode
+├── rapid_table.rs    RapidTable (SLANet-plus): scanned-table → HTML
 ├── tables.rs         HTML <table> → GFM pipe-table converter
+├── assets.rs         okf-asset:// staging store for unreferenced images
+├── documents.rs      ConvertedDocument + YAML frontmatter (ingest layer)
+├── pipeline.rs       ingest_document / convert_directory / progress hooks
 └── py_bindings.rs    PyO3 surface: bobine._native
 python/bobine/        Python shim (__init__.py re-exports _native) + .pyi stubs
 legacy/               frozen pure-Python bobine v0.2.0 (reference implementation)
 ```
 
-Dependency direction: `py_bindings → converter → engine → (tex_teller |
-rapid_layout | rapid_ocr)`; `converter → tables`. No cycles.
+Dependency direction: `pipeline → converter → engine → (tex_teller |
+rapid_layout | rapid_ocr | rapid_table)`; `converter → tables`,
+`converter → pdf_source`; `documents/assets` sit beside the pipeline layer.
+No cycles.
 
 ---
 
@@ -97,15 +108,31 @@ Three lazy slots, each loaded on first use and cached:
 
 | Slot | Model source | Loaded by |
 |---|---|---|
-| `tex_teller` | HuggingFace `OleehyO/TexTeller` via `hf-hub` (blocking) | `ensure_tex_teller()` |
-| `layout` | local ONNX path (`set_layout_model()`) | `ensure_layout()` |
-| `ocr` | local det/rec ONNX paths (`set_ocr_models()`) | `ensure_ocr()` |
+| `tex_teller` | HuggingFace via `hf-hub` (blocking): default **Int8** from `Ji-Ha/TexTeller3-ONNX-dynamic` into `<cache>/texteller_int8/`; `ModelQuantization::Fp32` uses `OleehyO/TexTeller` | `ensure_tex_teller()` |
+| `layout` | HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` (auto-download, probe-first) or local path (`set_layout_model()`) | `ensure_layout()` |
+| `ocr` | HF `SWHL/RapidOCR` PP-OCRv4 det+rec (auto-download, probe-first) or local paths (`set_ocr_models()`) | `ensure_ocr()` |
+| `table` | local slanet-plus path (`set_table_model()`) or auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` (~7.8 MB) into `<cache>/models/` | `ensure_table()` (lazy — only on table regions) |
 
 Degradation contract: model-load failures propagate as `BobineError`, but
 `full_structure_page_markdown` failures are caught by the router
 (`if let Ok(Some(md))`) and the page **falls back to the fast path** — a
 missing layout.onnx never kills a conversion. `ModelPrecision::Fp16`
 selects `*_fp16.onnx` filenames (models deferred).
+
+Provider resolution (v0.4.9+): `ConverterConfig.ort_providers` is the base
+list for TexTeller sessions. Every heavy session has a per-slot override —
+`encoder_ort_providers` / `decoder_ort_providers` (TexTeller),
+`layout_ort_providers`, `ocr_ort_providers`, `table_ort_providers`; `None`
+selects the default, which encodes the measured ledger:
+
+| Slot | Default resolution | Why |
+|---|---|---|
+| layout, ocr | **auto-GPU** — CUDAExecutionProvider prepended when the loaded dylib registers it (once-locked probe) | measured 12.3x / 3.6x on CUDA |
+| table | **CPU-pinned** | SLANet measures 2-9x slower on CUDA (graph fragments across devices) |
+| tex_teller | base `ort_providers` | Int8+CUDA guarded with a warning; Fp32+CUDA opt-in via the base list |
+
+On CPU-only ONNX Runtime builds the CUDA probe is false and every slot
+resolves to plain CPU — zero cost, no config needed either way.
 
 ---
 
@@ -139,11 +166,17 @@ Invariants:
 3. **Recognition**: crop PNG → `TexTeller::recognize`:
    - trim white border (corner-sampled bg, threshold 15),
    - grayscale, fit within 448×448 (CatmullRom ≈ bicubic),
-   - pad bottom-right, normalize `(x/255 − 0.9545467) / 0.15394445`,
+   - normalize `(x/255 − 0.9545467) / 0.15394445`, then pad bottom-right —
+     the pad fill is 0.0 in *normalized* space (= raw ~243, background
+     white), matching upstream's Normalize-before-pad order; padding with
+     raw black measurably degrades recognition (e.g. `\oint` misreads),
    - encoder → `last_hidden_state` [1, 1024, 768],
-   - greedy autoregressive decode via `decoder_model_merged.onnx`
-     (full-sequence re-run each step — correct, side-steps optimum's
-     KV-cache bug; KV variant deferred),
+   - greedy autoregressive decode via `decoder_model_merged.onnx` with
+     KV-cache: false-branch prefill over `[bos]`, then one token per step
+     with `use_cache_branch=true`. Decoder caches roll forward; encoder
+     cross-attention caches are pinned from the prefill (the true branch
+     emits a broken zero-batch encoder cache). ~26 ms/step flat vs
+     70→244 ms full-recompute; identical greedy output,
    - BPE decode via `tokenizers` (`tokenizer.json`), bos `<s>`, eos `</s>`.
 4. **Wrap + splice**: display vs inline chosen by
    `height > 1.6 × line_height ∥ width > formula_inline_max_width_pts`;
@@ -165,25 +198,49 @@ as Python.
    sorted reading order (y then x).
 3. Per region:
    - `table` → **text layer first** (lossless on born-digital pages);
-     runs through `html_tables_to_gfm` when enabled. Scanned-table
-     recognition (RapidTable) not yet ported — emits `[table: <label>]`.
+     runs through `html_tables_to_gfm` when enabled. Scans fall back to
+     **RapidTable** (SLANet-plus): the crop is OCR'd, lines are matched
+     into decoded cell quads, and the resulting HTML also goes through
+     `html_tables_to_gfm`. Placeholder `[table: <label>]` remains as the
+     last resort.
    - math labels → crop → TexTeller → `$$…$$`.
    - `figure`/`image` → crop saved to work_dir, `![](name.png)` link.
    - else → text layer first, `ocr_lines` fallback; `title` → `## heading`.
+4. **Seam repair**: glyphs owned by no region are clustered into lines and
+   re-assigned to the nearest region whose padded box contains them;
+   only truly homeless lines fall through to a trailing block.
+5. **Post-passes** (all modes): `promote_headings` maps scholarly section
+   patterns (`I. X`, `3.1 Y`, `3.1.1 Z`, `A. W`) to `##`–`####`, guarded
+   against prose/lists/axis labels; `promote_title` promotes the document
+   title to `#` (first short block, or the first title-like heading on
+   page 1).
 
 ---
 
 ## 8. Model acquisition
 
-- **TexTeller**: downloaded automatically on first use from
+- **TexTeller**: downloaded automatically on first use into the cache dir
+  given at converter construction. Default (`ModelQuantization::Int8`):
+  `https://huggingface.co/Ji-Ha/TexTeller3-ONNX-dynamic`
+  (`onnx/encoder_model.onnx` ~90 MB int8, `onnx/decoder_model_merged.onnx`
+  ~909 MB fp32-with-cache-interface, `tokenizer.json`) into
+  `<cache>/texteller_int8/`. Fp32 fallback:
   `https://huggingface.co/OleehyO/TexTeller` (`encoder_model.onnx` 344 MB,
-  `decoder_model_merged.onnx` 909 MB, `tokenizer.json`) into the cache dir
-  given at converter construction. `Fp16` variants would be picked up as
-  `*_fp16.onnx` if present (generation deferred).
-- **RapidLayout / RapidOCR**: loaded from explicit local paths set via
-  `OnnxEngine::set_layout_model` / `set_ocr_models`. Label lists are read
-  from the ONNX models' custom metadata key `character` (falling back to
-  DocStructBench defaults / ASCII).
+  `decoder_model_merged.onnx` 909 MB, `tokenizer.json`). Tokenizer and
+  weights are paired per variant in distinct cache namespaces. `Fp16`
+  variants would be picked up as `*_fp16.onnx` if present (generation
+  deferred).
+- **RapidLayout / RapidOCR**: downloaded automatically on first use unless
+  explicit local paths are set via `OnnxEngine::set_layout_model` /
+  `set_ocr_models`. Layout: `wybxc/DocLayout-YOLO-DocStructBench-onnx`
+  (`doclayout_yolo_docstructbench_imgsz1024.onnx`, 72 MB - a community ONNX
+  conversion of the official DocStructBench weights, whose repo ships .pt
+  only). OCR: `SWHL/RapidOCR` `PP-OCRv4/ch_PP-OCRv4_{det,rec}_infer.onnx`
+  (~16 MB total). Label lists / charsets are read from the ONNX models'
+  custom metadata key `character` (falling back to DocStructBench defaults /
+  ASCII); the rec charset is aligned against the model's actual class count
+  at first decode, since exports vary in whether they include the leading
+  CTC blank and trailing space classes.
 
 ## 9. Version pinning philosophy
 
@@ -197,16 +254,17 @@ Set `ORT_DYLIB_PATH` explicitly in CI/dev (e.g. the venv's
 
 Two layers (mirrors the Python three minus fakes):
 
-1. **Unit tests** (`#[cfg(test)]` modules, 38 tests): pure-Rust logic with
+1. **Unit tests** (`#[cfg(test)]` modules, 81 tests): pure-Rust logic with
    no native deps — tables parsing, splice/ws_replace, math-font/unicode
    classifiers, TexTeller preprocessing shape/range, white-border trim,
    LetterBox preprocessing, IoU/NMS, config serde round-trip.
-2. **Integration** (`tests/test_converter.rs`, 7 tests): real pdf_oxide
+2. **Integration** (`tests/`, 9 tests across three files): real pdf_oxide
    against the CC BY 4.0 arXiv corpus in `tests/fixtures/` (text paper +
-   scanned page), text-file conversion, config access, error paths.
+   scanned page), text-file conversion, config access, table conversion,
+   error paths.
    PDF tests need a modern onnxruntime (`ORT_DYLIB_PATH`).
 
-Run: `cargo test` (45 total). Python-side smoke: `maturin develop` then
+Run: `cargo test` (90 total). Python-side smoke: `maturin develop` then
 `import bobine`.
 
 ## 11. Licensing layout

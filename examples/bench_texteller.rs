@@ -1,0 +1,102 @@
+//! Benchmark TexTeller formula recognition end-to-end.
+//!
+//! Usage: bench_texteller [--int8] <image.png> [<image2.png> ...]
+//!
+//! `--int8` loads the onnx-community quantized exports (no KV-cache;
+//! full-sequence recompute) instead of the fp32 merged graph.
+//!
+//! Prints the recognized LaTeX plus per-image timing (3 reps, min) so the
+//! full-recompute and KV-cache decoders can be compared for both speed and
+//! output parity.
+
+use std::time::Instant;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .init();
+
+    // Persistent model cache: set BOBINE_CACHE_DIR (e.g. ~/.cache/bobine)
+    // so downloads survive reboots; temp-dir cache is wiped by the OS.
+    let cache = std::env::var_os("BOBINE_CACHE_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("bobine_test").join("cache"));
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let int8 = args.iter().position(|a| a == "--int8");
+    if let Some(pos) = int8 {
+        args.remove(pos);
+    }
+    if args.is_empty() {
+        eprintln!("usage: bench_texteller [--int8] <image.png> [...]");
+        std::process::exit(2);
+    }
+
+    // BOBINE_ORT_PROVIDERS="cuda,cpu" routes sessions through accelerators;
+    // absent/unavailable providers degrade gracefully to CPU.
+    let providers: Vec<String> = std::env::var("BOBINE_ORT_PROVIDERS")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let enc_providers: Vec<String> = std::env::var("BOBINE_ORT_ENCODER_PROVIDERS")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let t0 = Instant::now();
+    let mut tt = if int8.is_some() {
+        bobine::TexTeller::from_pretrained_int8_split(
+            &cache,
+            if enc_providers.is_empty() {
+                None
+            } else {
+                Some(&enc_providers)
+            },
+            &providers,
+        )?
+    } else {
+        bobine::TexTeller::from_pretrained_split(
+            "OleehyO/TexTeller",
+            &cache,
+            bobine::ModelPrecision::Fp32,
+            if enc_providers.is_empty() {
+                None
+            } else {
+                Some(&enc_providers)
+            },
+            &providers,
+        )?
+    };
+    println!(
+        "model load ({}, dec={:?}, enc={:?}): {:?}",
+        if int8.is_some() { "int8" } else { "fp32+kv" },
+        providers,
+        if enc_providers.is_empty() {
+            std::borrow::Cow::Borrowed("<inherit>")
+        } else {
+            std::borrow::Cow::Owned(format!("{enc_providers:?}"))
+        },
+        t0.elapsed()
+    );
+
+    for path in &args {
+        // one warmup, then 3 timed reps
+        let warm = tt.recognize(std::path::Path::new(path))?;
+        let mut best = f64::MAX;
+        let mut last = String::new();
+        for _ in 0..3 {
+            let s = Instant::now();
+            let latex = tt.recognize(std::path::Path::new(path))?;
+            best = best.min(s.elapsed().as_secs_f64());
+            last = latex;
+        }
+        println!("--- {} ({:.2}s/run)", path, best);
+        println!("warmup: {warm}");
+        println!("latex : {last}");
+    }
+    Ok(())
+}

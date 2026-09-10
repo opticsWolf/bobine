@@ -62,3 +62,19 @@ Not from arXiv.
 recreates `scanned_page.pdf` deterministically. The arXiv trims can be
 re-created from the source PDFs above with pdf_oxide's
 `extract_page_ranges_to_bytes` (see the modification notes for ranges).
+
+---
+
+## ruled_table.pdf
+
+- **Origin:** Synthetic — generated in-repo by
+  `cargo run --release --example make_table_fixture` (pdf_oxide DocumentBuilder).
+- **Purpose:** Regression fixture for the structured-table cascade
+  (`ConverterConfig::structured_tables`). Contains a fully ruled 5×4 data grid
+  with a header row, surrounded by prose paragraphs.
+- **Known caveat:** pdf_oxide's spatial grid detector currently returns a
+  degenerate grid for this page (prose sliced into columns, body rows
+  concatenated), so bobine's `is_plausible_table` gate rejects it and the text
+  dump path serves the region. The fixture documents detector behaviour and
+  gates regressions of the acceptance logic; revisit when pdf_oxide's
+  `spatial_table_detector` improves.

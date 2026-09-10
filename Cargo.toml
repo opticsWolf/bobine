@@ -1,6 +1,6 @@
 [package]
 name = "bobine"
-version = "0.3.0"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.85"
 description = "PDF / Office / text → Markdown ingestion engine with ONNX formula OCR (TexTeller), layout analysis and OCR"
@@ -28,8 +28,10 @@ extension-module = ["dep:pyo3", "pyo3/extension-module"]
 pdf_oxide = { version = "0.3", features = ["rendering"] }
 office_oxide = "0.1"
 
-# ONNX Runtime (TexTeller / RapidLayout / RapidOCR)
-ort = { version = "2.0.0-rc.13", features = ["load-dynamic"] }
+# ONNX Runtime (TexTeller / RapidLayout / RapidOCR).
+# load-dynamic: the shared library is located at runtime (ORT_DYLIB_PATH).
+# Provider features below only gate registration code — nothing links.
+ort = { version = "2.0.0-rc.13", features = ["load-dynamic", "cuda", "rocm", "directml", "openvino", "coreml", "tensorrt", "half"] }
 
 # HuggingFace tokenizers (BPE tokenizer for TexTeller RoBERTa decoder)
 tokenizers = "0.21"
@@ -47,6 +49,12 @@ ndarray = "0.17"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 
+# Asset hashing (okf-asset:// ids)
+sha2 = "0.10"
+
+# Thought-document ids (uuid4)
+uuid = { version = "1", features = ["v4"] }
+
 # Error handling
 anyhow = "1"
 thiserror = "2"
@@ -62,4 +70,5 @@ tracing-subscriber = "0.3"
 pyo3 = { version = "0.29", optional = true }
 
 [dev-dependencies]
+half = "2"
 serde_json = "1"

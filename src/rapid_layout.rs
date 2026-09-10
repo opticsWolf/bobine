@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use image::{DynamicImage, GenericImageView};
-use ndarray::{s, Array4};
+use ndarray::{Array4, s};
 use ort::{inputs, session::Session};
 use tracing::info;
 
@@ -36,32 +36,65 @@ pub struct LayoutRegion {
 pub struct RapidLayout {
     session: Session,
     labels: Vec<String>,
+    /// Letterbox target for the longest side. 0 = native resolution
+    /// (pad-only, upstream behaviour). Defaults to INPUT_SIZE; override
+    /// with BOB_LAYOUT_MAXSIDE for experiments.
+    max_side: u32,
+}
+
+/// Letterbox geometry shared by preprocess and detect.
+/// Returns (scale, pad_w, pad_h, canvas_w, canvas_h).
+fn letterbox_geometry(orig_w: u32, orig_h: u32, max_side: u32) -> (f32, f32, f32, u32, u32) {
+    if max_side == 0 {
+        // Native resolution: no resize, pad each side up to a stride-32 multiple.
+        let stride = 32u32;
+        let cw = (orig_w + stride - 1) / stride * stride;
+        let ch = (orig_h + stride - 1) / stride * stride;
+        let pad_w = ((cw - orig_w) as f32) / 2.0;
+        let pad_h = ((ch - orig_h) as f32) / 2.0;
+        return (1.0, pad_w, pad_h, cw, ch);
+    }
+    let scale = max_side as f32 / orig_w.max(orig_h) as f32;
+    let new_w = (orig_w as f32 * scale).round();
+    let new_h = (orig_h as f32 * scale).round();
+    let pad_w = (max_side as f32 - new_w) / 2.0;
+    let pad_h = (max_side as f32 - new_h) / 2.0;
+    (scale, pad_w, pad_h, max_side, max_side)
 }
 
 impl RapidLayout {
     /// Load the DocLayout-YOLO ONNX model from a file path.
-    pub fn load(model_path: &Path) -> Result<Self> {
+    pub fn load(model_path: &Path, providers: &[String]) -> Result<Self> {
         info!("Loading RapidLayout from {}", model_path.display());
-        let session = Session::builder()
-            .map_err(|e| BobineError::Ort(e.to_string()))?
-            .commit_from_file(model_path)
-            .map_err(|e| BobineError::Ort(e.to_string()))?;
+        let session = crate::engine::apply_providers(
+            Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
+            providers,
+        )?
+        .commit_from_file(model_path)
+        .map_err(|e| BobineError::Ort(e.to_string()))?;
+
+        let max_side = std::env::var("BOB_LAYOUT_MAXSIDE")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(INPUT_SIZE);
 
         // Read label list from ONNX model metadata
-        let labels = Self::read_labels(&session).unwrap_or_else(|| {
-            vec![
-                "title".into(),
-                "plain text".into(),
-                "abandon".into(),
-                "figure".into(),
-                "figure_caption".into(),
-                "table".into(),
-                "table_caption".into(),
-                "table_footnote".into(),
-                "isolate_formula".into(),
-                "formula_caption".into(),
-            ]
-        });
+        let labels = Self::read_labels(&session)
+            .filter(|l| !l.is_empty())
+            .unwrap_or_else(|| {
+                vec![
+                    "title".into(),
+                    "plain text".into(),
+                    "abandon".into(),
+                    "figure".into(),
+                    "figure_caption".into(),
+                    "table".into(),
+                    "table_caption".into(),
+                    "table_footnote".into(),
+                    "isolate_formula".into(),
+                    "formula_caption".into(),
+                ]
+            });
 
         info!(
             num_labels = labels.len(),
@@ -69,14 +102,49 @@ impl RapidLayout {
             "RapidLayout ready"
         );
 
-        Ok(Self { session, labels })
+        Ok(Self {
+            session,
+            labels,
+            max_side,
+        })
     }
 
-    /// Read the "character" metadata key from the ONNX model.
+    /// Read the label list from the ONNX model.
+    ///
+    /// Two sources, in order:
+    /// 1. `character` metadata (RapidOCR-style, one label per line).
+    /// 2. Ultralytics YOLO `names` metadata (`"{0: 'title', 1: 'plain text',
+    ///    ...}"`) - how DocLayout-YOLO exports carry their class names.
+    /// Returns None when neither yields a non-empty list, letting the caller
+    /// fall back to the DocStructBench defaults.
     fn read_labels(session: &Session) -> Option<Vec<String>> {
         let meta = session.metadata().ok()?;
-        let chars = meta.custom("character")?;
-        Some(chars.lines().map(|s| s.trim().to_string()).collect())
+        if let Some(chars) = meta.custom("character").filter(|s| !s.is_empty()) {
+            let v: Vec<String> = chars.lines().map(|s| s.trim().to_string()).collect();
+            if !v.is_empty() {
+                return Some(v);
+            }
+        }
+        if let Some(names) = meta.custom("names").filter(|s| !s.is_empty()) {
+            let mut pairs: Vec<(usize, String)> = Vec::new();
+            for part in names.split(',') {
+                let part = part.trim().trim_end_matches('}');
+                let (idx, name) = part.split_once(':')?;
+                let idx: usize = idx.trim().parse().ok()?;
+                let name = name
+                    .trim()
+                    .trim_matches('\'')
+                    .trim_matches('"')
+                    .trim()
+                    .to_string();
+                pairs.push((idx, name));
+            }
+            pairs.sort_by_key(|(i, _)| *i);
+            if !pairs.is_empty() && pairs[0].0 == 0 {
+                return Some(pairs.into_iter().map(|(_, n)| n).collect());
+            }
+        }
+        None
     }
 
     /// Analyze a page image → layout regions.
@@ -85,7 +153,7 @@ impl RapidLayout {
         let orig_w = img.width() as f32;
 
         // 1. Preprocess: LetterBox → CHW, normalize
-        let tensor = Self::preprocess(img)?; // [1, 3, 1024, 1024]
+        let tensor = self.preprocess(img)?; // [1, 3, 1024, 1024]
 
         // 2. Run ONNX
         let input = ort::value::Tensor::from_array(tensor)
@@ -125,14 +193,14 @@ impl RapidLayout {
             detections.push((x0, y0, x1, y1, conf, cls));
         }
 
-        // 4. Scale boxes from 1024×1024 back to original image
-        let gain = (INPUT_SIZE as f32 / orig_w.max(orig_h)).min(INPUT_SIZE as f32 / orig_h.max(orig_w));
-        // Actually LetterBox: we need to compute the actual gain and padding
-        let scale = INPUT_SIZE as f32 / orig_w.max(orig_h);
-        let new_w = (orig_w * scale).round();
-        let new_h = (orig_h * scale).round();
-        let pad_w = (INPUT_SIZE as f32 - new_w) / 2.0;
-        let pad_h = (INPUT_SIZE as f32 - new_h) / 2.0;
+        // 4. Scale boxes from the network canvas back to original image
+        let (_scale_unused, pad_w, pad_h, _cw, _ch) =
+            letterbox_geometry(orig_w as u32, orig_h as u32, self.max_side);
+        let scale = if self.max_side == 0 {
+            1.0
+        } else {
+            self.max_side as f32 / orig_w.max(orig_h) as f32
+        };
 
         for (x0, y0, x1, y1, _conf, _) in &mut detections {
             *x0 = (*x0 - pad_w) / scale;
@@ -172,11 +240,24 @@ impl RapidLayout {
     // Preprocessing: LetterBox resize + BGR→RGB + CHW + normalize
     // ------------------------------------------------------------------
 
-    fn preprocess(img: &DynamicImage) -> Result<Array4<f32>> {
-        let (w, h) = (img.width(), img.height());
+    fn preprocess(&self, img: &DynamicImage) -> Result<Array4<f32>> {
+        preprocess(img, self.max_side)
+    }
+}
 
-        // Resize: fit within INPUT_SIZE preserving aspect ratio
-        let scale = INPUT_SIZE as f32 / w.max(h) as f32;
+/// Letterbox resize + BGR/CHW + /255 normalization, shared by the model
+/// method and tests. `max_side` = 0 means pad-only at native resolution.
+fn preprocess(img: &DynamicImage, max_side: u32) -> Result<Array4<f32>> {
+    {
+        let (w, h) = (img.width(), img.height());
+        let (_scale, pad_w, pad_h, canvas_w, canvas_h) = letterbox_geometry(w, h, max_side);
+
+        // Resize: fit within max_side preserving aspect ratio (no-op when native)
+        let scale = if max_side == 0 {
+            1.0
+        } else {
+            max_side as f32 / w.max(h) as f32
+        };
         let new_w = (w as f32 * scale).round() as u32;
         let new_h = (h as f32 * scale).round() as u32;
 
@@ -187,34 +268,29 @@ impl RapidLayout {
             image::imageops::FilterType::Triangle, // INTER_LINEAR
         );
 
-        // Pad to INPUT_SIZE×INPUT_SIZE (center, gray 114)
-        let pad_w = (INPUT_SIZE - new_w) / 2;
-        let pad_h = (INPUT_SIZE - new_h) / 2;
-
-        let mut padded = image::RgbImage::from_pixel(
-            INPUT_SIZE,
-            INPUT_SIZE,
-            image::Rgb(PAD_COLOR),
-        );
-        for y in 0..new_h {
-            for x in 0..new_w {
+        // Pad to canvas (center, gray 114)
+        let mut padded = image::RgbImage::from_pixel(canvas_w, canvas_h, image::Rgb(PAD_COLOR));
+        let off_x = (pad_w.round()) as u32;
+        let off_y = (pad_h.round()) as u32;
+        for y in 0..new_h.min(canvas_h - off_y) {
+            for x in 0..new_w.min(canvas_w - off_x) {
                 let p = resized.get_pixel(x, y);
-                padded.put_pixel(pad_w + x, pad_h + y, image::Rgb([p.0[0], p.0[1], p.0[2]]));
+                padded.put_pixel(off_x + x, off_y + y, image::Rgb([p.0[0], p.0[1], p.0[2]]));
             }
         }
 
-        // Convert to CHW float32 [0,1], BGR→RGB (YOLO convention)
-        let mut arr = Array4::<f32>::zeros((1, 3, INPUT_SIZE as usize, INPUT_SIZE as usize));
-        for y in 0..INPUT_SIZE as usize {
-            for x in 0..INPUT_SIZE as usize {
+        // Convert to CHW float32 [0,1], RGB→BGR.
+        // Upstream inference.py runs cv2.cvtColor(RGB2BGR) before the net
+        // (OpenCV convention); feeding RGB measurably degrades boxes into
+        // page-sized false positives.
+        let (cw, ch) = (canvas_w as usize, canvas_h as usize);
+        let mut arr = Array4::<f32>::zeros((1, 3, ch, cw));
+        for y in 0..ch {
+            for x in 0..cw {
                 let p = padded.get_pixel(x as u32, y as u32);
-                // OpenCV reads as BGR; we already have RGB from image crate.
-                // YOLO models are often trained with BGR input, but DocLayout-YOLO
-                // preprocessing in rapid_layout does BGR→RGB via [..., ::-1].
-                // We'll use RGB (as-is from image crate) and normalize.
-                arr[[0, 0, y, x]] = p.0[0] as f32 / 255.0; // R
-                arr[[0, 1, y, x]] = p.0[1] as f32 / 255.0; // G  
-                arr[[0, 2, y, x]] = p.0[2] as f32 / 255.0; // B
+                arr[[0, 0, y, x]] = p.0[2] as f32 / 255.0; // B
+                arr[[0, 1, y, x]] = p.0[1] as f32 / 255.0; // G
+                arr[[0, 2, y, x]] = p.0[0] as f32 / 255.0; // R
             }
         }
 
@@ -257,8 +333,18 @@ fn multiclass_nms(
             }
             if detections[i].5 == detections[j].5 {
                 // Same class → check IoU
-                let box_i = (detections[i].0, detections[i].1, detections[i].2, detections[i].3);
-                let box_j = (detections[j].0, detections[j].1, detections[j].2, detections[j].3);
+                let box_i = (
+                    detections[i].0,
+                    detections[i].1,
+                    detections[i].2,
+                    detections[i].3,
+                );
+                let box_j = (
+                    detections[j].0,
+                    detections[j].1,
+                    detections[j].2,
+                    detections[j].3,
+                );
                 if iou(box_i, box_j) > iou_threshold {
                     suppressed[j] = true;
                 }
@@ -285,14 +371,14 @@ mod tests {
     #[test]
     fn preprocess_output_shape() {
         let img = test_image();
-        let tensor = RapidLayout::preprocess(&img).unwrap();
+        let tensor = preprocess(&img, 1024).unwrap();
         assert_eq!(tensor.shape(), &[1, 3, 1024, 1024]);
     }
 
     #[test]
     fn preprocess_values_in_range() {
         let img = test_image();
-        let tensor = RapidLayout::preprocess(&img).unwrap();
+        let tensor = preprocess(&img, 1024).unwrap();
         let mut found_content = false;
         for v in tensor.iter() {
             assert!(*v >= 0.0 && *v <= 1.0, "value {v} out of [0,1]");
@@ -324,7 +410,7 @@ mod tests {
     fn nms_suppresses_overlapping() {
         let dets = vec![
             (0.0, 0.0, 10.0, 10.0, 0.9, 0usize),
-            (1.0, 1.0, 9.0, 9.0, 0.8, 0usize),  // highly overlapping
+            (1.0, 1.0, 9.0, 9.0, 0.8, 0usize), // highly overlapping
             (20.0, 20.0, 30.0, 30.0, 0.7, 0usize), // disjoint, same class
         ];
         let keep = multiclass_nms(&dets, 0.5);

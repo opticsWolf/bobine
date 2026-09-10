@@ -20,16 +20,16 @@ fn temp_dir() -> PathBuf {
 #[test]
 fn default_config_is_auto_mode() {
     let c = ConverterConfig::default();
-    assert_eq!(c.routing_mode, RoutingMode::Auto);
+    assert_eq!(c.routing.routing_mode, RoutingMode::Auto);
 }
 
 #[test]
 fn config_fields_accessible() {
     let mut c = ConverterConfig::default();
-    assert!(c.extract_images);
-    assert!(c.use_onnx);
-    c.render_dpi = 150;
-    assert_eq!(c.render_dpi, 150);
+    assert!(c.render.extract_images);
+    assert!(c.routing.use_onnx);
+    c.render.render_dpi = 150;
+    assert_eq!(c.render.render_dpi, 150);
 }
 
 // ======================================================================
@@ -88,7 +88,7 @@ fn missing_file_errors() {
 fn pdf_fast_path_no_onnx() {
     let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let mut config = ConverterConfig::default();
-    config.use_onnx = false;
+    config.routing.use_onnx = false;
     let mut conv = HybridConverter::new(config, &temp_dir().join("cache"));
     let work = temp_dir().join("pdf_no_onnx");
     let _ = std::fs::create_dir_all(&work);

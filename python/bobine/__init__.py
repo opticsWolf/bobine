@@ -22,6 +22,9 @@ from bobine._native import (
     FormulaBackend,
     ModelPrecision,
     convert_to_markdown,
+    ConvertedDocument,
+    ingest_document,
+    convert_directory,
 )
 
 __all__ = [
@@ -31,4 +34,7 @@ __all__ = [
     "FormulaBackend",
     "ModelPrecision",
     "convert_to_markdown",
+    "ConvertedDocument",
+    "ingest_document",
+    "convert_directory",
 ]
