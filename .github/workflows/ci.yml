@@ -31,11 +31,11 @@ jobs:
       - name: Download onnxruntime (CPU)
         run: |
           curl -sL --max-time 300 -o /tmp/ort.tgz \
-            https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz
+            https://github.com/microsoft/onnxruntime/releases/download/v1.28.1/onnxruntime-linux-x64-1.28.1.tgz
           mkdir -p /tmp/ort && tar xzf /tmp/ort.tgz -C /tmp/ort
       - name: Rust tests (locked)
         env:
-          ORT_DYLIB_PATH: /tmp/ort/onnxruntime-linux-x64-1.22.0/lib/libonnxruntime.so.1.22.0
+          ORT_DYLIB_PATH: /tmp/ort/onnxruntime-linux-x64-1.28.1/lib/libonnxruntime.so.1.28.1
         run: >
           cargo test --locked --lib
           --test test_office --test test_excel
@@ -58,6 +58,9 @@ jobs:
           args: --release --out dist --find-interpreter --locked
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: auto
+          # ort-sys build-deps on ureq/native-tls → openssl-sys needs the
+          # headers inside the manylinux container (host apt won't reach it).
+          before-script-linux: yum install -y openssl-devel
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:
