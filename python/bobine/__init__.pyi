@@ -4,9 +4,15 @@ from enum import Enum
 from typing import Callable, List, Optional, Tuple
 
 class RoutingMode(Enum):
+    # Fast path only (pdf_oxide). No ONNX models loaded.
     Never = "never"
+    # Per-page heuristics → full layout+OCR only on flagged pages.
+    # Loads TexTeller + layout + OCR. The default.
     Auto = "auto"
+    # Fast path + TexTeller formula crops; full pipeline for scans only.
+    # Loads TexTeller only.
     Surgical = "surgical"
+    # Every page through full layout + OCR (most thorough, most expensive).
     Always = "always"
 
 class FormulaBackend(Enum):

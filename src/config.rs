@@ -1,16 +1,29 @@
 use serde::{Deserialize, Serialize};
 
 /// Controls how pages are routed between fast (pdf_oxide) and ONNX paths.
+///
+/// Cost ladder: `Never` (no models) < `Surgical` (TexTeller only) < `Auto`
+/// (heavy path on flagged pages) < `Always` (heavy path everywhere).
+/// Every mode shares the same tail: heading promotion, code blocks,
+/// figure interleaving, unreferenced-image gallery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RoutingMode {
-    /// Fast path only. No ONNX models loaded.
+    /// Fast path only: pdf_oxide text layer + embedded figures.
+    /// No ONNX models loaded (works with no runtime at all).
     Never,
-    /// Heuristics per page → full ONNX pipeline only on flagged pages.
+    /// Per-page heuristics (`needs_onnx`: scanned / math-heavy / tables)
+    /// → full layout + OCR pipeline only on flagged pages, fast path
+    /// elsewhere. Loads TexTeller + layout + OCR; table model lazy-loads
+    /// on the first scanned table region. The default.
     Auto,
-    /// Formula crops via formula OCR; full pipeline only for scans.
+    /// Fast path plus TexTeller formula crops spliced into the text
+    /// layer; the full pipeline runs only for scanned pages. Loads
+    /// TexTeller only — no layout model, no OCR.
     Surgical,
-    /// Every page through the full ONNX layout + OCR pipeline.
+    /// Every page through the full ONNX layout + OCR pipeline, with
+    /// hybrid formula refinement (text-layer math boxes intersect layout
+    /// formula regions). Most thorough, most expensive.
     Always,
 }
 

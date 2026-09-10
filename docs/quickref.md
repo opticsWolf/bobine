@@ -58,12 +58,12 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 
 ## RoutingMode
 
-| Mode | Behaviour |
-|---|---|
-| `Never` | Fast path only (pdf_oxide). No ONNX models loaded. |
-| `Auto` *(default)* | Per-page heuristics (math signal / scanned) → full layout+OCR only on flagged pages. |
-| `Surgical` | Fast path + formula crops via TexTeller; full pipeline only for scanned pages. |
-| `Always` | Every page through full layout + OCR. |
+| Mode | Behaviour | Models loaded |
+|---|---|---|
+| `Never` | Fast path only (pdf_oxide). No ONNX models loaded. | none |
+| `Auto` *(default)* | Per-page heuristics (math signal / scanned) → full layout+OCR only on flagged pages. | TexTeller + layout + OCR (table lazy on first scanned table) |
+| `Surgical` | Fast path + formula crops via TexTeller; full pipeline only for scanned pages. | TexTeller only |
+| `Always` | Every page through full layout + OCR, with hybrid formula refinement. | TexTeller + layout + OCR (table lazy) |
 
 ## ConverterConfig fields
 
