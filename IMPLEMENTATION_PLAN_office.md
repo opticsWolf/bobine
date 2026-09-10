@@ -31,6 +31,10 @@ tests at all; legacy: `FakeOffice` mock only). Everything below needs fixtures.
   - Legacy (if `create` supports them; else check in minimal hand-built files
     and document provenance): `legacy.doc`, `legacy.xls` (2 sheets, mixed
     types), `legacy.ppt`.
+- **Outcome (v0.5.1): `create_from_ir` supports Docx/Xlsx/Pptx only — no
+  legacy writers exist in 0.1.8, so no legacy fixtures. Deferred until
+  real-world samples are available; `tests/test_office.rs` takes new
+  fixtures with zero harness changes.**
 - Harness: `tests/test_office.rs` with helpers `assert_contains_in_order(md,
   &[…])`. Gate 1 test per format: convert succeeds, key content present in
   order, no `panic!` on any fixture (fuzz-adjacent smoke).

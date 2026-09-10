@@ -78,3 +78,14 @@ re-created from the source PDFs above with pdf_oxide's
   dump path serves the region. The fixture documents detector behaviour and
   gates regressions of the acceptance logic; revisit when pdf_oxide's
   `spatial_table_detector` improves.
+
+## office/ — generated OOXML fixtures (no attribution needed)
+
+`basic.docx`, `types.xlsx`, `deck.pptx` are **generated**, not redistributed:
+`cargo run --example gen_office_fixtures` builds them from office_oxide's own
+`create` API (IR → OOXML). Contents: headings, styled runs, hyperlink, bullet
++ numbered lists, 3×3 table with merged cell, footnote, embedded PNG
+(checkerboard, alt text); two-sheet workbook with typed cells (unicode,
+formula, date, percent, merged header, empty row) + anchored picture;
+three-slide deck with bullets, table, picture. Legacy doc/xls/ppt have no
+creation API — no fixtures yet.
