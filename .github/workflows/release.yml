@@ -26,11 +26,23 @@ jobs:
   crates-io:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      - name: Tag matches Cargo.toml version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
+          test "$tag" = "$ver" || { echo "tag v$tag != Cargo.toml $ver"; exit 1; }
       - name: Verify default build is Python-free
         run: cargo check --locked
+      - name: Download onnxruntime (CPU — lib tests abort without a dylib)
+        run: |
+          curl -sL --max-time 300 -o /tmp/ort.tgz \
+            https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz
+          mkdir -p /tmp/ort && tar xzf /tmp/ort.tgz -C /tmp/ort
       - name: Run library unit tests (integration needs onnxruntime)
+        env:
+          ORT_DYLIB_PATH: /tmp/ort/onnxruntime-linux-x64-1.22.0/lib/libonnxruntime.so.1.22.0
         run: cargo test --locked --lib
       - name: Publish to crates.io
         run: cargo publish --locked
@@ -58,7 +70,7 @@ jobs:
     permissions:
       id-token: write # PyPI trusted publishing
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build wheel (sdist on linux x86_64 too)
         uses: PyO3/maturin-action@v1
@@ -69,7 +81,7 @@ jobs:
           sccache: true
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: wheels-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
           path: dist
@@ -84,7 +96,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build sdist
         uses: PyO3/maturin-action@v1
@@ -95,7 +107,7 @@ jobs:
       - name: Download wheels (per-artifact dirs — never merge-multiple,
         # see legacy release postmortem: identical paths across artifacts
         # corrupt the merged zip)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           pattern: wheels-*
           path: dist
