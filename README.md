@@ -17,6 +17,7 @@ Version 2.0 — you may choose either (see [LICENSE](LICENSE)).
 - [**Benchmarks & test results**](docs/benchmarks.md) — CPU vs CUDA timings, TexTeller fp32/int8, environment setup
 - [**Proposal: figures/tables/layout**](docs/proposal_media_tables.md) — plan for reading-order image placement and structured table extraction
 - [**Implementation plan**](IMPLEMENTATION_PLAN.md) — status, gap inventory, phased roadmap
+- [**Office export plan**](IMPLEMENTATION_PLAN_office.md) — md for all formats, Excel csv/json, picture extraction
 
 ## Why bobine?
 
@@ -72,12 +73,12 @@ md = conv.convert("notes.txt", work_dir="/tmp/out")
 
 `HybridConverter` routes pages through four modes:
 
-| Mode      | Behaviour                                                                 |
-|-----------|---------------------------------------------------------------------------|
-| `Never`   | Fast path only (pdf_oxide). No ONNX models loaded.                        |
-| `Auto` *(default)* | Heuristics per page → full ONNX layout + OCR on flagged pages.   |
-| `Surgical`| Formula crops via TexTeller only; full pipeline just for scans.           |
-| `Always`  | Every page through the full ONNX layout + OCR pipeline; on born-digital pages, formula regions are refined against text-layer math boxes (v0.4.8) and output matches `Surgical`. |
+| Mode      | Behaviour                                                                 | Models loaded |
+|-----------|---------------------------------------------------------------------------|---------------|
+| `Never`   | Fast path only (pdf_oxide). No ONNX models loaded.                        | none |
+| `Auto` *(default)* | Heuristics per page → full ONNX layout + OCR on flagged pages.   | TexTeller + layout + OCR (table lazy) |
+| `Surgical`| Formula crops via TexTeller only; full pipeline just for scans.           | TexTeller only |
+| `Always`  | Every page through the full ONNX layout + OCR pipeline; on born-digital pages, formula regions are refined against text-layer math boxes (v0.4.8) and output matches `Surgical`. | TexTeller + layout + OCR (table lazy) |
 
 RapidLayout and RapidOCR weights also auto-download from HuggingFace on
 first use (DocStructBench YOLO ~72 MB, PP-OCRv4 ~16 MB); explicit local
@@ -155,6 +156,20 @@ columns and prose stay apart. For text-layer-hostile PDFs (Word/InDesign/OCR
 output without math fonts), set `formula_layout_fallback=True` to ask the
 layout model for equation regions instead (off by default).
 
+OCR recognition runs line crops in chunks of 32 on accelerators (6.3x faster
+on CUDA, measured) while CPU-only sessions keep the exact single-line path —
+provider-gated batching, byte-identical tensors on CPU (v0.4.28, see
+[benchmarks](docs/benchmarks.md)).
+
+## Office documents
+
+`.docx` / `.xlsx` / `.pptx` plus legacy `.doc` / `.xls` / `.ppt` convert to
+markdown via `office_oxide` (`conv.convert_office(path)` or the `convert()`
+dispatcher — no models needed). Today that is one markdown string per
+document and embedded pictures are dropped; the
+[**Office export plan**](IMPLEMENTATION_PLAN_office.md) tracks per-sheet
+Excel csv/json export and picture extraction.
+
 ## Output contract
 
 `convert_pdf` returns one markdown string: inline `$…$` / display `$$…$$`
@@ -167,7 +182,7 @@ for unreferenced figures. For document-level workflows use
 ## Testing
 
 ```bash
-cargo test                # 83 unit tests — no native backends needed
+cargo test                # 121 unit tests — no native backends needed
 ORT_DYLIB_PATH=... cargo test   # + 9 integration tests over the PDF corpus
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```

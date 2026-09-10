@@ -65,6 +65,14 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `Surgical` | Fast path + formula crops via TexTeller; full pipeline only for scanned pages. | TexTeller only |
 | `Always` | Every page through full layout + OCR, with hybrid formula refinement. | TexTeller + layout + OCR (table lazy) |
 
+## Office documents
+
+`.docx` / `.xlsx` / `.pptx` + legacy `.doc` / `.xls` / `.ppt` → markdown via
+`office_oxide` (`convert_office`, or `convert()` by extension). No models
+needed. Current scope: one markdown string per document; embedded pictures
+are dropped. Per-sheet Excel csv/json + picture extraction are tracked in
+[IMPLEMENTATION_PLAN_office.md](../IMPLEMENTATION_PLAN_office.md).
+
 ## ConverterConfig fields
 
 | Field | Default | Meaning |
@@ -198,7 +206,7 @@ table model only disables scanned-table recognition.
 ## Testing
 
 ```bash
-cargo test                 # 83 unit + 9 integration tests
+cargo test                 # 121 unit + 9 integration tests
 ORT_DYLIB_PATH=... cargo test   # needed for the PDF integration tests
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```

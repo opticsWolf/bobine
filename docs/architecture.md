@@ -100,6 +100,9 @@ Routing signals (mirroring the Python heuristics):
 | `.docx .xlsx .pptx .doc .xls .ppt` | `office_oxide::Document::open().to_markdown()` (auto-detect) |
 | anything else | raw UTF-8 read |
 
+> Office TODO: Excel csv/json export + picture extraction — see
+> `IMPLEMENTATION_PLAN_office.md`.
+
 ---
 
 ## 4. OnnxEngine — lazy loading & degradation
