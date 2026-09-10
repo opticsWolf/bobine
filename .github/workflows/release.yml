@@ -55,19 +55,18 @@ jobs:
   # 2. PyPI — Python wheel matrix via maturin (trusted publishing)
   # ------------------------------------------------------------------
   pypi:
+    # Modern x86_64 only: ubuntu + windows + macOS (Intel runner).
+    # No aarch64 / cross targets — add back on demand.
     strategy:
       fail-fast: false
       matrix:
         platform:
           - runner: ubuntu-22.04
             target: x86_64
-          - runner: ubuntu-22.04
-            target: aarch64
-            manylinux: auto
           - runner: windows-latest
+            target: x64
+          - runner: macos-15-intel
             target: x86_64
-          - runner: macos-14
-            target: aarch64
     runs-on: ${{ matrix.platform.runner }}
     permissions:
       id-token: write # PyPI trusted publishing
