@@ -330,6 +330,10 @@ impl PyConvertedDocument {
     fn page_count(&self) -> usize {
         self.inner.page_count
     }
+    #[getter]
+    fn data_files(&self) -> Vec<String> {
+        self.inner.data_files.iter().map(|p| p.display().to_string()).collect()
+    }
 
     fn __repr__(&self) -> String {
         format!(
@@ -343,6 +347,50 @@ impl PyConvertedDocument {
 
 fn to_py_err(e: crate::error::BobineError) -> PyErr {
     pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
+}
+
+// -- Excel export -----------------------------------------------------------
+
+use crate::excel::ExcelDocument;
+
+#[pyclass(name = "ExcelDocument")]
+pub struct PyExcelDocument {
+    inner: ExcelDocument,
+}
+
+#[pymethods]
+impl PyExcelDocument {
+    #[getter]
+    fn markdown(&self) -> String {
+        self.inner.markdown.clone()
+    }
+    #[getter]
+    fn sheet_names<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyList>> {
+        let names: Vec<&str> = self.inner.sheets.iter().map(|s| s.name.as_str()).collect();
+        pyo3::types::PyList::new(py, names)
+    }
+    #[getter]
+    fn csv_by_sheet<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let dict = pyo3::types::PyDict::new(py);
+        for (name, csv_text) in crate::excel::sheets_to_csv(&self.inner) {
+            dict.set_item(name, csv_text)?;
+        }
+        Ok(dict)
+    }
+    #[getter]
+    fn json(&self) -> String {
+        serde_json::to_string(&crate::excel::excel_to_json(&self.inner))
+            .unwrap_or_else(|_| "{}".to_string())
+    }
+    fn __repr__(&self) -> String {
+        format!("ExcelDocument(sheets={})", self.inner.sheets.len())
+    }
+}
+
+#[pyfunction]
+fn convert_excel(path: &str) -> PyResult<PyExcelDocument> {
+    let inner = crate::excel::convert_excel(std::path::Path::new(path)).map_err(to_py_err)?;
+    Ok(PyExcelDocument { inner })
 }
 
 /// Wrap optional Python callables into pipeline hooks.
@@ -473,6 +521,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyHybridConverter>()?;
     m.add_function(wrap_pyfunction!(convert_to_markdown, m)?)?;
     m.add_class::<PyConvertedDocument>()?;
+    m.add_class::<PyExcelDocument>()?;
+    m.add_function(wrap_pyfunction!(convert_excel, m)?)?;
     m.add_function(wrap_pyfunction!(ingest_document, m)?)?;
     m.add_function(wrap_pyfunction!(convert_directory, m)?)?;
     Ok(())

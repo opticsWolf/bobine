@@ -104,6 +104,11 @@ pub fn stage_images_as_okf_assets(
             cand = PathBuf::from(src);
         }
         if !cand.is_file() {
+            // work-dir-relative links (e.g. `assets/office/img_x.png` staged
+            // by the Office converter) resolve against the output dir.
+            cand = out_dir.join(src);
+        }
+        if !cand.is_file() {
             // unresolved — leave the link untouched
             return caps.get(0).map(|m| m.as_str()).unwrap_or("").to_string();
         }

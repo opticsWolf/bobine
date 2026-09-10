@@ -50,11 +50,16 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | Symbol | Purpose |
 |---|---|
 | `HybridConverter(config, cache_dir)` | Direct converter: `convert()`, `convert_pdf()`, `recognize_formula()` |
+| `HybridConverter.convert_office(path)` | Office → markdown (associated fn, no staging; `convert()` stages) |
 | `convert_to_markdown(path, config, work_dir, cache_dir)` | Raw markdown string, one-shot |
+| `convert_excel(path)` | Workbook → `ExcelDocument`: `.markdown`, `.sheet_names`, `.csv_by_sheet`, `.json` |
+| `ingest_document(path, output_dir, ...)` | Staged bundle → `ConvertedDocument` (`.md_text`, `.data_files`, lint/hooks) |
+| `convert_directory(source_dir, output_dir, ...)` | Batch ingest |
 | `ConverterConfig` | Tuning knobs (see table below) |
 | `RoutingMode` | `Never` / `Auto` / `Surgical` / `Always` |
 | `FormulaBackend` | `TexTeller` (only backend) |
 | `ModelPrecision` | `Fp32` / `Fp16` (`*_fp16.onnx`, models deferred) |
+| `ModelQuantization` | `Int8` (default) / `Fp32` (formula weights) |
 
 ## RoutingMode
 
@@ -69,9 +74,23 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 
 `.docx` / `.xlsx` / `.pptx` + legacy `.doc` / `.xls` / `.ppt` → markdown via
 `office_oxide` (`convert_office`, or `convert()` by extension). No models
-needed. Current scope: one markdown string per document; embedded pictures
-are dropped. Per-sheet Excel csv/json + picture extraction are tracked in
-[IMPLEMENTATION_PLAN_office.md](../IMPLEMENTATION_PLAN_office.md).
+needed. Embedded pictures stage into `<work_dir>/assets/office/` with content-hash
+names and links rewrite to the staged files (unreferenced ones gallery-appended,
+like PDF figures); `ingest_document` promotes them to `okf-asset://`.
+`extract_images: false` leaves the upstream markdown untouched.
+
+Excel workbooks (`.xls` / `.xlsx`) additionally export structured data:
+
+```python
+doc = bobine.convert_excel("book.xlsx")
+doc.markdown          # ## {sheet} sections + GFM tables
+doc.sheet_names       # ['Data', 'Summary']
+doc.csv_by_sheet      # {'Data': 'Item,Count,...\n', ...} (empty sheets skipped)
+import json; data = json.loads(doc.json)  # typed values, formulas kept
+```
+
+`ingest_document` on a workbook also writes `<stem>.<sheet>.csv` siblings +
+`<stem>.json` next to the `.md` (see `ConvertedDocument.data_files`).
 
 ## ConverterConfig fields
 
@@ -206,13 +225,14 @@ table model only disables scanned-table recognition.
 ## Testing
 
 ```bash
-cargo test                 # 121 unit + 9 integration tests
-ORT_DYLIB_PATH=... cargo test   # needed for the PDF integration tests
+cargo test                 # 128 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
+ORT_DYLIB_PATH=... cargo test --test test_converter   # incl. full-paper AUTO run
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```
 
 Fixtures: `tests/fixtures/` — CC BY 4.0 arXiv papers (attribution in
-`SOURCES.md`) + generated scanned page.
+`SOURCES.md`) + generated scanned page + generated OOXML fixtures
+(`examples/gen_office_fixtures.rs`).
 
 ## Benchmarks
 

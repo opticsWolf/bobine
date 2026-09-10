@@ -56,6 +56,12 @@ Generated in-repo (MIT/Apache-2.0, bobine's own license) by
 text layer**, designed to exercise the scanned-document ONNX layout+OCR path.
 Not from arXiv.
 
+**Never-mode note (pdf_oxide 0.3.78):** pdf_oxide removed its
+`[OCR REQUIRED]` skipped-page annotation, so the Never fast path with images
+off yields empty markdown for this fixture (previously the explicit placeholder).
+With images on, the page render embeds as a figure. AUTO/SURGICAL routing is
+unaffected — scanned detection still sends the page through ONNX OCR.
+
 ## Regeneration
 
 `uv run --with reportlab python tests/fixtures/generate_corpus.py`
@@ -72,9 +78,23 @@ re-created from the source PDFs above with pdf_oxide's
 - **Purpose:** Regression fixture for the structured-table cascade
   (`ConverterConfig::structured_tables`). Contains a fully ruled 5×4 data grid
   with a header row, surrounded by prose paragraphs.
-- **Known caveat:** pdf_oxide's spatial grid detector currently returns a
+- **Known caveat (pdf_oxide ≤0.3.77):** pdf_oxide's spatial grid detector returned a
   degenerate grid for this page (prose sliced into columns, body rows
-  concatenated), so bobine's `is_plausible_table` gate rejects it and the text
-  dump path serves the region. The fixture documents detector behaviour and
-  gates regressions of the acceptance logic; revisit when pdf_oxide's
-  `spatial_table_detector` improves.
+  concatenated), so bobine's `is_plausible_table` gate rejected it and the text
+  dump path served the region.
+- **Update (pdf_oxide 0.3.78):** the detector now returns a real grid — the
+  header row plus the first data row (`A-101`) extract cleanly (see
+  `tests/golden/ruled_table.golden.md`). Trailing rows still fragment
+  (`A-102`, split `B-201` cells), so the page remains a partial-extraction
+  fixture; revisit when the detector handles multi-row ruled grids.
+
+## office/ — generated OOXML fixtures (no attribution needed)
+
+`basic.docx`, `types.xlsx`, `deck.pptx` are **generated**, not redistributed:
+`cargo run --example gen_office_fixtures` builds them from office_oxide's own
+`create` API (IR → OOXML). Contents: headings, styled runs, hyperlink, bullet
++ numbered lists, 3×3 table with merged cell, footnote, embedded PNG
+(checkerboard, alt text); two-sheet workbook with typed cells (unicode,
+formula, date, percent, merged header, empty row) + anchored picture;
+three-slide deck with bullets, table, picture. Legacy doc/xls/ppt have no
+creation API — no fixtures yet.

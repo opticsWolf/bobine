@@ -10,7 +10,7 @@ Topological insulators (TIs) are materials which boast the unique property of co
 
 [yiping.ma@northumbria.ac.uk](mailto:yiping.ma@northumbria.ac.uk)
 
-independently and host the same number of edge modes propagating in opposite directions; such edge modes are called helical rather than chiral. More generally, one can allow spin-flips while preserving time-reversal symmetry. Such systems are called QSH insulators or Z TIs since2 they are characterized by a Z topological invariant that2 is the spin Chern number of either component modulo 2 [9, 10]. At the interface between two such materials with different spin Chern numbers, the bulk-edge correspon-dence guarantees the existence of helical edge states that are immune to backscattering in the presence of weak time-reversal-symmetric disorder [11]. The first realistic QSH material was predicted theoretically by Bernevig, Hughes, and Zhang [12] and soon confirmed experimen-tally [13], which established TIs as a major research field. Recently, the theoretical framework of quantum TIs was extended to photonic (electromagnetic) [14], cold atomic [15], and phononic (mechanical) [16] systems. Such extensions of topological phases from quantum to classical waves were initiated by Haldane and Raghu, who proposed a photonic QH analog using a 2D lattice of time-reversal symmetry-breaking elements [17]. Their idea of using magneto-optic effect was realized experi-mentally in the microwave domain [18], but alternative approaches were needed in the optical domain. A pio-neering experiment uses Floquet engineering to realize the Haldane model for QH effect, marking the birth of photonic Floquet TIs [19]. Meanwhile, pioneering work on photonic QSH analogs constructs pseudo-spins in an artificial magnetic field on various platforms including bianisotropic metamaterials [20] and coupled silicon ring resonators [21]. Since these early discoveries, the research field of topological photonics has grown rapidly [14]. In mechanical systems, topological edge modes can be realized at either zero frequency or high frequencies [22]. Here we focus on high-frequency topological mechanics,
+independently and host the same number of edge modes propagating in opposite directions; such edge modes are called helical rather than chiral. More generally, one can allow spin-flips while preserving time-reversal symmetry. Such systems are called QSH insulators or Z2 TIs since they are characterized by a Z2 topological invariant that is the spin Chern number of either component modulo 2 [9, 10]. At the interface between two such materials with different spin Chern numbers, the bulk-edge correspon-dence guarantees the existence of helical edge states that are immune to backscattering in the presence of weak time-reversal-symmetric disorder [11]. The first realistic QSH material was predicted theoretically by Bernevig, Hughes, and Zhang [12] and soon confirmed experimen-tally [13], which established TIs as a major research field. Recently, the theoretical framework of quantum TIs was extended to photonic (electromagnetic) [14], cold atomic [15], and phononic (mechanical) [16] systems. Such extensions of topological phases from quantum to classical waves were initiated by Haldane and Raghu, who proposed a photonic QH analog using a 2D lattice of time-reversal symmetry-breaking elements [17]. Their idea of using magneto-optic effect was realized experi-mentally in the microwave domain [18], but alternative approaches were needed in the optical domain. A pio-neering experiment uses Floquet engineering to realize the Haldane model for QH effect, marking the birth of photonic Floquet TIs [19]. Meanwhile, pioneering work on photonic QSH analogs constructs pseudo-spins in an artificial magnetic field on various platforms including bianisotropic metamaterials [20] and coupled silicon ring resonators [21]. Since these early discoveries, the research field of topological photonics has grown rapidly [14]. In mechanical systems, topological edge modes can be realized at either zero frequency or high frequencies [22]. Here we focus on high-frequency topological mechanics,
 
 
 ---
@@ -54,77 +54,59 @@ where H are 3 3 matrices. The key insight of Ref. [29] is that the Hamiltonian m
 
 ---
 
-coupled oscillators. In the experimental setup, each site of the square lattice hosts two 1D pendula ( both of which swing only in the connections between neighboring sites are realized using springs possibly with lever arms. Hereafter, we group the lattice sites into unit cells indexed by ( consisting of 3 sites ( To enable nonlinear waves in this MTI, we account for the inherent cubic (Duffing) nonlinearity of the pendula. The equations of motion for the 6 pendula ( j = 0 1 2, in the unit cell (
+coupled oscillators. In the experimental setup, each site of the square lattice hosts two 1D pendula (x y r,s r,s both of which swing only in the s direction, and the linear connections between neighboring sites are realized using springs possibly with lever arms. Hereafter, we group the lattice sites into unit cells indexed by (r, S) with each cell j j consisting of 3 sites (x y ) for j = 0 1 2.
 
-(0) x t) =r,S
+r,S r,S To enable nonlinear waves in this MTI, we account for the inherent cubic (Duffing) nonlinearity of the pendula. The equations of motion for the 6 pendula (x j y j j = 0 1 2, in the unit cell (r, S) are written explicitly as (0)
 
-f (0) y t) =r,S
+(0) (0) x t) = ω2 A fs x σ x 3
 
-f (1) x t) =r,S
+r,S 0
 
-f (1) y t) =r,S
-
-f (2) x t) =r,S
-
-f (2) y t) =r,S
-
-f
-
-Here, t denotes time, scribes the linear restoring forces of the springs, and the pendula are assumed identical with angular frequency Consistent with Refs. [29, 57], we choose ω = 3π/2. The nonlinear coefficient must be
-
-0 to yield a cubic approximation to the sinusoidal restor-ing force of a pendulum. The self-coupling coefficient depends on the detailed setup as explained next. For a simple spring connecting a pendulum and its neighbor, the restoring force, which is proportional to the relative displacement, yields a positive coupling to the neighbor and a negative self-coupling. As shown in the first two terms of the second rows in Eqs. (2–7), all couplings to the neighbor in the and thus can be realized by simple springs; see Fig. 1(a).
-
-x yr,s r,s s direction, and the linear
-
-r, S) with each cell j j x y ) for j = 0 1 2.
-
-r,S r,S
-
-x j y j r, S) are written explicitly as (0) (0) ω2 A f x σ x 3
-
-s 0
-
-r,S r,S (1) (2) (0) (0) x x
+r,S r,S (1) (2) (0) (0) f x x
 
 x
 
 x (2)
 
-r,S r,S 1 r+1,S r 1,S (0) (0) ω2 A f y σ y 3
+r,S r,S 1 r+1,S r 1,S (0)
 
-s 0
+(0) (0) y t) = ω2 A f y σ y 3
 
-r,S r,S (1) (2) (0) (0) y y
+r,S 0 s r,S r,S
+
+(1) (2) (0) (0) f y y
 
 y
 
 y (3)
 
-r,S r,S 1 r+1,S r 1,S (1) (1) ω2 A f x σ x 3
+r,S r,S 1 r+1,S r 1,S (1)
 
-s 0
+(1) (1) x t) = ω2 A fs x σ x 3
 
-r,S r,S f (1) (1) (0) (2) x
+r,S 0
+
+r,S r,S (0) (2) f (1) (1) f x x
 
 x
 
-x x
+x
 
-r+1,S r 1,S
+r,S r,S
 
-r,S r,S 2 3f (1) (1) y
+r+1,S r 1,S 2 3f (1) (1) y
 
 y (4)
 
-r+1,S r 1,S 2
+r+1,S r 1,S 2 (1)
 
-(1) (1) A f y σ y 3
+(1) (1) y t) = ω2 A fs y σ y 3
 
-ω2 s 0
+r,S 0
 
 r,S r,S f (0) (2)
 
-(1) (1) y y
+(1) (1) f y y
 
 y
 
@@ -136,37 +118,25 @@ r+1,S r 1,S 2 3f (1) (1) x
 
 x (5)
 
-r+1,S r 1,S 2
+r+1,S r 1,S 2 (2)
 
-(2) (2) A f x σ x 3
+(2) (2) x t) = ω2 A f x σ x 3
 
-ω2 s 0
+r,S 0 s r,S r,S f
 
-r,S r,S f (0) (1)
+(0) (1)
 
-(2) (2) x
-
-x
-
-x
-
-x
-
-r,S+1 r,S
-
-r+1,S r 1,S 2 3f (2) (2) y
+(2) (2) f xr,S+1 xr,S xr+1,S xr 1,S 2 3f (2) (2) y
 
 y (6)
 
-r+1,S r 1,S 2
+r+1,S r 1,S 2 (2)
 
-(2) (2) A f y σ y 3
+(2) (2) y t) = ω2 A f y σ y 3
 
-ω2 s 0
+r,S 0 s r,S r,S
 
-r,S r,S f (0) (1)
-
-(2) (2) y
+(0) (1) f (2) (2) f y
 
 y
 
@@ -182,13 +152,11 @@ x (7)
 
 r+1,S r 1,S 2
 
-denotes time derivative, f de-
+Here, t denotes time, denotes time derivative, f de-scribes the linear restoring forces of the springs, and the pendula are assumed identical with angular frequency ω0 Consistent with Refs. [29, 57], we choose f = 4 16π2 and ω = 3π/2. The nonlinear coefficient must be σ ω2 6 0
 
-ω0 f = 4 16π2 and σ ω20
+0 to yield a cubic approximation to the sinusoidal restor-ing force of a pendulum. The self-coupling coefficient As depends on the detailed setup as explained next. For a simple spring connecting a pendulum and its neighbor, the restoring force, which is proportional to the relative displacement, yields a positive coupling to the neighbor and a negative self-coupling. As shown in the first two terms of the second rows in Eqs. (2–7), all couplings to the neighbor in the s-direction are f > 0 and thus can be realized by simple springs; see Fig. 1(a).
 
-A
-
-s-direction are f > 0 3
+3
 
 **(a)**
 
@@ -212,19 +180,13 @@ s-direction are f > 0 3
 
 FIG. 1. (Color online) Schematic view of the connections be-tween neighboring pendula in the 2D MTI. The r-direction is horizontal, the s-direction is vertical, and all pendula swing in the s-direction. (a) Simple springs connecting x x and y y pendula in the s-direction. (b) Complex springs connecting x x and y y pendula in the r-direction. (c) Complex springs connecting x y pendula in the r-direction. Here, a complex spring with two springs and one lever arm realizes a nega-tive coupling, while a complex spring with three springs and two lever arms realizes a positive coupling; see Ref. [29] for a physical depiction. If the magnetic flux Φ changes sign, then the r cross-couplings in panel (c) change sign. As explained in Section IV, these two types of r cross-couplings define the two sub-lattices of the 2D MTI with two topological sectors.
 
-In contrast, any connection in the r-direction cannot be realized by a simple spring since the displacements are in the s-direction. Thus, lever arm(s) must be used to rotate the displacements around pivot(s). As shown in the last two terms of the second rows in Eqs. (2–7), the couplings to the neighbor in the r-direction are f for (x(0) y(0)) and f cos Φ = f/2 for (x(1) y(1)) and x(2) y(2) The former requires two lever arms, while the latter requires one lever arm; see Fig. 1(b). The above two types of couplings, i.e., s couplings and r couplings, connect either x x or y y pendula. Mean-while, as shown in the third rows in Eqs. (4–7), a third type of couplings connect x y pendula in the r-direction for (x(1) y(1)) and (x(2) y(2) These r cross-couplings are f sin Φ = 3f/2 times alternating signs, so they change sign when Φ changes sign; see Fig. 1(c). Besides a coupling to the neighbor, either a simple 6 spring or a complex spring with lever arm(s) yields a negative self-coupling. Thus, the total self-coupling for x(1) y(1)) and (x(2) y(2)) is A f where A = 3 + 3.
+In contrast, any connection in the r-direction cannot be realized by a simple spring since the displacements are in the s-direction. Thus, lever arm(s) must be used to rotate the displacements around pivot(s). As shown in the last two terms of the second rows in Eqs. (2–7), the couplings to the neighbor in the r-direction are f for (x(0) y(0)) and f cos Φ = f/2 for (x(1) y(1)) and x(2) y(2) The former requires two lever arms, while the latter requires one lever arm; see Fig. 1(b). The above two types of couplings, i.e., s couplings and r couplings, connect either x x or y y pendula. Mean-while, as shown in the third rows in Eqs. (4–7), a third type of couplings connect x y pendula in the r-direction for (x(1) y(1)) and (x(2) y(2) These r cross-couplings are f sin Φ = 3f/2 times alternating signs, so they change sign when Φ changes sign; see Fig. 1(c). Besides a coupling to the neighbor, either a simple spring or a complex spring with lever arm(s) yields a negative self-coupling. Thus, the total self-coupling for x(1) y(1)) and (x(2) y(2)) is A f where A = 3 + 3.
 
 s
 
-s
+s The total self-coupling for (x(0) y(0)) is 4f but can be made A fs using springs attached to walls. For ease of computation, the nonlinear equations of motion (2–7) may be written in the compact matrix form
 
-s The total self-coupling for (x(0) y(0)) is 4f but can be made A f using springs attached to walls.s For ease of computation, the nonlinear equations of motion (2–7) may be written in the compact matrix form
-
-**X** t) = (LX σN (8)
-
-r,S
-
-r,S r,S
+**X**r,S t) = (LX r,S σN r,S (8)
 
 where **X** = [x(0) y(0) x(1) y(1) x(2) y(2) T L is the ma-
 
@@ -233,31 +195,19 @@ where **X** = [x(0) y(0) x(1) y(1) x(2) y(2) T L is the ma-
 
 FIG. 2. (Color online) The dispersion relation α k) obtained from numerical solutions of the eigenvalue problem in Eq. (9). The bulk and edge spectra are shown in blue and red respec-tively. This dispersion relation does not change when the magnetic flux Φ changes sign.
 
-trix encoding the linear couplings, and N **X**³ is the cubic nonlinearity. In the linear limit σ = 0, this system fits into the classification scheme of topological phonons [67]. Since velocity-dependent forces are absent, this sys-tem belongs to the category of reciprocal metamaterials. To obtain all possible symmetries of this system, we study the dynamical matrix D **k**) with 2D wavevector **k**, which is the 2D Fourier transform of L. As shown in Ref. [67], the structure of D **k**) exhibits a T symmetry that squares to +1. Moreover, this symmetry can be augmented to a T symmetry that squares to 1. Here, the T symmetry generalizes the time-reversal symmetry in quantum TIs but does not imply the reversal of time in the mechanical setting. Overall, this system belongs to symmetry class AII in 2D with the presence of the T and T symmetries and the absence of other symmetries, and the bulk topological index can be shown to be Z ; see2 Ref. [67] for detailed analyses of this and related systems. Due to the bulk-edge correspondence, the nontrivial topology of the bulk band structure guarantees the ex-istence of topologically protected helical edge states at the interface between this 2D MTI and the vacuum. To find the dispersion relation of edge states along any direction, say S, we consider the linear problem, i.e., Eq. (8) with σ = 0, and apply the 1D Fourier transform tα k
+trix encoding the linear couplings, and N **X**³ is the cubic nonlinearity. In the linear limit σ = 0, this system fits into the classification scheme of topological phonons [67]. Since velocity-dependent forces are absent, this sys-tem belongs to the category of reciprocal metamaterials. To obtain all possible symmetries of this system, we study the dynamical matrix D **k**) with 2D wavevector **k**, which is the 2D Fourier transform of L. As shown in Ref. [67], the structure of D **k**) exhibits a T symmetry that squares to +1. Moreover, this symmetry can be augmented to a T symmetry that squares to 1. Here, the T symmetry generalizes the time-reversal symmetry in quantum TIs but does not imply the reversal of time in the mechanical setting. Overall, this system belongs to symmetry class AII in 2D with the presence of the T and T symmetries and the absence of other symmetries, and the bulk topological index can be shown to be Z2; see Ref. [67] for detailed analyses of this and related systems. Due to the bulk-edge correspondence, the nontrivial topology of the bulk band structure guarantees the ex-istence of topologically protected helical edge states at the interface between this 2D MTI and the vacuum. To find the dispersion relation of edge states along any direction, say S, we consider the linear problem, i.e., Eq. (8) with σ = 0, and apply the 1D Fourier transform **X**r,S ei Sk tα k **X**r c.c. where k is the wavenum-ber in S α k) is the dispersion relation, and c.c. denotes complex conjugate. This yields the eigenvalue problem
 
-**X** ei Sk **X** c.c. where k is the wavenum-
+L k **X**r α k 2**X**r (9)
 
-r,S
+where L k) denotes the matrix L in Eq. (8) after the 1D Fourier transform, and the eigenvector **X** is normalized
 
-r ber in S α k) is the dispersion relation, and c.c. denotes complex conjugate. This yields the eigenvalue problem
+P
 
-L k **X** α k 2**X**
+r such that **X** 2
 
-(9)
+**X** 2 = 1.
 
-r
-
-r
-
-where L k) denotes the matrix L in Eq. (8) after the 1D Fourier transform, and the eigenvector **X** is normalizedr
-
-P **X** 2 = 1.
-
-such that **X** 2
-
-r j
-
-r 2 j The dispersion relation α k k [0 2π), can be nu-merically computed on a finite 1D domain in r. Figure 2 shows this dispersion relation for N = 30 sites withr the bulk (continuous) spectrum shown in blue and the edge (discrete) spectrum shown in red. The T symmetry implies that the band structures, both bulk and edge, are 4
+r 2 j r j The dispersion relation α k k [0 2π), can be nu-merically computed on a finite 1D domain in r. Figure 2 shows this dispersion relation for Nr = 30 sites with the bulk (continuous) spectrum shown in blue and the edge (discrete) spectrum shown in red. The T symmetry implies that the band structures, both bulk and edge, are 4
 
 symmetric with respect to k π [67]. This generalized Kramers’ theorem implies that any eigenvector at (k, α has a Kramers partner at (2π k, α), and together they form a Kramers pair. Since the unit cell has three sites, there are three bulk bands and two band gaps. For any α in a band gap, there is a Kramers pair of topologically protected edge states. This pair of edge states are called helical since they have opposite group velocities.
 
@@ -265,116 +215,60 @@ symmetric with respect to k π [67]. This generalized Kramers’ theorem implies
 
 Consider a generic 2D nonlinear MTI with two branches of the dispersion relation, α k) and β k). To find weakly nonlinear solutions, we let the multiple scale ansatz be a linear superposition of two edge modes:
 
-tα0 0
+**X** t) = ϵ A 0 0 r,S
 
-**X** t) = ϵ A S, τ ei Sk **X**(1)
+S, τ ei Sk tα **X**(1)r
 
-r,S
+B 0 0
 
-r
-
-tβ0 0
-
-B S, τ ei Sk **X**(2) c.c. O ϵ2
+S, τ ei Sk tβ **X**(2) c.c. O ϵ2
 
 r (10)
 
-where the small parameter 0 < ϵ 1 is the amplitude, k is the carrier wavenumber, and α α k ) and β
+where the small parameter 0 < ϵ 1 is the amplitude, k⁰ is the carrier wavenumber, and α0 α k0) and β0 β k0) are the two carrier frequencies. The two edge states **X** are eigenvectors of L k0) and normalized such that
 
-⁰ 0 0
+r **X**(1)r 22 **X**(2)r 22 = 1. The spectral envelope width is assumed to be ϵ, so the two scalar envelopes A and B depend on the slow space variable S ϵ S V t), where g Vg is the group velocity. Moreover, both envelopes are assumed to evolve in the slow time variable τ ϵ²t Substituting the ansatz (10) into Eq. (8) and expand-ing in powers of ϵ, the O ϵ) and O ϵ2) equations are trivial when Vg α β , where α α k0) and 0 0
 
-0 β k ) are the two carrier frequencies. The two edge states0 **X** are eigenvectors of L k ) and normalized such that0
+0 β β k0 Generically, this equal group velocities
 
-r **X**(1) 2 **X**(2) 2 = 1. The spectral envelope width
-
-r
-
-r 2
-
-2 is assumed to be ϵ, so the two scalar envelopes A and B depend on the slow space variable S ϵ S V t), whereg V is the group velocity. Moreover, both envelopes areg assumed to evolve in the slow time variable τ ϵ²t Substituting the ansatz (10) into Eq. (8) and expand-ing in powers of ϵ, the O ϵ) and O ϵ2) equations are trivial when V α β , where α α k ) and
-
-g 0
-
-0 0
-
-0 β β k Generically, this equal group velocities 0
-
-0 (EGV) condition α β defines a discrete set of k ’s. At0
+0 (EGV) condition α β defines a discrete set of k0’s. At
 
 0 0 O ϵ3), one takes the inner product of the A equation with **X**⁽¹⁾ and the inner product of the B equation with **X**(2)
 
 r
 
-r
+P r with the inner product defined as **g** **h**
 
-P with the inner product defined as **g** **h**
+g hj, to
 
-g h , tojjj yield the 1D CNLS equation:
+j j yield the 1D CNLS equation:
 
-α A + 3A σ|A|2 + 2˜σ|B|2) = 0
+α iA 0 A˜ ˜ + 3A σ|A|2 + 2˜σ|B|2) = 0
 
-iA 0 ˜ ˜
+τ 1
 
-1
+2 2 SS
 
-2
+(11) β iBτ 0 B˜ ˜ + 3B σ3|B|2 + 2˜σ4|A|2) = 0 2 SS
 
-τ
-
-SS2
-
-(11) β iB 0 B + 3B σ|B|2 + 2˜σ|A|2) = 0
-
-˜ ˜
-
-τ 3
-
-4
-
-SS2
-
-where α α k β β k ), and 0
-
-0
-
-0
+where α α k0 β β k0), and 0
 
 0 σ
 
-σ σ
+σ σ1
 
-**X**(1) 4 σ
+**X**(1)r 44 σ2
 
-**X**⁽¹⁾**X**(2) 2 1
+**X**⁽¹⁾r **X**(2)r 22 2α0
 
-2
+2α0 σ
 
-r 4
+σ σ3
 
-r r 2 2α
+**X**(2)r 44 σ4
 
-2α
+**X**⁽¹⁾r **X**(2)r 22 2β0
 
-0
-
-0 σ
-
-σ **X**(2) 4 σ
-
-**X**⁽¹⁾**X**(2) 2
-
-σ 4
-
-3
-
-r 4
-
-r r 2 2β
-
-2β
-
-0
-
-0
+2β0
 
 Note that setting A = 0 or B = 0 in Eq. (11) recovers the scalar nonlinear Schr¨odinger (NLS) equation in Ref. [57]. The two-component CNLS equation is the universal envelope equation for nonlinear interactions between two quasi-monochromatic plane waves [68, 69]. Over decades,

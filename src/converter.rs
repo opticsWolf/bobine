@@ -911,7 +911,7 @@ impl HybridConverter {
             .to_lowercase();
         match ext.as_str() {
             "pdf" => self.convert_pdf(input, work_dir),
-            "docx" | "xlsx" | "pptx" | "doc" | "xls" | "ppt" => self.convert_office(input),
+            "docx" | "xlsx" | "pptx" | "doc" | "xls" | "ppt" => self.convert_office_staged(input, work_dir),
             _ => std::fs::read_to_string(input).map_err(BobineError::Io),
         }
     }
@@ -1231,11 +1231,49 @@ impl HybridConverter {
         pdf.extract_image_files(index, &out_dir, "img")
     }
 
-    pub fn convert_office(&self, path: &Path) -> Result<String> {
+    /// Convert an Office document to markdown via office_oxide.
+    ///
+    /// Associated function: uses no converter state, config, or models.
+    /// Image links are returned as upstream renders them (relationship ids
+    /// for docx, dropped for pptx/xlsx drawings) — use [`Self::convert`]
+    /// (the extension dispatcher) to stage pictures into the work dir and
+    /// rewrite links to staged files.
+    pub fn convert_office(path: &Path) -> Result<String> {
         use office_oxide::Document;
         let doc =
             Document::open(path).map_err(|e| BobineError::OfficeOxide(format!("open: {e}")))?;
         Ok(doc.to_markdown())
+    }
+
+    /// Dispatcher-facing Office conversion: markdown plus staged pictures.
+    ///
+    /// Honors `render.extract_images` (off → upstream markdown untouched).
+    /// Pictures stage into `<work_dir>/<image_output_dir>/office/` and links
+    /// rewrite to those relative paths, so the ingest pipeline's
+    /// `stage_images` pass promotes them to `okf-asset://` like PDF figures.
+    fn convert_office_staged(&self, path: &Path, work_dir: &Path) -> Result<String> {
+        use office_oxide::Document;
+        let doc =
+            Document::open(path).map_err(|e| BobineError::OfficeOxide(format!("open: {e}")))?;
+        let md = doc.to_markdown();
+        if !self.config.render.extract_images {
+            return Ok(md);
+        }
+        let images = {
+            let ir_images = crate::office_images::collect_office_images(&doc.to_ir());
+            if ir_images.is_empty() {
+                // pptx/xlsx drawings never reach the IR — scan package media.
+                crate::office_images::collect_package_images(path)
+            } else {
+                ir_images
+            }
+        };
+        if images.is_empty() {
+            return Ok(md);
+        }
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("document");
+        let dest = work_dir.join(&self.config.render.image_output_dir).join("office");
+        crate::office_images::splice_office_images(&md, &images, &dest, stem)
     }
 }
 

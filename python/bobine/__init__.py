@@ -23,6 +23,8 @@ from bobine._native import (
     ModelPrecision,
     convert_to_markdown,
     ConvertedDocument,
+    ExcelDocument,
+    convert_excel,
     ingest_document,
     convert_directory,
 )
@@ -35,6 +37,8 @@ __all__ = [
     "ModelPrecision",
     "convert_to_markdown",
     "ConvertedDocument",
+    "ExcelDocument",
+    "convert_excel",
     "ingest_document",
     "convert_directory",
 ]

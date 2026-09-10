@@ -1,9 +1,11 @@
 // Integration tests for bobine_rs.
 //
-// NOTE: PDF tests are skipped due to a stack buffer overrun in pdf_oxide
-// 0.3.77 on these specific arXiv PDFs. The Python pdf_oxide bindings work
-// fine — the bug is in the Rust crate's rendering pipeline. Re-enable
-// after upgrading pdf_oxide.
+// NOTE (stale since pdf_oxide 0.3.78): an earlier header claimed PDF tests
+// were skipped for a stack buffer overrun in pdf_oxide 0.3.77's rendering
+// pipeline. The tests were never #[ignore]d, and all 7 pass on 0.3.78 with
+// ORT_DYLIB_PATH set (pdf_fast_path_full_paper takes ~2 min in debug).
+// Requires a modern onnxruntime (>=1.19); without ORT_DYLIB_PATH the lib
+// test binary aborts (STATUS_STACK_BUFFER_OVERRUN).
 
 use std::path::PathBuf;
 
@@ -74,7 +76,7 @@ fn missing_file_errors() {
 }
 
 // ======================================================================
-// PDF tests (skipped — pdf_oxide 0.3.77 stack overflow on these files)
+// PDF tests (pdf_oxide 0.3.78 — green with ORT_DYLIB_PATH set)
 // ======================================================================
 // PDF conversion (fast path through pdf_oxide)
 //

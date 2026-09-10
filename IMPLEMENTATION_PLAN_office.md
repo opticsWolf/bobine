@@ -31,6 +31,10 @@ tests at all; legacy: `FakeOffice` mock only). Everything below needs fixtures.
   - Legacy (if `create` supports them; else check in minimal hand-built files
     and document provenance): `legacy.doc`, `legacy.xls` (2 sheets, mixed
     types), `legacy.ppt`.
+- **Outcome (v0.5.1): `create_from_ir` supports Docx/Xlsx/Pptx only — no
+  legacy writers exist in 0.1.8, so no legacy fixtures. Deferred until
+  real-world samples are available; `tests/test_office.rs` takes new
+  fixtures with zero harness changes.**
 - Harness: `tests/test_office.rs` with helpers `assert_contains_in_order(md,
   &[…])`. Gate 1 test per format: convert succeeds, key content present in
   order, no `panic!` on any fixture (fuzz-adjacent smoke).
@@ -48,6 +52,13 @@ tests at all; legacy: `FakeOffice` mock only). Everything below needs fixtures.
 - Drive-bys from the review: `convert_office(&self)` → associated function
   (uses no `self`/config/work_dir); fix legacy `convert_office` docstring
   ("DOCX/XLSX/PPTX" → all six).
+- **Outcome (v0.5.2): both drive-bys done. Upstream rendering gaps logged
+  for office_oxide (no in-tree workarounds): footnote bodies dropped,
+  hyperlink URLs dropped (text kept), formula cells render empty, pptx
+  bullets lose `-` markers, pptx tables are TSV not GFM, pptx images
+  dropped silently. `tests/test_office.rs` pins the must-hold subset
+  (GFM tables docx/xlsx, sheet/slide `##` boundaries, typed
+  date/percent cells, image alt text).**
 - Acceptance: per-format assertions green; no `#[ignore]` left behind.
 
 ## Phase 2 — Excel multi-format export (csv / json / md)
@@ -98,6 +109,16 @@ pub fn excel_to_json(doc: &ExcelDocument) -> serde_json::Value;
   module; json schema asserted field-by-field in tests; md contains one GFM
   table per non-empty sheet with `## Sheet:` headers; empty sheets/rows don't
   crash and don't emit phantom tables.
+- **Outcome (v0.5.3): `src/excel.rs` (`convert_excel`/`sheets_to_csv`/
+  `excel_to_json`/`sheets_to_markdown`) + `tests/test_excel.rs` (6 green)
+  + pipeline siblings (`<stem>.<sheet>.csv`, `<stem>.json`,
+  `ConvertedDocument.data_files`) + `convert_excel`/`ExcelDocument` PyO3
+  bindings. JSON mapping pinned: ints stay ints, dates ISO, errors →
+  display text + `null`, formulas `=…` kept + never evaluated, interior
+  empty rows preserved (row alignment), image-only sheets noted
+  `_(empty sheet)_`. xls path implemented against
+  `XlsDocument.sheets[].{name, rows}` — no legacy fixture exists yet, so
+  the xls branch is unit-covered only until samples arrive.**
 
 ## Phase 3 — Pictures exported/extracted
 
@@ -130,6 +151,18 @@ by `convert_docx` (2 sites), `convert_xlsx` (drawings), legacy `doc/images.rs`
   (hash compare staged file vs source); md links resolve to staged files;
   decorative images excluded; `data: None` case covered by a linked-image
   fixture; legacy formats: whatever the spikes prove, asserted.
+- **Outcome (v0.5.4): `src/office_images.rs` (`collect_office_images` IR walk
+  incl. table/textbox/note nesting, `collect_package_images` `*/media/*`
+  fallback, `splice_office_images` positional rewrite + gallery) +
+  `convert_office_staged` dispatcher (honors `extract_images`) +
+  `stage_images_as_okf_assets` work-dir-relative resolution (one new
+  candidate) + 9 `test_office` green incl. 16×16 pixel-exact round-trip and
+  `okf-asset://` promotion. Measured: docx IR carries image+alt (rId link
+  rewritten); pptx IR carries the image but drops alt (upstream gap logged)
+  and `to_markdown` drops the link (gallery); xlsx drawing via package scan.
+  Legacy spike blocked — no doc/xls/ppt fixtures exist (no writers in
+  0.1.8); the walk is format-agnostic over IR so coverage lands with
+  fixtures.**
 
 ## Phase 4 — Bindings, pipeline UX, docs
 
@@ -144,6 +177,14 @@ by `convert_docx` (2 sites), `convert_xlsx` (drawings), legacy `doc/images.rs`
   (`legacy/`). Only fix its `convert_office` docstring (Phase 1 drive-by).
 - Acceptance: `cargo test` full suite green incl. new `test_office` +
   `test_excel`; `maturin develop` smoke on the Python side; docs build clean.
+- **Outcome (v0.5.5): bindings were already additive-complete from Phase 2
+  (`convert_excel`/`ExcelDocument`/`data_files` + `.pyi` + shim) — Phase 4
+  verified them with a live `maturin develop` smoke (typed JSON values,
+  staged docx links, csv/json siblings, `okf-asset://` promotion all OK).
+  `tests/golden/office/` pins all three fixtures byte-stable (content-hash
+  staged links make goldens deterministic). Docs (README/quickref/
+  architecture office sections) current. Full suite: 128 lib + 10 office +
+  6 excel green.**
 
 ## Test matrix (acceptance summary)
 
