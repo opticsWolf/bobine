@@ -192,6 +192,38 @@ fn office_images_respect_extract_images_off() {
     assert!(!work.join("assets").exists(), "no asset dir");
 }
 
+fn normalize(md: &str) -> String {
+    md.replace("\r\n", "\n")
+        .lines()
+        .map(|l| l.trim_end())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+        + "\n"
+}
+
+/// Golden regression for the three OOXML fixtures (deterministic: no models,
+/// content-hash staged image links). Regenerate after an *intentional* output
+/// change: `BOBINE_UPDATE_GOLDENS=1 cargo test --test test_office office_golden`.
+#[test]
+fn office_golden_files() {
+    let golden_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("golden").join("office");
+    std::fs::create_dir_all(&golden_dir).expect("golden dir");
+    let update = std::env::var("BOBINE_UPDATE_GOLDENS").is_ok();
+    for (name, stem) in [("basic.docx", "basic"), ("types.xlsx", "types"), ("deck.pptx", "deck")] {
+        let md = normalize(&convert_office(name, &format!("golden_{stem}")));
+        let golden_path = golden_dir.join(format!("{stem}.golden.md"));
+        if update || !golden_path.exists() {
+            std::fs::write(&golden_path, &md).expect("write golden");
+            continue;
+        }
+        let expected = normalize(&std::fs::read_to_string(&golden_path).expect("read golden"));
+        assert_eq!(expected, md, "{name} golden mismatch");
+    }
+}
+
 #[test]
 fn ingest_promotes_office_images_to_asset_store() {
     let out = std::env::temp_dir().join("bobine_test").join("office_ingest");

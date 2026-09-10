@@ -177,6 +177,14 @@ by `convert_docx` (2 sites), `convert_xlsx` (drawings), legacy `doc/images.rs`
   (`legacy/`). Only fix its `convert_office` docstring (Phase 1 drive-by).
 - Acceptance: `cargo test` full suite green incl. new `test_office` +
   `test_excel`; `maturin develop` smoke on the Python side; docs build clean.
+- **Outcome (v0.5.5): bindings were already additive-complete from Phase 2
+  (`convert_excel`/`ExcelDocument`/`data_files` + `.pyi` + shim) — Phase 4
+  verified them with a live `maturin develop` smoke (typed JSON values,
+  staged docx links, csv/json siblings, `okf-asset://` promotion all OK).
+  `tests/golden/office/` pins all three fixtures byte-stable (content-hash
+  staged links make goldens deterministic). Docs (README/quickref/
+  architecture office sections) current. Full suite: 128 lib + 10 office +
+  6 excel green.**
 
 ## Test matrix (acceptance summary)
 
