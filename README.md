@@ -165,10 +165,11 @@ provider-gated batching, byte-identical tensors on CPU (v0.4.28, see
 
 `.docx` / `.xlsx` / `.pptx` plus legacy `.doc` / `.xls` / `.ppt` convert to
 markdown via `office_oxide` (`conv.convert_office(path)` or the `convert()`
-dispatcher — no models needed). Today that is one markdown string per
-document and embedded pictures are dropped; the
-[**Office export plan**](IMPLEMENTATION_PLAN_office.md) tracks per-sheet
-Excel csv/json export and picture extraction.
+dispatcher — no models needed). Excel workbooks additionally export per-sheet
+csv/json (`convert_excel`, `<stem>.<sheet>.csv` + `<stem>.json` siblings).
+Embedded pictures stage into `<work_dir>/assets/office/` and rewrite to staged
+files, promoted to `okf-asset://` by `ingest_document` — details in the
+[**Office export plan**](IMPLEMENTATION_PLAN_office.md).
 
 ## Output contract
 

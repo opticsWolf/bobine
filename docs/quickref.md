@@ -69,8 +69,10 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 
 `.docx` / `.xlsx` / `.pptx` + legacy `.doc` / `.xls` / `.ppt` → markdown via
 `office_oxide` (`convert_office`, or `convert()` by extension). No models
-needed. Embedded pictures are dropped (tracked in
-[IMPLEMENTATION_PLAN_office.md](../IMPLEMENTATION_PLAN_office.md)).
+needed. Embedded pictures stage into `<work_dir>/assets/office/` with content-hash
+names and links rewrite to the staged files (unreferenced ones gallery-appended,
+like PDF figures); `ingest_document` promotes them to `okf-asset://`.
+`extract_images: false` leaves the upstream markdown untouched.
 
 Excel workbooks (`.xls` / `.xlsx`) additionally export structured data:
 

@@ -127,6 +127,89 @@ fn pptx_converts_slides_in_order() {
 }
 
 #[test]
+fn docx_pictures_stage_into_work_dir() {
+    let work = work_dir("docx_img");
+    let _ = std::fs::remove_dir_all(&work);
+    std::fs::create_dir_all(&work).expect("work dir");
+    let cfg = bobine::ConverterConfig::default();
+    let mut conv = bobine::HybridConverter::new(cfg, &work.join("cache"));
+    let md = conv.convert(&fixture("basic.docx"), &work).expect("convert");
+    // Relationship-id link rewritten to the staged file.
+    assert!(!md.contains("(rId"), "rId link remains:\n{md}");
+    assert!(md.contains("assets/office/img_"), "staged link:\n{md}");
+    assert!(md.contains("red-green checkerboard fixture"), "alt kept:\n{md}");
+    // Staged bytes decode to the 16×16 checkerboard the generator wrote.
+    let staged: Vec<_> = std::fs::read_dir(work.join("assets").join("office"))
+        .expect("office asset dir")
+        .collect::<Result<_, _>>()
+        .expect("read dir");
+    assert_eq!(staged.len(), 1);
+    let bytes = std::fs::read(staged[0].path()).expect("read staged");
+    let img = image::load_from_memory(&bytes).expect("staged decodes");
+    assert_eq!((img.width(), img.height()), (16, 16));
+    let rgb = img.to_rgb8();
+    assert_eq!(*rgb.get_pixel(0, 0), image::Rgb([200, 30, 30]));
+    assert_eq!(*rgb.get_pixel(1, 0), image::Rgb([30, 160, 30]));
+}
+
+#[test]
+fn pptx_and_xlsx_pictures_land_in_gallery() {
+    // Both formats drop pictures from their markdown; staging appends them.
+    // (pptx IR images carry no alt text upstream — gallery links may be
+    // bare; xlsx falls back to the package media stem.)
+    for (name, work_name) in [("deck.pptx", "pptx_img"), ("types.xlsx", "xlsx_img")] {
+        let work = work_dir(work_name);
+        let _ = std::fs::remove_dir_all(&work);
+        std::fs::create_dir_all(&work).expect("work dir");
+        let cfg = bobine::ConverterConfig::default();
+        let mut conv = bobine::HybridConverter::new(cfg, &work.join("cache"));
+        let md = conv.convert(&fixture(name), &work).expect("convert");
+        assert!(md.contains("assets/office/img_"), "{name} gallery:\n{md}");
+        let staged: Vec<_> = std::fs::read_dir(work.join("assets").join("office"))
+            .expect("office asset dir")
+            .collect::<Result<_, _>>()
+            .expect("read dir");
+        assert_eq!(staged.len(), 1, "{name} staged count");
+        // Staged bytes are the generator's PNG (PNG magic + 16×16).
+        let bytes = std::fs::read(staged[0].path()).expect("read staged");
+        assert_eq!(&bytes[..8], &[137, 80, 78, 71, 13, 10, 26, 10], "{name} png magic");
+        let img = image::load_from_memory(&bytes).expect("staged decodes");
+        assert_eq!((img.width(), img.height()), (16, 16), "{name} dims");
+    }
+}
+
+#[test]
+fn office_images_respect_extract_images_off() {
+    let work = work_dir("docx_noimg");
+    let _ = std::fs::remove_dir_all(&work);
+    std::fs::create_dir_all(&work).expect("work dir");
+    let mut cfg = bobine::ConverterConfig::default();
+    cfg.render.extract_images = false;
+    let mut conv = bobine::HybridConverter::new(cfg, &work.join("cache"));
+    let md = conv.convert(&fixture("basic.docx"), &work).expect("convert");
+    // Upstream markdown untouched: rId link stays, nothing staged.
+    assert!(md.contains("(rId"), "untouched:\n{md}");
+    assert!(!work.join("assets").exists(), "no asset dir");
+}
+
+#[test]
+fn ingest_promotes_office_images_to_asset_store() {
+    let out = std::env::temp_dir().join("bobine_test").join("office_ingest");
+    let _ = std::fs::remove_dir_all(&out);
+    let doc = bobine::pipeline::ingest_document(
+        &fixture("basic.docx"),
+        &out,
+        None,
+        None,
+        &bobine::ProgressHooks::default(),
+    )
+    .expect("ingest docx");
+    assert_eq!(doc.image_count, 1, "one staged picture");
+    assert!(doc.md_text.contains("okf-asset://"), "promoted:\n{}", doc.md_text);
+    assert!(doc.md_text.contains("red-green checkerboard fixture"), "alt kept");
+}
+
+#[test]
 fn office_convert_never_panics_on_empty_docx() {
     // Minimal one-section, zero-element .docx must convert, not panic.
     let dir = work_dir("empty");

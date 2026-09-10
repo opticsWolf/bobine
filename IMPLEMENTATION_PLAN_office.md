@@ -151,6 +151,18 @@ by `convert_docx` (2 sites), `convert_xlsx` (drawings), legacy `doc/images.rs`
   (hash compare staged file vs source); md links resolve to staged files;
   decorative images excluded; `data: None` case covered by a linked-image
   fixture; legacy formats: whatever the spikes prove, asserted.
+- **Outcome (v0.5.4): `src/office_images.rs` (`collect_office_images` IR walk
+  incl. table/textbox/note nesting, `collect_package_images` `*/media/*`
+  fallback, `splice_office_images` positional rewrite + gallery) +
+  `convert_office_staged` dispatcher (honors `extract_images`) +
+  `stage_images_as_okf_assets` work-dir-relative resolution (one new
+  candidate) + 9 `test_office` green incl. 16×16 pixel-exact round-trip and
+  `okf-asset://` promotion. Measured: docx IR carries image+alt (rId link
+  rewritten); pptx IR carries the image but drops alt (upstream gap logged)
+  and `to_markdown` drops the link (gallery); xlsx drawing via package scan.
+  Legacy spike blocked — no doc/xls/ppt fixtures exist (no writers in
+  0.1.8); the walk is format-agnostic over IR so coverage lands with
+  fixtures.**
 
 ## Phase 4 — Bindings, pipeline UX, docs
 

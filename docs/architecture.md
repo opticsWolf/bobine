@@ -97,10 +97,10 @@ Routing signals (mirroring the Python heuristics):
 | Extension | Path |
 |---|---|
 | `.pdf` | `convert_pdf` |
-| `.docx .xlsx .pptx .doc .xls .ppt` | `office_oxide::Document::open().to_markdown()` (auto-detect) |
+| `.docx .xlsx .pptx .doc .xls .ppt` | `office_oxide` open → md + staged pictures (IR walk, package-media fallback) |
 | anything else | raw UTF-8 read |
 
-> Office TODO: Excel csv/json export + picture extraction — see
+> Office export (Excel csv/json, picture staging) ships — see
 > `IMPLEMENTATION_PLAN_office.md`.
 
 ---
