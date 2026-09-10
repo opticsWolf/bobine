@@ -66,6 +66,14 @@ fn docx_converts_with_structure_in_order() {
             "A claim needing citation",
         ],
     );
+    // GFM pipe table with header row + caption text.
+    assert!(md.contains("| Name | Qty | Price |"), "docx GFM header:\n{md}");
+    assert!(md.contains("Fixture inventory"), "docx caption:\n{md}");
+    // Embedded picture keeps its alt text (Phase 3 stages the bytes).
+    assert!(
+        md.contains("red-green checkerboard fixture"),
+        "docx image alt:\n{md}"
+    );
 }
 
 #[test]
@@ -84,6 +92,14 @@ fn xlsx_converts_all_sheets_with_typed_cells() {
             "Sheets",
         ],
     );
+    // Sheet boundaries + typed cells (date / percent render formatted).
+    assert!(md.contains("## Data"), "xlsx Data sheet:\n{md}");
+    assert!(md.contains("## Summary"), "xlsx Summary sheet:\n{md}");
+    assert!(
+        md.contains("| Item | Count | Price | In stock |"),
+        "xlsx GFM header:\n{md}"
+    );
+    assert!(md.contains("38%"), "xlsx percent:\n{md}");
 }
 
 #[test]
@@ -102,6 +118,12 @@ fn pptx_converts_slides_in_order() {
             "Q1",
         ],
     );
+    // Slide boundaries; bullets/table keep text (markers are upstream style).
+    assert!(md.contains("## Title slide"), "pptx slide 1:\n{md}");
+    assert!(md.contains("## Bullets and picture"), "pptx slide 2:\n{md}");
+    assert!(md.contains("## Numbers"), "pptx slide 3:\n{md}");
+    assert!(md.contains("Ship"), "pptx bullets:\n{md}");
+    assert!(md.contains("Revenue"), "pptx table:\n{md}");
 }
 
 #[test]
@@ -119,9 +141,5 @@ fn office_convert_never_panics_on_empty_docx() {
     };
     office_oxide::create::create_from_ir(&ir, office_oxide::DocumentFormat::Docx, &path)
         .expect("write empty docx");
-    let cfg = bobine::ConverterConfig::default();
-    let conv = bobine::HybridConverter::new(cfg, &dir.join("cache"));
-    let _ = conv
-        .convert_office(&path)
-        .expect("empty docx converts");
+    bobine::HybridConverter::convert_office(&path).expect("empty docx converts");
 }

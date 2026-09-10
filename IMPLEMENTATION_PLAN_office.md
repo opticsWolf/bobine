@@ -52,6 +52,13 @@ tests at all; legacy: `FakeOffice` mock only). Everything below needs fixtures.
 - Drive-bys from the review: `convert_office(&self)` → associated function
   (uses no `self`/config/work_dir); fix legacy `convert_office` docstring
   ("DOCX/XLSX/PPTX" → all six).
+- **Outcome (v0.5.2): both drive-bys done. Upstream rendering gaps logged
+  for office_oxide (no in-tree workarounds): footnote bodies dropped,
+  hyperlink URLs dropped (text kept), formula cells render empty, pptx
+  bullets lose `-` markers, pptx tables are TSV not GFM, pptx images
+  dropped silently. `tests/test_office.rs` pins the must-hold subset
+  (GFM tables docx/xlsx, sheet/slide `##` boundaries, typed
+  date/percent cells, image alt text).**
 - Acceptance: per-format assertions green; no `#[ignore]` left behind.
 
 ## Phase 2 — Excel multi-format export (csv / json / md)

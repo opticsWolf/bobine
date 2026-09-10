@@ -822,7 +822,7 @@ class HybridConverter:
         return "\n\n---\n\n".join(md_blocks)
 
     def convert_office(self, path: Path) -> str:
-        """Convert a DOCX/XLSX/PPTX to markdown via office_oxide."""
+        """Convert a DOCX/XLSX/PPTX (or legacy DOC/XLS/PPT) to markdown via office_oxide."""
         if OfficeDocument is None:
             raise RuntimeError("office_oxide is not installed; cannot convert Office files.")
         with OfficeDocument.open(str(path)) as doc:

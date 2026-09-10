@@ -911,7 +911,7 @@ impl HybridConverter {
             .to_lowercase();
         match ext.as_str() {
             "pdf" => self.convert_pdf(input, work_dir),
-            "docx" | "xlsx" | "pptx" | "doc" | "xls" | "ppt" => self.convert_office(input),
+            "docx" | "xlsx" | "pptx" | "doc" | "xls" | "ppt" => Self::convert_office(input),
             _ => std::fs::read_to_string(input).map_err(BobineError::Io),
         }
     }
@@ -1231,7 +1231,10 @@ impl HybridConverter {
         pdf.extract_image_files(index, &out_dir, "img")
     }
 
-    pub fn convert_office(&self, path: &Path) -> Result<String> {
+    /// Convert an Office document to markdown via office_oxide.
+    ///
+    /// Associated function: uses no converter state, config, or models.
+    pub fn convert_office(path: &Path) -> Result<String> {
         use office_oxide::Document;
         let doc =
             Document::open(path).map_err(|e| BobineError::OfficeOxide(format!("open: {e}")))?;
