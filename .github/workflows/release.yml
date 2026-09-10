@@ -65,7 +65,7 @@ jobs:
             target: x86_64
           - runner: windows-latest
             target: x64
-          - runner: macos-26
+          - runner: macos-latest
             target: aarch64
     runs-on: ${{ matrix.platform.runner }}
     permissions:
