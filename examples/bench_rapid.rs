@@ -54,7 +54,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    let cache = std::env::temp_dir().join("bobine_test").join("cache");
+    // Persistent model cache: set BOBINE_CACHE_DIR (e.g. ~/.cache/bobine)
+    // so downloads survive reboots; temp-dir cache is wiped by the OS.
+    let cache = std::env::var_os("BOBINE_CACHE_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("bobine_test").join("cache"));
     let layout_path = cache.join("doclayout_yolo_docstructbench_imgsz1024.onnx");
     let det_path = cache.join("PP-OCRv4/ch_PP-OCRv4_det_infer.onnx");
     let rec_path = cache.join("PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx");

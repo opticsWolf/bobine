@@ -16,7 +16,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(tracing::Level::WARN)
         .init();
 
-    let cache = std::env::temp_dir().join("bobine_test").join("cache");
+    // Persistent model cache: set BOBINE_CACHE_DIR (e.g. ~/.cache/bobine)
+    // so downloads survive reboots; temp-dir cache is wiped by the OS.
+    let cache = std::env::var_os("BOBINE_CACHE_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("bobine_test").join("cache"));
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let int8 = args.iter().position(|a| a == "--int8");
     if let Some(pos) = int8 {

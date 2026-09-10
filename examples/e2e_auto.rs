@@ -22,7 +22,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .display()
             .to_string()
     });
-    let cache = std::env::temp_dir().join("bobine_test").join("cache");
+    // Persistent model cache: set BOBINE_CACHE_DIR (e.g. ~/.cache/bobine)
+    // so downloads survive reboots; temp-dir cache is wiped by the OS.
+    let cache = std::env::var_os("BOBINE_CACHE_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("bobine_test").join("cache"));
 
     // No set_layout_model / set_ocr_models / set_table_model calls:
     // everything must resolve via auto-download or fail loudly here.
