@@ -168,6 +168,11 @@ bobine.ConverterConfig(
 bobine.ConverterConfig(
     encoder_ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
 
+# macOS (Apple Silicon): opt into the Neural Engine via CoreML.
+# Needs a CoreML-enabled onnxruntime dylib in ORT_DYLIB_PATH;
+# falls back to CPU otherwise (CUDA entries stay dormant on mac).
+bobine.ConverterConfig(ort_providers=["coreml", "CPUExecutionProvider"])
+
 # ingest with lint + progress + cancellation callbacks
 bobine.ingest_document("paper.pdf", "out/",
                        lint_callback=lambda md: (True, md.strip() + "\n"),
