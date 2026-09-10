@@ -69,9 +69,21 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 
 `.docx` / `.xlsx` / `.pptx` + legacy `.doc` / `.xls` / `.ppt` → markdown via
 `office_oxide` (`convert_office`, or `convert()` by extension). No models
-needed. Current scope: one markdown string per document; embedded pictures
-are dropped. Per-sheet Excel csv/json + picture extraction are tracked in
-[IMPLEMENTATION_PLAN_office.md](../IMPLEMENTATION_PLAN_office.md).
+needed. Embedded pictures are dropped (tracked in
+[IMPLEMENTATION_PLAN_office.md](../IMPLEMENTATION_PLAN_office.md)).
+
+Excel workbooks (`.xls` / `.xlsx`) additionally export structured data:
+
+```python
+doc = bobine.convert_excel("book.xlsx")
+doc.markdown          # ## {sheet} sections + GFM tables
+doc.sheet_names       # ['Data', 'Summary']
+doc.csv_by_sheet      # {'Data': 'Item,Count,...\n', ...} (empty sheets skipped)
+import json; data = json.loads(doc.json)  # typed values, formulas kept
+```
+
+`ingest_document` on a workbook also writes `<stem>.<sheet>.csv` siblings +
+`<stem>.json` next to the `.md` (see `ConvertedDocument.data_files`).
 
 ## ConverterConfig fields
 

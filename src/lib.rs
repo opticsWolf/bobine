@@ -8,6 +8,7 @@ pub mod converter;
 pub mod documents;
 pub mod engine;
 pub mod error;
+pub mod excel;
 pub mod pdf_source;
 pub mod pipeline;
 pub mod rapid_layout;
@@ -26,6 +27,7 @@ pub use config::{
 pub use converter::{HybridConverter, ProgressHooks};
 pub use engine::OnnxEngine;
 pub use error::BobineError;
+pub use excel::{CellData, CellJson, ExcelDocument, SheetData, convert_excel, excel_to_json, sheets_to_csv, sheets_to_markdown};
 pub use pipeline::{ConvertedDocument, LintOutcome};
 pub use rapid_table::RapidTable;
 pub use tables::html_tables_to_gfm;

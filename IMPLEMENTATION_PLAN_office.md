@@ -109,6 +109,16 @@ pub fn excel_to_json(doc: &ExcelDocument) -> serde_json::Value;
   module; json schema asserted field-by-field in tests; md contains one GFM
   table per non-empty sheet with `## Sheet:` headers; empty sheets/rows don't
   crash and don't emit phantom tables.
+- **Outcome (v0.5.3): `src/excel.rs` (`convert_excel`/`sheets_to_csv`/
+  `excel_to_json`/`sheets_to_markdown`) + `tests/test_excel.rs` (6 green)
+  + pipeline siblings (`<stem>.<sheet>.csv`, `<stem>.json`,
+  `ConvertedDocument.data_files`) + `convert_excel`/`ExcelDocument` PyO3
+  bindings. JSON mapping pinned: ints stay ints, dates ISO, errors →
+  display text + `null`, formulas `=…` kept + never evaluated, interior
+  empty rows preserved (row alignment), image-only sheets noted
+  `_(empty sheet)_`. xls path implemented against
+  `XlsDocument.sheets[].{name, rows}` — no legacy fixture exists yet, so
+  the xls branch is unit-covered only until samples arrive.**
 
 ## Phase 3 — Pictures exported/extracted
 

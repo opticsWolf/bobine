@@ -70,6 +70,9 @@ pub struct ConvertedDocument {
     pub image_dir: PathBuf,
     pub image_count: usize,
     pub page_count: usize,
+    /// Sibling data files (Excel: one `.csv` per non-empty sheet + one
+    /// `.json` workbook dump). Empty for PDF/text/Office-word.
+    pub data_files: Vec<PathBuf>,
 }
 
 /// Convert a single document to a markdown string.
@@ -146,6 +149,9 @@ pub fn ingest_document(
     let md_path = output_dir.join(format!("{stem}.md"));
     std::fs::write(&md_path, &md)?;
 
+    // Excel workbooks: per-sheet CSV siblings + JSON dump.
+    let data_files = write_excel_siblings(path, output_dir, stem);
+
     // Stage images: move loose files, rewrite links, copy bytes into _assets.
     let (md_text, image_count) = stage_images(&md, path, output_dir, stem)?;
     std::fs::write(&md_path, &md_text)?;
@@ -176,7 +182,50 @@ pub fn ingest_document(
         md_path,
         image_count,
         page_count,
+        data_files,
     })
+}
+
+/// Write `<stem>.<sheet>.csv` per non-empty sheet plus `<stem>.json` for
+/// `.xls`/`.xlsx` inputs. Best-effort: conversion already succeeded via
+/// `convert_to_markdown`; a sibling failure warns instead of aborting the
+/// ingest. Returns the written paths.
+fn write_excel_siblings(path: &Path, output_dir: &Path, stem: &str) -> Vec<PathBuf> {
+    let ext = ext_of(path);
+    if ext != "xls" && ext != "xlsx" {
+        return Vec::new();
+    }
+    let doc = match crate::excel::convert_excel(path) {
+        Ok(d) => d,
+        Err(e) => {
+            warn!("excel siblings skipped for {}: {e}", path.display());
+            return Vec::new();
+        }
+    };
+    let mut written = Vec::new();
+    for (sheet, csv_text) in crate::excel::sheets_to_csv(&doc) {
+        let csv_path = output_dir.join(format!("{stem}.{}.csv", sanitize_sheet(&sheet)));
+        match std::fs::write(&csv_path, csv_text) {
+            Ok(()) => written.push(csv_path),
+            Err(e) => warn!("csv sibling failed for {sheet}: {e}"),
+        }
+    }
+    let json_path = output_dir.join(format!("{stem}.json"));
+    match std::fs::write(&json_path, serde_json::to_string_pretty(&crate::excel::excel_to_json(&doc)).unwrap_or_default()) {
+        Ok(()) => written.push(json_path),
+        Err(e) => warn!("json sibling failed: {e}"),
+    }
+    written
+}
+
+/// Sheet names become filename segments: keep alnum/`-`/`_`, fold the rest.
+fn sanitize_sheet(name: &str) -> String {
+    let clean: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let clean = clean.trim_matches('_').to_string();
+    if clean.is_empty() { "sheet".to_string() } else { clean }
 }
 
 /// Batch-convert every supported document in `source_dir` (recursive).
