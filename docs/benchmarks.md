@@ -62,6 +62,36 @@ OCR slots (measured here at 12.8× / 3.6×), while table recognition stays pinne
 to CPU — SLANet's graph fragments across devices and measures **2–9× slower on
 CUDA** (here: 1.7× slower at 700×400, 6.7× slower at 1024×1024).
 
+### OCR recognition batching (v0.4.28)
+
+`detect_and_recognize` used to run one rec session per detected line. It now
+preprocesses all line crops once and recognizes them in chunks of 32
+(width-bucketed, zero-padded to the chunk max — exactly what PaddleOCR's own
+batch inference feeds), with the greedy CTC decode extracted verbatim per row.
+Box geometry is untouched, so positioning is preserved by construction.
+
+Batching is **provider-gated**: CPU-only sessions use chunk size 1, which is
+byte-identical to the old path (no padding possible). Rationale, measured on
+a dense 47-line page render (`BOB_PAGE_IMG`, release, RTX 3090):
+
+| | Per-line (baseline) | Batched (v0.4.28) |
+|---|---|---|
+| CPU det+rec | 1.02 s / 47 lines | 0.79 s / **47 lines exact** |
+| CUDA det+rec | 2.00 s / 47 lines | **0.32 s** / 46 lines |
+
+Unconditional batching was measured first and rejected: 6.3× faster on CUDA
+but **4.8× slower on CPU** (1.02 s → 4.90 s) — padding inflates attention
+FLOPs past any launch savings where compute, not launch overhead, dominates.
+Bucketing alone did not recover it, hence the gate.
+
+Caveat: padded context participates in attention, so one weak line in 47
+decoded to blank under batching on CUDA (46 vs 47 lines; the dropped line
+and the e2e diffs on `scanned_page`/`ruled_table` stay within normal OCR
+noise — e.g. `Batl B shows systematicaly` vs `Batll B shows sys tema ticaly`
+on the same hard table crop). The GPU baseline was verified self-consistent
+across processes, so the residual diffs are batching-attributable, not run
+noise.
+
 ## TexTeller formula OCR
 
 Per-image timing over 3 reps, min reported; fixture
