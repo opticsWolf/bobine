@@ -194,6 +194,121 @@ const DET_UNCLIP_RATIO: f32 = 1.6;
 const CROP_ROTATION_TOLERANCE: f32 = 0.05; // ≈ 2.9°
 const REC_IMG_H: u32 = 48;
 const REC_IMG_C: u32 = 3;
+/// Max recognition lines per session run. Batching turns N per-line runs
+/// into ceil(N / REC_BATCH) runs with zero-padded width — exactly what
+/// PaddleOCR's own batch inference feeds the model.
+const REC_BATCH: usize = 32;
+
+/// One line crop preprocessed for the rec model: `[3, 48, w]` normalized
+/// array (height → 48, aspect kept). `None` for degenerate crops — this is
+/// the size gate formerly inline in `recognize_text`.
+fn rec_input(crop: &DynamicImage) -> Option<Array3<f32>> {
+    let (h, w) = (crop.height(), crop.width());
+    if h < 4 || w < 4 {
+        return None;
+    }
+    let new_h = REC_IMG_H;
+    let ratio = new_h as f32 / h as f32;
+    let new_w = (w as f32 * ratio).round() as u32;
+    let resized =
+        image::imageops::resize(crop, new_w, new_h, image::imageops::FilterType::Triangle);
+    let mut rgb = image::RgbImage::new(new_w, new_h);
+    for y in 0..new_h {
+        for x in 0..new_w {
+            let p = resized.get_pixel(x, y);
+            rgb.put_pixel(x, y, image::Rgb([p.0[0], p.0[1], p.0[2]]));
+        }
+    }
+    // Normalize: (x/255 - 0.5) / 0.5
+    let mut arr = Array3::<f32>::zeros((REC_IMG_C as usize, new_h as usize, new_w as usize));
+    for y in 0..new_h as usize {
+        for x in 0..new_w as usize {
+            let p = rgb.get_pixel(x as u32, y as u32);
+            arr[[0, y, x]] = p.0[0] as f32 / 255.0 - 0.5;
+            arr[[1, y, x]] = p.0[1] as f32 / 255.0 - 0.5;
+            arr[[2, y, x]] = p.0[2] as f32 / 255.0 - 0.5;
+        }
+    }
+    Some(arr)
+}
+
+/// Recognition batch size for the given provider list: 1 (exact
+/// per-line path) on CPU-only sessions, `REC_BATCH` anywhere an
+/// accelerator may serve the rec session. Pure: unit-tested.
+fn rec_batch_size(providers: &[String]) -> usize {
+    let cpu_only = providers.iter().all(|p| {
+        let l = p.to_lowercase();
+        l == "cpu" || l == "cpuexecutionprovider"
+    });
+    if cpu_only {
+        1
+    } else {
+        REC_BATCH
+    }
+}
+
+/// Pad a set of `[3, 48, w]` rec inputs into one `[B, 3, 48, Wmax]` batch
+/// tensor (zeros beyond each row's width). Single-item batches get
+/// `Wmax == own width`, i.e. byte-identical input to the old per-line path.
+fn pad_rec_batch(items: &[Array3<f32>]) -> Array4<f32> {
+    let wmax = items
+        .iter()
+        .map(|a| a.shape()[2])
+        .max()
+        .unwrap_or(32)
+        .max(32);
+    let mut arr =
+        Array4::<f32>::zeros((items.len(), REC_IMG_C as usize, REC_IMG_H as usize, wmax));
+    for (r, a) in items.iter().enumerate() {
+        let w = a.shape()[2];
+        arr.slice_mut(ndarray::s![r, .., .., 0..w]).assign(a);
+    }
+    arr
+}
+
+/// Greedy CTC decode of one logit row `[T, C]` → `(text, avg_conf)`.
+/// `None` when nothing decodable. Pure function so the decode policy is
+/// unit-testable without a model; `characters` must already be charset-
+/// aligned (blank at index 0).
+fn ctc_greedy_decode(
+    row: ndarray::ArrayView2<'_, f32>,
+    characters: &[String],
+) -> Option<(String, f32)> {
+    let (timesteps, num_classes) = (row.shape()[0], row.shape()[1]);
+    let mut prev = num_classes; // blank
+    let mut text = String::new();
+    let mut total_conf = 0.0f32;
+    let mut count = 0u32;
+    for t in 0..timesteps {
+        let mut best_idx = 0usize;
+        let mut best_val = f32::NEG_INFINITY;
+        for c in 0..num_classes {
+            let v = row[[t, c]];
+            if v > best_val {
+                best_val = v;
+                best_idx = c;
+            }
+        }
+        if best_idx != prev && best_idx < characters.len() {
+            let ch = &characters[best_idx];
+            if ch != " " || !text.ends_with(' ') {
+                text.push_str(ch);
+            }
+            total_conf += best_val;
+            count += 1;
+        }
+        prev = best_idx;
+    }
+    if text.trim().is_empty() {
+        return None;
+    }
+    let avg_conf = if count > 0 {
+        total_conf / count as f32
+    } else {
+        0.0
+    };
+    Some((text.trim().to_string(), avg_conf))
+}
 
 /// A detected text region.
 #[derive(Debug, Clone)]
@@ -212,6 +327,11 @@ pub struct RapidOcr {
     characters: Vec<String>,
     /// Whether `characters` has been aligned to the model's class count.
     charset_aligned: bool,
+    /// Recognition lines per session run. Batching pays off where kernel
+    /// launch overhead dominates (accelerators); on CPU the padding FLOPs
+    /// tax exceeds the savings, so CPU-only sessions use 1 — which is
+    /// exactly the historical per-line path (no padding possible).
+    rec_batch: usize,
 }
 
 /// CTC charset fallback when the rec model has no `character` metadata.
@@ -322,6 +442,7 @@ impl RapidOcr {
             rec_session,
             characters,
             charset_aligned: false,
+            rec_batch: rec_batch_size(providers),
         })
     }
 
@@ -333,17 +454,22 @@ impl RapidOcr {
             return Ok(vec![]);
         }
 
-        // 2. Text recognition per box
+        // 2. Text recognition, batched: one session run per REC_BATCH
+        // lines instead of one per line (identical per-row decode).
+        let (job_idx, job_crops): (Vec<usize>, Vec<DynamicImage>) = boxes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, b)| self.crop_box(img, b).map(|c| (i, c)))
+            .unzip();
+        let results = self.batch_recognize(&job_crops)?;
         let mut lines: Vec<OcrLine> = Vec::new();
-        for bbox in &boxes {
-            if let Some(crop) = self.crop_box(img, bbox) {
-                if let Some((text, conf)) = self.recognize_text(&crop)? {
-                    lines.push(OcrLine {
-                        box_points: *bbox,
-                        text,
-                        confidence: conf,
-                    });
-                }
+        for (k, r) in results.into_iter().enumerate() {
+            if let Some((text, conf)) = r {
+                lines.push(OcrLine {
+                    box_points: boxes[job_idx[k]],
+                    text,
+                    confidence: conf,
+                });
             }
         }
 
@@ -515,112 +641,87 @@ impl RapidOcr {
     // ------------------------------------------------------------------
 
     fn recognize_text(&mut self, crop: &DynamicImage) -> Result<Option<(String, f32)>> {
-        let (h, w) = (crop.height(), crop.width());
-        if h < 4 || w < 4 {
-            return Ok(None);
+        // Single-item batch: no padding possible (Wmax == own width), so
+        // this is exactly the historical per-line path.
+        Ok(self
+            .batch_recognize(std::slice::from_ref(crop))?
+            .into_iter()
+            .next()
+            .flatten())
+    }
+
+    /// Align the decode charset with the model's output classes once.
+    /// PaddleOCR exports vary in whether the metadata charset includes the
+    /// leading blank class and/or trailing space class. Takes the fields
+    /// explicitly (rather than `&mut self`) so it can run while a session
+    /// output borrow is live.
+    fn align_charset(characters: &mut Vec<String>, aligned: &mut bool, num_classes: usize) {
+        if *aligned {
+            return;
         }
-
-        // Resize: height → 48, width preserves aspect ratio
-        let new_h = REC_IMG_H;
-        let ratio = new_h as f32 / h as f32;
-        let new_w = (w as f32 * ratio).round() as u32;
-
-        let resized =
-            image::imageops::resize(crop, new_w, new_h, image::imageops::FilterType::Triangle);
-        let mut rgb = image::RgbImage::new(new_w, new_h);
-        for y in 0..new_h {
-            for x in 0..new_w {
-                let p = resized.get_pixel(x, y);
-                rgb.put_pixel(x, y, image::Rgb([p.0[0], p.0[1], p.0[2]]));
-            }
+        let l = characters.len();
+        if num_classes == l + 2 {
+            characters.insert(0, String::new()); // blank
+            characters.push(" ".to_string()); // space
+        } else if num_classes == l + 1 {
+            characters.insert(0, String::new()); // blank
         }
+        *aligned = true;
+    }
 
-        // Normalize: (x/255 - 0.5) / 0.5, shape [1, 3, 48, W]
-        let max_w = new_w.max(32) as usize;
-        let mut arr = Array4::<f32>::zeros((1, 3, new_h as usize, max_w));
-        for y in 0..new_h as usize {
-            for x in 0..new_w as usize {
-                let p = rgb.get_pixel(x as u32, y as u32);
-                arr[[0, 0, y, x]] = p.0[0] as f32 / 255.0 - 0.5;
-                arr[[0, 1, y, x]] = p.0[1] as f32 / 255.0 - 0.5;
-                arr[[0, 2, y, x]] = p.0[2] as f32 / 255.0 - 0.5;
-            }
-        }
-
-        let input = ort::value::Tensor::from_array(arr)
-            .map_err(|e| BobineError::Ort(format!("rec input: {e}")))?;
-        let outputs = self
-            .rec_session
-            .run(inputs!["x" => input])
-            .map_err(|e| BobineError::Ort(format!("rec run: {e}")))?;
-
-        // Output: [1, T, num_classes] CTC log-probabilities. Paddle2ONNX
-        // names the softmax node differently across export versions
-        // (softmax_0.tmp_0, softmax_11.tmp_0, ...) - pick the first output
-        // whose name starts with "softmax", else the first output.
-        let logits_view = outputs
+    /// Recognize a batch of line crops → per-crop results aligned with the
+    /// input order. One session run per `rec_batch` chunk (32 on
+    /// accelerators, 1 on CPU where batching is exactly the old path);
+    /// the per-row greedy decode is unchanged.
+    fn batch_recognize(&mut self, crops: &[DynamicImage]) -> Result<Vec<Option<(String, f32)>>> {
+        let mut out: Vec<Option<(String, f32)>> = vec![None; crops.len()];
+        let prepped: Vec<Option<Array3<f32>>> = crops.iter().map(rec_input).collect();
+        let mut valid: Vec<usize> = prepped
             .iter()
-            .find(|(k, _)| k.starts_with("softmax"))
-            .or_else(|| outputs.iter().next())
-            .map(|(_, v)| v)
-            .ok_or_else(|| BobineError::Ort("rec model has no outputs".into()))?;
-        let logits = logits_view
-            .try_extract_array::<f32>()
-            .map_err(|e| BobineError::Ort(format!("rec output: {e}")))?;
-
-        // Greedy CTC decode. PaddleOCR exports vary in whether the metadata
-        // charset includes the leading blank class and/or trailing space
-        // class - align once using the actual output class count.
-        let num_classes = logits.shape()[2];
-        if !self.charset_aligned {
-            let l = self.characters.len();
-            if num_classes == l + 2 {
-                self.characters.insert(0, String::new()); // blank
-                self.characters.push(" ".to_string()); // space
-            } else if num_classes == l + 1 {
-                self.characters.insert(0, String::new()); // blank
+            .enumerate()
+            .filter_map(|(i, a)| a.as_ref().map(|_| i))
+            .collect();
+        // Bucket by width so padding inside each chunk is minimal: padded
+        // context participates in attention, so less padding means closer
+        // to single-line output. Index mapping keeps results aligned; the
+        // caller restores reading order afterwards.
+        valid.sort_by_key(|&i| prepped[i].as_ref().map(|a| a.shape()[2]).unwrap_or(0));
+        for chunk in valid.chunks(self.rec_batch) {
+            // Cloned into the padded batch (one memcpy per row — noise
+            // next to a session run).
+            let items: Vec<Array3<f32>> =
+                chunk.iter().map(|&i| prepped[i].clone().unwrap()).collect();
+            let input = ort::value::Tensor::from_array(pad_rec_batch(&items))
+                .map_err(|e| BobineError::Ort(format!("rec input: {e}")))?;
+            let outputs = self
+                .rec_session
+                .run(inputs!["x" => input])
+                .map_err(|e| BobineError::Ort(format!("rec run: {e}")))?;
+            // Output: [B, T, num_classes] CTC log-probabilities.
+            // Paddle2ONNX names the softmax node differently across export
+            // versions (softmax_0.tmp_0, softmax_11.tmp_0, ...) - pick the
+            // first output whose name starts with "softmax", else the
+            // first output.
+            let logits_view = outputs
+                .iter()
+                .find(|(k, _)| k.starts_with("softmax"))
+                .or_else(|| outputs.iter().next())
+                .map(|(_, v)| v)
+                .ok_or_else(|| BobineError::Ort("rec model has no outputs".into()))?;
+            let logits = logits_view
+                .try_extract_array::<f32>()
+                .map_err(|e| BobineError::Ort(format!("rec output: {e}")))?;
+            // Greedy CTC decode. PaddleOCR exports vary in whether the
+            // metadata charset includes the leading blank class and/or
+            // trailing space class - align once using the actual output
+            // class count.
+            let num_classes = logits.shape()[2];
+            Self::align_charset(&mut self.characters, &mut self.charset_aligned, num_classes);
+            for (r, &i) in chunk.iter().enumerate() {
+                out[i] = ctc_greedy_decode(logits.slice(ndarray::s![r, .., ..]), &self.characters);
             }
-            self.charset_aligned = true;
         }
-        let (_batch, timesteps, num_classes) =
-            (logits.shape()[0], logits.shape()[1], logits.shape()[2]);
-
-        let mut prev = num_classes; // blank
-        let mut text = String::new();
-        let mut total_conf = 0.0f32;
-        let mut count = 0u32;
-
-        for t in 0..timesteps {
-            let mut best_idx = 0usize;
-            let mut best_val = f32::NEG_INFINITY;
-            for c in 0..num_classes {
-                let v = logits[[0, t, c]];
-                if v > best_val {
-                    best_val = v;
-                    best_idx = c;
-                }
-            }
-            if best_idx != prev && best_idx < self.characters.len() {
-                let ch = &self.characters[best_idx];
-                if ch != " " || !text.ends_with(' ') {
-                    text.push_str(ch);
-                }
-                total_conf += best_val;
-                count += 1;
-            }
-            prev = best_idx;
-        }
-
-        if text.trim().is_empty() {
-            return Ok(None);
-        }
-
-        let avg_conf = if count > 0 {
-            total_conf / count as f32
-        } else {
-            0.0
-        };
-        Ok(Some((text.trim().to_string(), avg_conf)))
+        Ok(out)
     }
 }
 
@@ -801,5 +902,63 @@ mod tests {
             white,
             total
         );
+    }
+
+    #[test]
+    fn rec_batch_size_splits_by_device() {
+        // CPU-only (including empty/default) → exact single-line path.
+        assert_eq!(rec_batch_size(&[]), 1);
+        assert_eq!(rec_batch_size(&["CPUExecutionProvider".into()]), 1);
+        assert_eq!(rec_batch_size(&["cpu".into()]), 1);
+        // Any accelerator in the mix → full batches.
+        assert_eq!(
+            rec_batch_size(&["CUDAExecutionProvider".into(), "CPUExecutionProvider".into()]),
+            REC_BATCH
+        );
+        assert_eq!(rec_batch_size(&["DirectML".into()]), REC_BATCH);
+    }
+
+    #[test]
+    fn rec_input_keeps_aspect_and_normalizes() {
+        let img = image::RgbImage::from_pixel(20, 10, image::Rgb([255, 255, 255]));
+        let crop = image::DynamicImage::ImageRgb8(img);
+        let a = rec_input(&crop).expect("valid crop");
+        assert_eq!(a.shape(), &[3, 48, 96]); // 20 * 48/10
+        assert!((a[[0, 0, 0]] - 0.5).abs() < 1e-6); // 255/255 - 0.5
+        let tiny = image::DynamicImage::ImageRgb8(image::RgbImage::new(2, 2));
+        assert!(rec_input(&tiny).is_none());
+    }
+
+    #[test]
+    fn pad_rec_batch_pads_to_max_width_with_zeros() {
+        let a = ndarray::Array3::<f32>::ones((3, 48, 40));
+        let b = ndarray::Array3::<f32>::ones((3, 48, 64)) * 2.0;
+        let batch = pad_rec_batch(&[a, b]);
+        assert_eq!(batch.shape(), &[2, 3, 48, 64]);
+        assert_eq!(batch[[0, 0, 0, 0]], 1.0);
+        assert_eq!(batch[[0, 0, 0, 40]], 0.0); // zero padding
+        assert_eq!(batch[[1, 2, 47, 63]], 2.0);
+    }
+
+    #[test]
+    fn ctc_greedy_decode_collapses_repeats_and_blanks() {
+        let chars = vec![
+            "".to_string(),
+            "a".to_string(),
+            "b".to_string(),
+            " ".to_string(),
+        ];
+        // frames: a a blank b b | space space a  →  "ab a"
+        let seq = [1usize, 1, 0, 2, 2, 3, 3, 1];
+        let mut logits = ndarray::Array2::<f32>::zeros((seq.len(), 4));
+        for (i, &c) in seq.iter().enumerate() {
+            logits[[i, c]] = 10.0;
+        }
+        let (text, conf) = ctc_greedy_decode(logits.view(), &chars).expect("decodes");
+        assert_eq!(text, "ab a");
+        assert!((conf - 10.0).abs() < 1e-3);
+        // all-blank decodes to nothing
+        let blank = ndarray::Array2::<f32>::zeros((4, 4));
+        assert!(ctc_greedy_decode(blank.view(), &chars).is_none());
     }
 }
