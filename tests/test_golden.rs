@@ -77,7 +77,15 @@ fn check_fixture(
 
     let expected = normalize(&std::fs::read_to_string(golden_path).unwrap());
     if expected != normalized {
-        mismatches.push(format!("{name}: {}", first_diff(&expected, &normalized)));
+        // Full actual (truncated) so CI logs capture platform-divergent
+        // output for small fixtures — first_diff alone can't show it.
+        const CAP: usize = 4000;
+        let shown = if normalized.len() > CAP {
+            format!("{}…<{} bytes total>", &normalized[..CAP], normalized.len())
+        } else {
+            normalized.clone()
+        };
+        mismatches.push(format!("{name}: {}\n--- actual ---\n{shown}", first_diff(&expected, &normalized)));
     }
 }
 

@@ -57,7 +57,11 @@ jobs:
           target: x86_64
           args: --release --out dist --find-interpreter --locked
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: auto
+          # 2_28 (AlmaLinux 8, OpenSSL 1.1.1): `auto` resolves to the
+          # CentOS 7-based manylinux2014 whose OpenSSL 1.0.2 predates what
+          # openssl-sys 0.9.117 accepts (needs 1.1.0+). glibc floor stays
+          # modest (2.28: Ubuntu 20.04+ / Debian 11+).
+          manylinux: 2_28
           # ort-sys build-deps on ureq/native-tls → openssl-sys needs the
           # headers inside the manylinux container (host apt won't reach it).
           before-script-linux: yum install -y openssl-devel
