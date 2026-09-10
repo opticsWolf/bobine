@@ -38,11 +38,11 @@ jobs:
       - name: Download onnxruntime (CPU — lib tests abort without a dylib)
         run: |
           curl -sL --max-time 300 -o /tmp/ort.tgz \
-            https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz
+            https://github.com/microsoft/onnxruntime/releases/download/v1.28.1/onnxruntime-linux-x64-1.28.1.tgz
           mkdir -p /tmp/ort && tar xzf /tmp/ort.tgz -C /tmp/ort
       - name: Run library unit tests (integration needs onnxruntime)
         env:
-          ORT_DYLIB_PATH: /tmp/ort/onnxruntime-linux-x64-1.22.0/lib/libonnxruntime.so.1.22.0
+          ORT_DYLIB_PATH: /tmp/ort/onnxruntime-linux-x64-1.28.1/lib/libonnxruntime.so.1.28.1
         run: cargo test --locked --lib
       - name: Publish to crates.io
         # Tags publish; manual dispatch is a dry-run (check + test only).
@@ -80,6 +80,10 @@ jobs:
           args: --release --out dist --locked --features extension-module
           manylinux: ${{ matrix.platform.manylinux || 'auto' }}
           sccache: true
+          # Linux wheels build in a manylinux container: ort-sys build-deps
+          # on ureq/native-tls → openssl-sys needs headers there (no-op on
+          # windows/macos runners).
+          before-script-linux: yum install -y openssl-devel
 
       - name: Upload wheels
         uses: actions/upload-artifact@v6
