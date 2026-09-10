@@ -50,11 +50,16 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | Symbol | Purpose |
 |---|---|
 | `HybridConverter(config, cache_dir)` | Direct converter: `convert()`, `convert_pdf()`, `recognize_formula()` |
+| `HybridConverter.convert_office(path)` | Office → markdown (associated fn, no staging; `convert()` stages) |
 | `convert_to_markdown(path, config, work_dir, cache_dir)` | Raw markdown string, one-shot |
+| `convert_excel(path)` | Workbook → `ExcelDocument`: `.markdown`, `.sheet_names`, `.csv_by_sheet`, `.json` |
+| `ingest_document(path, output_dir, ...)` | Staged bundle → `ConvertedDocument` (`.md_text`, `.data_files`, lint/hooks) |
+| `convert_directory(source_dir, output_dir, ...)` | Batch ingest |
 | `ConverterConfig` | Tuning knobs (see table below) |
 | `RoutingMode` | `Never` / `Auto` / `Surgical` / `Always` |
 | `FormulaBackend` | `TexTeller` (only backend) |
 | `ModelPrecision` | `Fp32` / `Fp16` (`*_fp16.onnx`, models deferred) |
+| `ModelQuantization` | `Int8` (default) / `Fp32` (formula weights) |
 
 ## RoutingMode
 
@@ -220,13 +225,14 @@ table model only disables scanned-table recognition.
 ## Testing
 
 ```bash
-cargo test                 # 121 unit + 9 integration tests
-ORT_DYLIB_PATH=... cargo test   # needed for the PDF integration tests
+cargo test                 # 128 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
+ORT_DYLIB_PATH=... cargo test --test test_converter   # incl. full-paper AUTO run
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```
 
 Fixtures: `tests/fixtures/` — CC BY 4.0 arXiv papers (attribution in
-`SOURCES.md`) + generated scanned page.
+`SOURCES.md`) + generated scanned page + generated OOXML fixtures
+(`examples/gen_office_fixtures.rs`).
 
 ## Benchmarks
 

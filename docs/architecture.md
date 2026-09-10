@@ -34,11 +34,16 @@ flows, and the non-obvious invariants.
 ```
 src/
 ├── lib.rs            crate root, re-exports
-├── config.rs         ConverterConfig, RoutingMode, FormulaBackend,
-│                     ModelPrecision, ModelQuantization
+├── config.rs         ConverterConfig (Routing/Render/Model/Text/Provider
+│                     option groups, #[serde(flatten)] — wire format unchanged),
+│                     RoutingMode, FormulaBackend, ModelPrecision,
+│                     ModelQuantization
 ├── error.rs          BobineError enum
 ├── engine.rs         OnnxEngine — lazy model manager (TexTeller/RapidLayout/RapidOCR)
-├── converter.rs      HybridConverter — core PDF/Office pipeline (~700 LOC)
+├── converter.rs      HybridConverter — core PDF/Office pipeline (~3.4 kLOC,
+│                     split into claim_ranks / assign_glyph_owners /
+│                     assign_region_lines / repair_seams / caption_block /
+│                     figure_block / text_block / table_block / math_blocks)
 │                     (internals generic over PdfSource)
 ├── pdf_source.rs     PdfSource trait: converter ↔ PDF backend seam;
 │                     pdf_oxide adapter + in-memory FakePdf test fakes
@@ -48,6 +53,10 @@ src/
 │                     polygon offset), rotation-aware crops, CTC decode
 ├── rapid_table.rs    RapidTable (SLANet-plus): scanned-table → HTML
 ├── tables.rs         HTML <table> → GFM pipe-table converter
+├── excel.rs          Excel export: convert_excel → ExcelDocument
+│                     (SheetData/CellData/CellJson) + csv/json/md renderers
+├── office_images.rs  Office picture staging: IR walk + package-media
+│                     fallback → positional splice + gallery
 ├── assets.rs         okf-asset:// staging store for unreferenced images
 ├── documents.rs      ConvertedDocument + YAML frontmatter (ingest layer)
 ├── pipeline.rs       ingest_document / convert_directory / progress hooks
@@ -58,8 +67,9 @@ legacy/               frozen pure-Python bobine v0.2.0 (reference implementation
 
 Dependency direction: `pipeline → converter → engine → (tex_teller |
 rapid_layout | rapid_ocr | rapid_table)`; `converter → tables`,
-`converter → pdf_source`; `documents/assets` sit beside the pipeline layer.
-No cycles.
+`converter → pdf_source`, `converter → excel | office_images`;
+`pipeline → excel` (workbook siblings); `documents/assets` sit beside the
+pipeline layer. No cycles.
 
 ---
 
@@ -97,11 +107,48 @@ Routing signals (mirroring the Python heuristics):
 | Extension | Path |
 |---|---|
 | `.pdf` | `convert_pdf` |
-| `.docx .xlsx .pptx .doc .xls .ppt` | `office_oxide` open → md + staged pictures (IR walk, package-media fallback) |
+| `.docx .xlsx .pptx .doc .xls .ppt` | `convert_office_staged` (md + staged pictures) |
 | anything else | raw UTF-8 read |
 
 > Office export (Excel csv/json, picture staging) ships — see
-> `IMPLEMENTATION_PLAN_office.md`.
+> `IMPLEMENTATION_PLAN_office.md` and §12.
+
+### Office conversion (`convert_office_staged`)
+
+```
+Document::open(path)                       ← office_oxide, magic-byte sniffed
+md = doc.to_markdown()                     ← upstream rendering (quirks logged
+                                              in IMPLEMENTATION_PLAN_office.md)
+if !extract_images: return md              ← knob respected, md untouched
+images = collect_office_images(doc.to_ir())
+if images.empty(): images = collect_package_images(path)
+return splice_office_images(md, images,    ← stage + positional rewrite +
+                            <work>/<image_output_dir>/office/, stem)   gallery
+```
+
+Pure `HybridConverter::convert_office(path)` (associated function — no
+state, config, or models) skips staging and returns the upstream markdown
+as-is; the dispatcher always stages. Staged links are work-dir-relative
+(`assets/office/img_<hash>.png`), so the ingest `stage_images` pass
+promotes them to `okf-asset://` with no pipeline changes (it gained one
+resolution candidate: work-dir-relative targets).
+
+### Excel export (`convert_excel`)
+
+```
+Document::open → as_xlsx / as_xls
+  per sheet: grid of CellData { text (formatted display),
+                                 value (typed: int/float/bool/text/null),
+                                 formula (=… cached, never evaluated) }
+  renderers: sheets_to_markdown (## {sheet} + GFM) · sheets_to_csv
+             (RFC-4180, empty sheets skipped) · excel_to_json
+pipeline: ingest writes <stem>.<sheet>.csv + <stem>.json siblings,
+          recorded in ConvertedDocument.data_files
+```
+
+Integer-valued floats stay integers in JSON (`12`, not `12.0`);
+dates/percents render as display text; errors keep text with `null` value;
+interior empty rows are preserved (row alignment matters for formulas).
 
 ---
 
@@ -247,28 +294,45 @@ as Python.
 
 ## 9. Version pinning philosophy
 
-Rust dependencies are locked in `Cargo.lock`. The one external binary
-contract is **onnxruntime itself**: `ort` 2.0-rc requires ≥1.19; a stale
-system DLL fails at session creation with a clear `BadVersion` error.
-Set `ORT_DYLIB_PATH` explicitly in CI/dev (e.g. the venv's
-`onnxruntime/capi/onnxruntime.dll`).
+Rust dependencies are locked in `Cargo.lock` (update deliberately with
+`cargo update -p <crate>`, never blindly — the pdf_oxide 0.3.77→0.3.78
+roll moved whole-corpus golden output and was reviewed file-by-file before
+landing as v0.5.6). Current oxide pins: `office_oxide 0.1.10`,
+`pdf_oxide 0.3.78`. The one external binary contract is **onnxruntime
+itself**: `ort` 2.0-rc requires ≥1.19; a stale system DLL fails at session
+creation with a clear `BadVersion` error. Set `ORT_DYLIB_PATH` explicitly
+in CI/dev (e.g. the venv's `onnxruntime/capi/onnxruntime.dll`).
 
 ## 10. Testing strategy
 
-Two layers (mirrors the Python three minus fakes):
+Three layers:
 
-1. **Unit tests** (`#[cfg(test)]` modules, 81 tests): pure-Rust logic with
-   no native deps — tables parsing, splice/ws_replace, math-font/unicode
-   classifiers, TexTeller preprocessing shape/range, white-border trim,
-   LetterBox preprocessing, IoU/NMS, config serde round-trip.
-2. **Integration** (`tests/`, 9 tests across three files): real pdf_oxide
-   against the CC BY 4.0 arXiv corpus in `tests/fixtures/` (text paper +
-   scanned page), text-file conversion, config access, table conversion,
-   error paths.
-   PDF tests need a modern onnxruntime (`ORT_DYLIB_PATH`).
+1. **Unit tests** (`#[cfg(test)]` modules, 128 lib tests): pure logic —
+   tables parsing, splice/ws_replace, math-font/unicode classifiers,
+   TexTeller preprocessing shape/range, white-border trim, LetterBox,
+   IoU/NMS, config serde round-trip, Excel renderers (GFM/CSV/JSON schema),
+   office splice/collect. No models, no files.
+2. **Integration** (`tests/`): real fixtures, no mocks —
+   `test_office` (10: generated OOXML fixtures, ordered-content + staged
+   pictures + goldens), `test_excel` (6: typed values, csv round-trip,
+   ingest siblings), `test_golden` (2: PDF corpus + figures goldens — the
+   tripwire for upstream pdf_oxide changes), `test_rapid_table` (model
+   load + recognize), `test_converter` (7: config, text files, error
+   paths, PDF fast paths incl. the ~2 min full-paper AUTO run).
+3. **Python smoke**: `maturin develop`, then exercise `convert_excel`,
+   `convert`, and `ingest_document` end-to-end (Phase 4 protocol).
 
-Run: `cargo test` (90 total). Python-side smoke: `maturin develop` then
-`import bobine`.
+Golden policy: goldens pin *intentional* output. Regenerate only via
+`BOBINE_UPDATE_GOLDENS=1` after reviewing the diff (`tests/golden/` for
+PDF, `tests/golden/office/` for OOXML — deterministic thanks to
+content-hash staged links). Fixture provenance lives in
+`tests/fixtures/SOURCES.md` (CC BY 4.0 arXiv trims + generated scanned
+page + generated OOXML fixtures via `examples/gen_office_fixtures.rs`).
+
+Run: `cargo test` (needs `ORT_DYLIB_PATH` — without a resolvable dylib
+the test binary aborts). CI (`.github/workflows/ci.yml`) runs the full
+locked suite on ubuntu with a CPU onnxruntime. Legacy Python keeps its own
+frozen tests under `legacy/tests/`.
 
 ## 11. Licensing layout
 
@@ -277,3 +341,64 @@ Run: `cargo test` (90 total). Python-side smoke: `maturin develop` then
   `tests/fixtures/SOURCES.md`).
 - `legacy/`: frozen Python bobine v0.2.0, keeps its own dual license and
   vendored third-party notices.
+
+---
+
+## 12. Office export subsystem (v0.5.x)
+
+Full background: `IMPLEMENTATION_PLAN_office.md`. The subsystem has three
+parts with deliberately different trust levels:
+
+- **`convert_office`** — thin delegation (`Document::open` +
+  `to_markdown`). All rendering intelligence is office_oxide's; bobine
+  pins *must-hold* behavior in `test_office` (GFM tables, sheet/slide
+  `##` boundaries, typed cells, alt text) and logs the rest as upstream
+  gaps (footnote bodies, hyperlink URLs, formula cached values, pptx
+  bullets/markers, pptx TSV tables). No in-tree workarounds — upstream
+  fixes with minimal repros instead.
+- **`office_images`** — bobine-owned staging. Two sources, one contract:
+  the IR walk (document order, alt text, decorative + link-only skipped,
+  table/textbox/note nesting) wins; when the IR carries nothing (pptx/xlsx
+  drawings never reach it — verified), the `*/media/*` package scan fills
+  in (filename-stem alt). Positional pairing against md links, surplus
+  pictures gallery-appended — the same shape as the PDF unreferenced-figure
+  flow, so `ingest_document` promotes both identically.
+- **`excel`** — bobine-owned data model over office_oxide cell access
+  (`format_cell_value` for xlsx, `as_text` for xls). Formulas are cached
+  values only, never evaluated — a load-bearing decision for JSON consumers.
+
+Fixture strategy differs from PDF by necessity: no Office corpus can be
+redistributed, so `examples/gen_office_fixtures.rs` *generates* fixtures
+from office_oxide's own `create` API (IR→OOXML round-trip by construction).
+Legacy doc/xls/ppt have no writers — no fixtures until real samples arrive;
+the harness and the IR walk are format-agnostic so coverage lands with
+zero code changes.
+
+## 13. Error-handling philosophy
+
+- `BobineError` is the single error type; upstream errors cross the seam
+  as strings (`OfficeOxide(String)`, `PdfOxide(String)`) — coarse but
+  uniform, and never panics on user files (empty-docx test pins this).
+- **Degradation beats failure**: per-page fast-path fallback (missing
+  models), per-sheet CSV skips (empty sheets), per-sibling warn-and-
+  continue (Excel siblings never abort an ingest), provider
+  auto-degradation (CUDA requested, CPU dylib loaded → CPU silently).
+- Ingest siblings and staging are best-effort with `warn!`; conversion
+  results are exact or errored, never half-written (md written before
+  staging, lint last).
+
+## 14. Python binding layer
+
+`py_bindings.rs` (feature `extension-module`) exposes `bobine._native`;
+`python/bobine/__init__.py` re-exports a curated surface with `.pyi` stubs
+as the documented contract. Rules:
+
+- **Additive only** — new surface (`convert_excel`, `ExcelDocument`,
+  `ConvertedDocument.data_files`) extends; existing signatures never break.
+- **Thin wrappers** — no logic in bindings; every `#[pyfunction]` is a
+  direct call into `src/` plus error mapping (`PyRuntimeError`).
+- **Flat kwargs** — `PyConverterConfig` takes the same flat field names as
+  the pre-grouping Rust struct (the `#[serde(flatten)]` grouping is a
+  Rust-side organization; the Python surface never moved).
+- The default (non-extension) build is Python-free — enforced in CI
+  (`cargo check` without the feature) and at publish time.

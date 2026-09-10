@@ -112,6 +112,8 @@ src/
 ├── rapid_table.rs    SLANet-plus table-structure recognition (scans)
 ├── pdf_source.rs     PdfSource trait — page text without a real PDF file
 ├── tables.rs         HTML table → GFM pipe-table converter
+├── excel.rs          Excel workbooks → per-sheet csv/json/md
+├── office_images.rs  Office picture staging (IR walk + package fallback)
 ├── assets.rs         okf-asset://\ staging store
 ├── documents.rs      ConvertedDocument + frontmatter
 ├── pipeline.rs       ingest_document / convert_directory / ProgressHooks
@@ -164,8 +166,8 @@ provider-gated batching, byte-identical tensors on CPU (v0.4.28, see
 ## Office documents
 
 `.docx` / `.xlsx` / `.pptx` plus legacy `.doc` / `.xls` / `.ppt` convert to
-markdown via `office_oxide` (`conv.convert_office(path)` or the `convert()`
-dispatcher — no models needed). Excel workbooks additionally export per-sheet
+markdown via `office_oxide` (`HybridConverter::convert_office(path)` or the
+`convert()` dispatcher — no models needed). Excel workbooks additionally export per-sheet
 csv/json (`convert_excel`, `<stem>.<sheet>.csv` + `<stem>.json` siblings).
 Embedded pictures stage into `<work_dir>/assets/office/` and rewrite to staged
 files, promoted to `okf-asset://` by `ingest_document` — details in the
@@ -176,20 +178,23 @@ files, promoted to `okf-asset://` by `ingest_document` — details in the
 `convert_pdf` returns one markdown string: inline `$…$` / display `$$…$$`
 LaTeX spliced in place, GFM pipe tables, fenced code blocks from monospaced
 font runs, embedded images written to `work_dir`, plus an `okf-asset://` staging store
-for unreferenced figures. For document-level workflows use
+for unreferenced figures. Office docs additionally stage pictures into
+`<work_dir>/assets/office/`; workbooks yield `<stem>.<sheet>.csv` +
+`<stem>.json` siblings. For document-level workflows use
 `ingest_document` / `convert_directory`, which return versioned
 `ConvertedDocument`s with frontmatter and lint hooks.
 
 ## Testing
 
 ```bash
-cargo test                # 121 unit tests — no native backends needed
-ORT_DYLIB_PATH=... cargo test   # + 9 integration tests over the PDF corpus
+cargo test                # 128 lib tests (ORT_DYLIB_PATH required — no dylib = abort)
+cargo test --test test_office --test test_excel --test test_golden   # no models needed
+ORT_DYLIB_PATH=... cargo test --test test_converter                 # incl. full-paper AUTO run
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```
 
-Fixtures: trimmed CC BY 4.0 arXiv papers + a generated scanned page — see
-`tests/fixtures/SOURCES.md` for provenance.
+Fixtures: trimmed CC BY 4.0 arXiv papers + a generated scanned page +
+generated OOXML fixtures — see `tests/fixtures/SOURCES.md` for provenance.
 
 ## ONNX Runtime versioning
 
