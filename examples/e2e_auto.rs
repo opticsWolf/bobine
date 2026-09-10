@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // everything must resolve via auto-download or fail loudly here.
     let mode = match std::env::var("BOB_MODE").as_deref() {
         Ok("never") => bobine::RoutingMode::Never,
+        Ok("surgical") => bobine::RoutingMode::Surgical,
         _ => bobine::RoutingMode::Always,
     };
     let mut conv = bobine::HybridConverter::new(

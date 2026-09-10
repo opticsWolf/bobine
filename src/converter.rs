@@ -419,6 +419,114 @@ fn table_block(
     format!("[table: {}]", region_label)
 }
 
+/// One cluster of same-line adjacent math boxes, decoded as a single crop.
+///
+/// `bounds` is the union rect to crop; `members` are the constituent refined
+/// boxes in x order. The first member's needle receives the merged LaTeX;
+/// the other members' needles are deleted — a cluster never spans prose
+/// (see `cluster_math_boxes`), so surrounding text keeps its position.
+#[derive(Debug)]
+struct MathCluster {
+    bounds: Rect,
+    members: Vec<Rect>,
+}
+
+/// Group refined boxes so each cluster costs one TexTeller decode instead
+/// of one per box. A box joins the current cluster on either axis:
+/// - same row — y-centers within half a line height, horizontal gap in
+///   `[0, 3 × line_height]` (wider than the char clusterer's 2.5x window,
+///   which is why these survivors exist at all);
+/// - stacked display lines — horizontal overlap, vertical gap in
+///   `[0, 1 × line_height]`;
+/// - and in both cases an EMPTY gap (see `gap_empty`).
+///
+/// The gap rules are the positioning guarantee: merged boxes are fragments
+/// of one visual equation row with nothing between them, so decoding the
+/// union crop and splicing the result at the first member's needle (deleting
+/// the others') preserves reading order and loses no prose. Boxes separated
+/// by text, distance, or a line break stay separate decodes.
+///
+/// Input order is preserved: boxes arrive (y, x)-sorted from
+/// `math_boxes_from_chars` and clusters follow that order, so with no
+/// merges the decode sequence is byte-identical to the unclustered path.
+/// Greedy over that order — an interleaved band restarts the run, costing
+/// an extra decode but never an incorrect merge.
+fn cluster_math_boxes(
+    boxes: &[Rect],
+    chars: &[SourceChar],
+    line_height: f32,
+) -> Vec<MathCluster> {
+    // NOTE: no re-sort — cluster order follows input order (see above).
+    let sorted = boxes.to_vec();
+    // The char clusterer already joins same-line math within 2.5x glyph
+    // height, so same-row survivors are FARTHER apart than that: the join
+    // window here must exceed it, with the empty-gap rule as the safety
+    // net instead of distance alone.
+    let max_hgap = 3.0 * line_height;
+    // Stacked display lines sit ~1 line apart; anything farther is a
+    // separate paragraph, not a continued equation.
+    let max_vgap = 1.0 * line_height;
+    let mut out: Vec<MathCluster> = Vec::new();
+    for b in sorted {
+        let mut absorbed = false;
+        if let Some(cur) = out.last_mut() {
+            let cb = cur.bounds;
+            let dcy = ((b.y + b.height / 2.0) - (cb.y + cb.height / 2.0)).abs();
+            let hgap = b.x - (cb.x + cb.width);
+            let vgap = b.y - (cb.y + cb.height);
+            // Same row: shared band, bounded empty horizontal gap.
+            let row_join = dcy <= 0.5 * line_height
+                && hgap >= 0.0
+                && hgap <= max_hgap
+                && gap_empty(
+                    chars,
+                    cb.x + cb.width,
+                    b.y.min(cb.y),
+                    b.x,
+                    (cb.y + cb.height).max(b.y + b.height),
+                );
+            // Stacked display lines: horizontal overlap, bounded empty
+            // vertical gap. The union is the full multi-line equation —
+            // decoding it once beats per-line decodes that lose the
+            // alignment context (and costs one decode, not N).
+            let ox0 = cb.x.max(b.x);
+            let ox1 = (cb.x + cb.width).min(b.x + b.width);
+            let stack_join = ox1 > ox0
+                && vgap >= 0.0
+                && vgap <= max_vgap
+                && gap_empty(chars, ox0, cb.y + cb.height, ox1, b.y);
+            if row_join || stack_join {
+                let nx = cb.x.min(b.x);
+                let ny = cb.y.min(b.y);
+                let nx1 = (cb.x + cb.width).max(b.x + b.width);
+                let ny1 = (cb.y + cb.height).max(b.y + b.height);
+                cur.bounds = Rect::new(nx, ny, nx1 - nx, ny1 - ny);
+                cur.members.push(b);
+                absorbed = true;
+            }
+        }
+        if !absorbed {
+            out.push(MathCluster {
+                bounds: b,
+                members: vec![b],
+            });
+        }
+    }
+    out
+}
+
+/// True when no glyph center falls strictly inside the given rect (PDF
+/// points). The merge-safety net: a glyph between two boxes means prose or
+/// math the union decode would absorb AND duplicate, since that text also
+/// stays in the region's text layer.
+fn gap_empty(chars: &[SourceChar], x0: f32, y0: f32, x1: f32, y1: f32) -> bool {
+    !chars.iter().any(|c| {
+        let cx = c.bbox.x + c.bbox.width / 2.0;
+        let cy = c.bbox.y + c.bbox.height / 2.0;
+        cx > x0 && cx < x1 && cy >= y0 && cy <= y1
+    })
+}
+
 /// Math/formula arm (extracted from the dispatch loop). Returns the blocks
 /// to append (0..N: hybrid refinement can emit prose + several equations).
 /// Consumes refined text-layer math boxes from `page_math_boxes` so
@@ -489,31 +597,44 @@ fn math_blocks(
     if !refined.is_empty() {
         let text = region_lines_to_text(ctx.page_chars, lines);
         let mut reps: Vec<(String, String)> = Vec::new();
-        for rb in &refined {
-            // Gate 1: skip labels ("(4)"), artifacts and tiny inline
-            // fragments - splicing them is pure noise.
-            if rb.width < 40.0 {
-                continue;
-            }
-            // Gate 2: display-style boxes only. Boxes taller than ~3 lines
-            // are merged blobs of display equations interleaved with
-            // inline-math prose lines; cropping them yields garbage.
-            let display = rb.height > 1.6 * line_height
-                || rb.width > ctx.config.text.formula_inline_max_width_pts as f32;
-            if !display || rb.height > 3.0 * line_height {
-                continue;
-            }
+        // Fewer, better crops: gate members first (unchanged semantics —
+        // nothing previously skipped gets decoded), then cluster
+        // same-line whitespace-separated survivors so each cluster costs
+        // one decode. The first member's needle takes the merged LaTeX;
+        // absorbed members' needles are deleted (the merged decode covers
+        // them); inter-box prose never enters a cluster, so positioning
+        // is preserved.
+        let gated: Vec<Rect> = refined
+            .iter()
+            .copied()
+            .filter(|rb| {
+                // Gate 1: skip labels ("(4)"), artifacts and tiny
+                // inline fragments - splicing them is pure noise.
+                if rb.width < 40.0 {
+                    return false;
+                }
+                // Gate 2: display-style boxes only. Boxes taller
+                // than ~3 lines are merged blobs of display
+                // equations interleaved with inline-math prose
+                // lines; cropping them yields garbage.
+                let display = rb.height > 1.6 * line_height
+                    || rb.width > ctx.config.text.formula_inline_max_width_pts as f32;
+                display && rb.height <= 3.0 * line_height
+            })
+            .collect();
+        for cluster in cluster_math_boxes(&gated, ctx.page_chars, line_height) {
             // Glyph-tight boxes: no padding, padding only bleeds
             // neighbouring text lines into the crop.
             let t_rec = std::time::Instant::now();
-            let crop_res = crop_image(ctx.img, *rb, ctx.dpi, 0.0);
+            let crop_res = crop_image(ctx.img, cluster.bounds, ctx.dpi, 0.0);
             if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
                 eprintln!(
-                    "HYBRID-crop p{} w={:.0} h={:.0} (lh={:.1})",
+                    "HYBRID-crop p{} w={:.0} h={:.0} (lh={:.1}) members={}",
                     page_index + 1,
-                    rb.width,
-                    rb.height,
-                    line_height
+                    cluster.bounds.width,
+                    cluster.bounds.height,
+                    line_height,
+                    cluster.members.len(),
                 );
             }
             if let Some(crop) = crop_res {
@@ -530,7 +651,8 @@ fn math_blocks(
                     // sliver cannot contain a large equation, and the cap
                     // turns runaway decodes (measured: 2600 chars / 28 s
                     // from a 153x30pt fragment) into fast failures.
-                    let budget = ((rb.width * rb.height) / 40.0).clamp(64.0, 512.0) as usize;
+                    let budget = ((cluster.bounds.width * cluster.bounds.height) / 40.0)
+                        .clamp(64.0, 512.0) as usize;
                     if let Some(latex) = engine.recognize_formula_capped(&p, budget)? {
                         if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
                             eprintln!("HYBRID-png {}", p.display());
@@ -542,8 +664,13 @@ fn math_blocks(
                             );
                         }
                         if plausible_display_latex(&latex) {
-                            let needle = region_text(pdf, page_index, *rb);
-                            reps.push((needle, format!("$$\n{}\n$$", latex)));
+                            if let Some((first, rest)) = cluster.members.split_first() {
+                                let needle = region_text(pdf, page_index, *first);
+                                reps.push((needle, format!("$$\n{}\n$$", latex)));
+                                for m in rest {
+                                    reps.push((region_text(pdf, page_index, *m), String::new()));
+                                }
+                            }
                         } else if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
                             eprintln!("HYBRID-reject p{} {:?}", page_index + 1, latex);
                         }
@@ -1032,14 +1159,21 @@ impl HybridConverter {
 
         let line_height = estimate_line_height(pdf, index, page_h);
 
-        // Crop + OCR each box
-        let mut crops: Vec<(Rect, PathBuf)> = Vec::new();
-        for (j, &bbox) in boxes.iter().enumerate() {
-            if let Some(crop) = crop_image(&img, bbox, dpi, self.config.text.formula_pad_pts) {
+        // Fewer, better crops: the tight char gaps above (1.5x) fragment
+        // more than the full-structure path, so cluster same-line/stacked
+        // fragments (see `cluster_math_boxes`) — each cluster costs one
+        // decode, positioned at its first member's needle.
+        let chars = pdf.chars(index).unwrap_or_default();
+        let clusters = cluster_math_boxes(&boxes, &chars, line_height);
+
+        // Crop + OCR each cluster
+        let mut crops: Vec<(usize, PathBuf)> = Vec::new();
+        for (j, cluster) in clusters.iter().enumerate() {
+            if let Some(crop) = crop_image(&img, cluster.bounds, dpi, self.config.text.formula_pad_pts) {
                 if crop.width() >= 4 && crop.height() >= 4 {
                     let p = work_dir.join(format!("_formula_p{}_{}.png", index, j));
                     if crop.save(&p).is_ok() {
-                        crops.push((bbox, p));
+                        crops.push((j, p));
                     }
                 }
             }
@@ -1049,23 +1183,31 @@ impl HybridConverter {
         }
 
         info!(
-            "page {}: {} formula region(s) → OCR",
+            "page {}: {} formula cluster(s) → OCR ({} boxes)",
             index + 1,
-            crops.len()
+            crops.len(),
+            boxes.len(),
         );
 
         let mut replacements: Vec<(String, String)> = Vec::new();
-        for (bbox, crop_path) in &crops {
+        for (j, crop_path) in &crops {
             if let Some(latex) = self.engine.recognize_formula(crop_path)? {
-                let needle = region_text(pdf, index, *bbox);
-                let display = (bbox.height) > 1.6 * line_height
-                    || bbox.width > self.config.text.formula_inline_max_width_pts as f32;
+                let cluster = &clusters[*j];
+                let display = cluster.bounds.height > 1.6 * line_height
+                    || cluster.bounds.width > self.config.text.formula_inline_max_width_pts as f32;
                 let wrapped = if display {
                     format!("$$\n{}\n$$", latex)
                 } else {
                     format!("${}$", latex)
                 };
-                replacements.push((needle, wrapped));
+                if let Some((first, rest)) = cluster.members.split_first() {
+                    replacements.push((region_text(pdf, index, *first), wrapped));
+                    // Absorbed members' text is covered by the merged
+                    // decode — delete it so it isn't duplicated.
+                    for m in rest {
+                        replacements.push((region_text(pdf, index, *m), String::new()));
+                    }
+                }
             }
         }
 
@@ -3007,6 +3149,90 @@ Second paragraph text."
         let prop = FakePage::from_text("hello world", "Georgia");
         let mut prop_doc = FakePdf::new(vec![prop]);
         assert!(wrap_code_blocks(&mut prop_doc, 0).is_empty());
+    }
+
+    // ==================================================================
+    // Math box clustering: merge same-line fragments, keep the rest
+    // ==================================================================
+
+    fn math_rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
+        Rect::new(x, y, w, h)
+    }
+
+    #[test]
+    fn math_clusters_merge_same_line_empty_gap() {
+        let boxes = vec![
+            math_rect(10.0, 100.0, 50.0, 12.0),
+            math_rect(70.0, 100.0, 50.0, 12.0),
+        ];
+        let out = cluster_math_boxes(&boxes, &[], 12.0);
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert_eq!(out[0].members.len(), 2);
+        assert!((out[0].bounds.width - 110.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn math_clusters_split_on_gap_text() {
+        let boxes = vec![
+            math_rect(10.0, 100.0, 50.0, 12.0),
+            math_rect(70.0, 100.0, 50.0, 12.0),
+        ];
+        // prose glyph sitting in the gap: merging would absorb + duplicate it
+        let chars = vec![SourceChar::new('a', 62.0, 100.0, 6.0, 11.0, "Helvetica")];
+        let out = cluster_math_boxes(&boxes, &chars, 12.0);
+        assert_eq!(out.len(), 2, "{out:?}");
+    }
+
+    #[test]
+    fn math_clusters_split_on_band_and_distance() {
+        // different bands
+        let boxes = vec![
+            math_rect(10.0, 100.0, 50.0, 12.0),
+            math_rect(70.0, 130.0, 50.0, 12.0),
+        ];
+        assert_eq!(cluster_math_boxes(&boxes, &[], 12.0).len(), 2);
+        // same band but gap (50pt) beyond 3 line heights (36pt)
+        let boxes = vec![
+            math_rect(10.0, 100.0, 50.0, 12.0),
+            math_rect(110.0, 100.0, 50.0, 12.0),
+        ];
+        assert_eq!(cluster_math_boxes(&boxes, &[], 12.0).len(), 2);
+    }
+
+    #[test]
+    fn math_clusters_merge_stacked_display_lines() {
+        // two display lines, overlapping x, 6pt vertical gap, nothing between
+        let boxes = vec![
+            math_rect(10.0, 100.0, 120.0, 12.0),
+            math_rect(10.0, 118.0, 120.0, 12.0),
+        ];
+        let out = cluster_math_boxes(&boxes, &[], 12.0);
+        assert_eq!(out.len(), 1, "stacked lines must merge");
+        assert_eq!(out[0].members.len(), 2);
+        assert!((out[0].bounds.height - 30.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn math_clusters_split_stack_on_gap_text_or_distance() {
+        // prose line between the display lines blocks the merge
+        let boxes = vec![
+            math_rect(10.0, 100.0, 120.0, 12.0),
+            math_rect(10.0, 118.0, 120.0, 12.0),
+        ];
+        let chars = vec![SourceChar::new('w', 20.0, 112.0, 6.0, 8.0, "Helvetica")];
+        assert_eq!(cluster_math_boxes(&boxes, &chars, 12.0).len(), 2);
+        // vertical gap (20pt) beyond 1 line height stays separate
+        let boxes = vec![
+            math_rect(10.0, 100.0, 120.0, 12.0),
+            math_rect(10.0, 132.0, 120.0, 12.0),
+        ];
+        assert_eq!(cluster_math_boxes(&boxes, &[], 12.0).len(), 2);
+        // stacked but no horizontal overlap stays separate
+        let boxes = vec![
+            math_rect(10.0, 100.0, 40.0, 12.0),
+            math_rect(100.0, 118.0, 40.0, 12.0),
+        ];
+        assert_eq!(cluster_math_boxes(&boxes, &[], 12.0).len(), 2);
     }
 
     // ==================================================================
