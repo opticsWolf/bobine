@@ -1,5 +1,14 @@
 # bobine
 
+[![Crates.io](https://img.shields.io/crates/v/bobine)](https://crates.io/crates/bobine)
+[![docs.rs](https://img.shields.io/docsrs/bobine)](https://docs.rs/bobine)
+[![PyPI](https://img.shields.io/pypi/v/bobine)](https://pypi.org/project/bobine/)
+[![Python](https://img.shields.io/pypi/pyversions/bobine)](https://pypi.org/project/bobine/)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
+[![onnxruntime](https://img.shields.io/badge/onnxruntime-%E2%89%A51.19-blue)](https://onnxruntime.ai)
+[![CI](https://github.com/opticsWolf/bobine/actions/workflows/ci.yml/badge.svg)](https://github.com/opticsWolf/bobine/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-green)](https://github.com/opticsWolf/bobine/blob/main/LICENSE)
+
 Standalone **PDF / Office / text → Markdown ingestion engine** — a pure-Rust
 core with Python bindings. Runs on a single `onnxruntime` shared library with
 no CUDA-version coupling: `pdf_oxide` for fast native PDF text extraction,
@@ -8,16 +17,16 @@ for the heavy passes. **No torch, no optimum, no opencv** — not even on the
 Python side.
 
 Dual-licensed under the terms of either the MIT License or the Apache License,
-Version 2.0 — you may choose either (see [LICENSE](LICENSE)).
+Version 2.0 — you may choose either (see [LICENSE](https://github.com/opticsWolf/bobine/blob/main/LICENSE)).
 
 ## Docs
 
-- [**Quick reference**](docs/quickref.md) — install, API, config, common tasks
-- [**Architecture**](docs/architecture.md) — modules, data flow, coordinate spaces, model acquisition
-- [**Benchmarks & test results**](docs/benchmarks.md) — CPU vs CUDA timings, TexTeller fp32/int8, environment setup
-- [**Proposal: figures/tables/layout**](docs/proposal_media_tables.md) — plan for reading-order image placement and structured table extraction
-- [**Implementation plan**](IMPLEMENTATION_PLAN.md) — status, gap inventory, phased roadmap
-- [**Office export plan**](IMPLEMENTATION_PLAN_office.md) — md for all formats, Excel csv/json, picture extraction
+- [**Quick reference**](https://github.com/opticsWolf/bobine/blob/main/docs/quickref.md) — install, API, config, common tasks
+- [**Architecture**](https://github.com/opticsWolf/bobine/blob/main/docs/architecture.md) — modules, data flow, coordinate spaces, model acquisition
+- [**Benchmarks & test results**](https://github.com/opticsWolf/bobine/blob/main/docs/benchmarks.md) — CPU vs CUDA timings, TexTeller fp32/int8, environment setup
+- [**Proposal: figures/tables/layout**](https://github.com/opticsWolf/bobine/blob/main/docs/proposal_media_tables.md) — plan for reading-order image placement and structured table extraction
+- [**Implementation plan**](https://github.com/opticsWolf/bobine/blob/main/IMPLEMENTATION_PLAN.md) — status, gap inventory, phased roadmap
+- [**Office export plan**](https://github.com/opticsWolf/bobine/blob/main/IMPLEMENTATION_PLAN_office.md) — md for all formats, Excel csv/json, picture extraction
 
 ## Why bobine?
 
@@ -26,7 +35,7 @@ project it served (`OKFgraph`). This crate moves conversion into its own
 package so any consumer — a graph, a CLI, an MCP server, a batch tool — can
 reuse it without importing a database stack. The v0.3.0 rewrite ports the
 whole pipeline to Rust: same routing heuristics and output contract as the
-proven Python implementation (preserved under [`legacy/`](legacy/)), with
+proven Python implementation (preserved under [`legacy/`](https://github.com/opticsWolf/bobine/tree/main/legacy)), with
 native speed and no Python ML dependencies.
 
 ## Installation
@@ -161,7 +170,7 @@ layout model for equation regions instead (off by default).
 OCR recognition runs line crops in chunks of 32 on accelerators (6.3x faster
 on CUDA, measured) while CPU-only sessions keep the exact single-line path —
 provider-gated batching, byte-identical tensors on CPU (v0.4.28, see
-[benchmarks](docs/benchmarks.md)).
+[benchmarks](https://github.com/opticsWolf/bobine/blob/main/docs/benchmarks.md)).
 
 ## Office documents
 
@@ -171,7 +180,7 @@ markdown via `office_oxide` (`HybridConverter::convert_office(path)` or the
 csv/json (`convert_excel`, `<stem>.<sheet>.csv` + `<stem>.json` siblings).
 Embedded pictures stage into `<work_dir>/assets/office/` and rewrite to staged
 files, promoted to `okf-asset://` by `ingest_document` — details in the
-[**Office export plan**](IMPLEMENTATION_PLAN_office.md).
+[**Office export plan**](https://github.com/opticsWolf/bobine/blob/main/IMPLEMENTATION_PLAN_office.md).
 
 ## Output contract
 
