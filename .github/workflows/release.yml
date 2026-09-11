@@ -119,8 +119,12 @@ jobs:
           pattern: wheels-*
           path: dist
 
-      - name: Flatten wheel directories
-        run: find dist -name '*.whl' -exec mv {} dist/ \;
+      - name: Flatten wheel directories (drop emptied artifact dirs —
+        # the publisher rejects any non-distribution entry in dist/)
+        run: |
+          find dist -name '*.whl' -exec mv {} dist/ \;
+          find dist -mindepth 1 -type d -empty -delete
+          ls -la dist/
 
       - name: Publish to PyPI
         # Tags publish; manual dispatch stops after building wheels.
