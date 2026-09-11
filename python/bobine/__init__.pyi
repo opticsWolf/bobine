@@ -140,6 +140,10 @@ def convert_excel(path: str) -> ExcelDocument: ...
 
 LintCallback = Callable[[str], Optional[Tuple[bool, str]]]
 
+# Resolved ONNX Runtime library path (auto-located from pip onnxruntime,
+# or None when no runtime is installed). Mirrors the ORT_DYLIB_PATH env var.
+ORT_DYLIB_PATH: Optional[str]
+
 def ingest_document(
     path: str,
     output_dir: str,

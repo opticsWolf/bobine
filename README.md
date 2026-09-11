@@ -51,12 +51,26 @@ cargo add bobine
 pip install maturin && maturin develop --release
 ```
 
-Runtime requirement: a modern ONNX Runtime (≥1.19). `ort` loads it
-dynamically — point it at your library if it isn't on the default search path:
+Runtime requirement: an ONNX Runtime library for the heavy passes — or
+nothing at all (Office/text/fast-path PDF work needs no models):
+
+```bash
+pip install bobine[cpu]   # adds onnxruntime >= 1.28 (CPU)
+# or: pip install bobine[gpu]   # onnxruntime-gpu (self-contained CUDA)
+```
+
+`import bobine` points `ORT_DYLIB_PATH` at the pip-installed library
+automatically; an already-set `ORT_DYLIB_PATH` always wins (e.g. a custom
+CUDA build):
 
 ```bash
 export ORT_DYLIB_PATH=/path/to/onnxruntime.dll   # e.g. <venv>/Lib/site-packages/onnxruntime/capi/onnxruntime.dll
 ```
+
+`ort` loads the library dynamically (`load-dynamic`, no CUDA-version
+coupling) and refuses runtimes older than 1.28 (`BadVersion`) — hence the
+`>=1.28` pins. Never install both `onnxruntime` and `onnxruntime-gpu`
+(same module name, they clobber each other).
 
 ## Quick start (Python)
 

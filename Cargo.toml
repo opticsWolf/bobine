@@ -1,6 +1,6 @@
 [package]
 name = "bobine"
-version = "0.5.8"
+version = "0.5.9"
 edition = "2024"
 rust-version = "1.85"
 description = "PDF / Office / text → Markdown ingestion engine with ONNX formula OCR (TexTeller), layout analysis and OCR"

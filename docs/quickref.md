@@ -14,7 +14,19 @@ models are missing.
 maturin develop --release          # editable install into current venv
 # or build a wheel:
 maturin build --release && pip install target/wheels/bobine-*.whl
+
+# ONNX Runtime libraries (auto-located on `import bobine`):
+pip install "bobine[cpu]"   # onnxruntime >= 1.28 (CPU)
+pip install "bobine[gpu]"   # onnxruntime-gpu + NVIDIA CUDA/cuDNN wheels
 ```
+
+GPU note: the `gpu` extra must include the `[cuda,cudnn]` wheels (it does —
+a bare `onnxruntime-gpu` ships no `cudnn64_9.dll` and its CUDA EP dies at
+the first Conv node, falling back silently). `import bobine` preloads the
+NVIDIA DLLs into the process so the engine's direct library load resolves
+them; verified live (pip ORT 1.30.0 + RTX 3090: scanned page OCR 28 → 883
+chars). Never install both `onnxruntime` and `onnxruntime-gpu` (same module
+name).
 
 Requirements: Rust toolchain (1.85+, edition 2024), maturin ≥1.7, and a
 modern onnxruntime (≥1.19) discoverable by `ort`:
@@ -250,7 +262,7 @@ timings, and the `ORT_DYLIB_PATH` / stale-System32-dll pitfall are documented in
 
 | Var | Effect |
 |---|---|
-| `ORT_DYLIB_PATH` | Explicit onnxruntime shared library for `ort` (≥1.19 required). Point at a **GPU build** (onnxruntime-gpu + CUDA/cuDNN) to activate `ort_providers=["cuda", ...]`; CPU builds degrade gracefully |
+| `ORT_DYLIB_PATH` | Explicit onnxruntime shared library for `ort` (≥1.28 required, else `BadVersion`). **Usually unset**: `import bobine` auto-locates pip `onnxruntime`/`onnxruntime-gpu` (`pip install bobine[cpu]` / `bobine[gpu]`); set only to override (custom CUDA build). `bobine.ORT_DYLIB_PATH` shows the resolved path (None = not installed). |
 
 ## License
 
