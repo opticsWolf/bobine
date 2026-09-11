@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "bobine"
-version = "0.5.8"
+version = "0.5.9"
 description = "PDF / Office / text → Markdown ingestion engine (Rust core with Python bindings)"
 license = "Apache-2.0 OR MIT"
 authors = [{ name = "opticsWolf", email = "opticswolf@protonmail.com" }]
@@ -18,6 +18,11 @@ Documentation = "https://github.com/opticsWolf/bobine/docs"
 Issues = "https://github.com/opticsWolf/bobine/issues"
 
 [project.optional-dependencies]
+# ONNX Runtime libraries (auto-located on `import bobine`; see ORT_DYLIB_PATH).
+# Minimum 1.28: the ort engine refuses older runtimes (BadVersion).
+# cpu XOR gpu — never install both (same `onnxruntime` module name).
+cpu = ["onnxruntime>=1.28"]
+gpu = ["onnxruntime-gpu>=1.28"]
 # TexTeller formula OCR (ONNX models auto-downloaded from HuggingFace)
 formula = []
 

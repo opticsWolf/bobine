@@ -250,7 +250,7 @@ timings, and the `ORT_DYLIB_PATH` / stale-System32-dll pitfall are documented in
 
 | Var | Effect |
 |---|---|
-| `ORT_DYLIB_PATH` | Explicit onnxruntime shared library for `ort` (≥1.19 required). Point at a **GPU build** (onnxruntime-gpu + CUDA/cuDNN) to activate `ort_providers=["cuda", ...]`; CPU builds degrade gracefully |
+| `ORT_DYLIB_PATH` | Explicit onnxruntime shared library for `ort` (≥1.28 required, else `BadVersion`). **Usually unset**: `import bobine` auto-locates pip `onnxruntime`/`onnxruntime-gpu` (`pip install bobine[cpu]` / `bobine[gpu]`); set only to override (custom CUDA build). `bobine.ORT_DYLIB_PATH` shows the resolved path (None = not installed). |
 
 ## License
 
