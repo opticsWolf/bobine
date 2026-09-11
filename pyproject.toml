@@ -26,3 +26,11 @@ features = ["extension-module"]
 python-source = "python"
 module-name = "bobine._native"
 bindings = "pyo3"
+# Strip symbols from the compiled extension (biggest wheel-size win;
+# the 97 MB debug .pyd is almost entirely debuginfo).
+strip = true
+# Belt-and-braces: never bundle local `maturin develop` junk (stale *.pyd,
+# 600MB+ *.pdb, __pycache__) when building from a dirty tree. Verified that
+# the fresh extension module is added by path and unaffected; maturin also
+# skips most of this on its own. Scoped to junk extensions only — never *.py.
+exclude = ["**/__pycache__/**", "**/*.pyc", "**/*.pyd", "**/*.pdb"]

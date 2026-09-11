@@ -12,6 +12,12 @@ authors = ["opticsWolf <opticswolf@protonmail.com>"]
 readme = "README.md"
 keywords = ["pdf", "markdown", "ocr", "latex", "formula"]
 categories = ["text-processing", "parsing"]
+# Keep the crates.io upload under the 10 MB limit: integration fixtures
+# (5.9 MB PDFs), golden snapshots, and the frozen Python reference tree
+# (6.3 MB) ship in git but not in the published crate. Library unit tests
+# live in src/ and still run downstream; tests/ + examples/ stay as API
+# documentation (examples need no fixtures at compile time).
+exclude = ["legacy/", "tests/fixtures/", "tests/golden/"]
 
 [lib]
 name = "bobine"
