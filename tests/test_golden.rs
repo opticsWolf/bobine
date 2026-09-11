@@ -52,6 +52,23 @@ fn first_diff(expected: &str, normalized: &str) -> String {
         .unwrap_or_else(|| "length mismatch".to_string())
 }
 
+/// Resolve the golden file for a fixture.
+///
+/// `ruled_table` is platform-divergent: pdf_oxide 0.3.78's row-banding
+/// splits the synthetic grid differently per OS (Windows structures
+/// header+A-101 but drops 5 values; Linux structures B-201+B-202 and keeps
+/// everything). Both variants are pinned — any third output trips the wire.
+/// Scoped to the corpus filename so the figure test is untouched.
+fn golden_path_for(golden_path: &Path) -> PathBuf {
+    let is_ruled_corpus =
+        golden_path.file_name().and_then(|s| s.to_str()) == Some("ruled_table.golden.md");
+    if is_ruled_corpus && cfg!(target_os = "linux") {
+        golden_path.with_file_name("ruled_table.linux.golden.md")
+    } else {
+        golden_path.to_path_buf()
+    }
+}
+
 fn check_fixture(
     name: &str,
     fixture: &Path,
@@ -68,6 +85,7 @@ fn check_fixture(
     let mut conv = HybridConverter::new(config.clone(), &work);
     let md = conv.convert_pdf(fixture, &work).unwrap();
     let normalized = normalize(&md);
+    let golden_path = golden_path_for(golden_path);
 
     if update || !golden_path.exists() {
         std::fs::write(golden_path, &normalized).unwrap();

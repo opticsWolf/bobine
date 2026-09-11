@@ -87,6 +87,18 @@ re-created from the source PDFs above with pdf_oxide's
   `tests/golden/ruled_table.golden.md`). Trailing rows still fragment
   (`A-102`, split `B-201` cells), so the page remains a partial-extraction
   fixture; revisit when the detector handles multi-row ruled grids.
+- **Platform divergence (0.3.78, deterministic per OS — 30/30 identical runs
+  on Windows):** row-banding splits the 5-row grid differently per OS.
+  Ground truth is header + `A-101` (12.4/3.51/88.2) + `A-102`
+  (13.0/3.77/91.5) + `B-201` (9.8/2.44/76.0) + `B-202` (10.2/2.60/79.8)
+  (see `examples/make_table_fixture.rs`). Windows structures header+`A-101`
+  but **drops 5 values** (`76.0`, `B-202`, `10.2`, `2.60`, `79.8` — silent
+  data loss); Linux structures `B-201`+`B-202` perfectly and preserves all
+  20 values (fragments the top rows instead). Both variants are pinned
+  (`ruled_table.golden.md`, `ruled_table.linux.golden.md`, selected by
+  `target_os` in `test_golden.rs`); any third output trips the wire.
+  Upstream issue to file: same input bytes → different spans recovered per
+  OS (not HashMap ordering — deterministic per process on each side).
 
 ## office/ — generated OOXML fixtures (no attribution needed)
 
