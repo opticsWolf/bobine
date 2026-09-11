@@ -40,6 +40,7 @@ def _ensure_ort_dylib() -> str | None:
         import onnxruntime as _ort  # also provided by onnxruntime-gpu
     except ImportError:
         return None
+    _warm_gpu_dlls(_ort)
     capi = _os.path.join(_os.path.dirname(_ort.__file__), "capi")
     candidates: list[str] = []
     if _os.name == "nt":
@@ -62,6 +63,29 @@ def _ensure_ort_dylib() -> str | None:
                 _os.add_dll_directory(capi)
             return path
     return None
+
+
+def _warm_gpu_dlls(_ort) -> None:
+    """Preload NVIDIA DLLs for GPU builds so direct loads resolve.
+
+    Only for GPU builds (CUDA EP registered): CPU-only packages skip
+    silently. `import onnxruntime` alone does NOT load them — its
+    `preload_dlls()` helper runs only on explicit call — but ort loads
+    `onnxruntime.dll` directly (bypassing it), so without this the CUDA
+    EP fails at the first Conv node with `cudnn64_9.dll` not found and
+    every page silently falls back. Preloaded DLLs are process-global,
+    so ort's later LoadLibrary calls resolve. Never breaks import.
+    """
+    try:
+        providers = _ort.get_available_providers()
+    except Exception:
+        return
+    if "CUDAExecutionProvider" not in providers:
+        return
+    try:
+        _ort.preload_dlls()
+    except Exception:
+        pass
 
 
 ORT_DYLIB_PATH = _ensure_ort_dylib()

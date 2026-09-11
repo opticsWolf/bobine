@@ -21,8 +21,11 @@ Issues = "https://github.com/opticsWolf/bobine/issues"
 # ONNX Runtime libraries (auto-located on `import bobine`; see ORT_DYLIB_PATH).
 # Minimum 1.28: the ort engine refuses older runtimes (BadVersion).
 # cpu XOR gpu — never install both (same `onnxruntime` module name).
+# gpu pulls NVIDIA's wheel-packaged CUDA/cuDNN via onnxruntime-gpu's own
+# extras — a bare onnxruntime-gpu has NO cudnn64_9.dll and its CUDA EP
+# fails at the first Conv node (verified: graceful CPU/image fallback).
 cpu = ["onnxruntime>=1.28"]
-gpu = ["onnxruntime-gpu>=1.28"]
+gpu = ["onnxruntime-gpu[cuda,cudnn]>=1.28"]
 # TexTeller formula OCR (ONNX models auto-downloaded from HuggingFace)
 formula = []
 
