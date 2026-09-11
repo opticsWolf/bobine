@@ -41,11 +41,14 @@ native speed and no Python ML dependencies.
 ## Installation
 
 ```bash
-# Python package (builds the native extension via maturin)
-pip install maturin && maturin develop --release     # from repo root
+# Python package (wheels: linux + windows x86_64, macOS arm64)
+pip install bobine
 
 # Rust library (crates.io, no Python involved)
 cargo add bobine
+
+# ...or build from source (repo root)
+pip install maturin && maturin develop --release
 ```
 
 Runtime requirement: a modern ONNX Runtime (≥1.19). `ort` loads it
