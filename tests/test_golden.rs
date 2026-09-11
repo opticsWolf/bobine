@@ -88,7 +88,7 @@ fn check_fixture(
     let golden_path = golden_path_for(golden_path);
 
     if update || !golden_path.exists() {
-        std::fs::write(golden_path, &normalized).unwrap();
+        std::fs::write(&golden_path, &normalized).unwrap();
         println!("golden written: {}", golden_path.display());
         return;
     }
