@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/bobine)](https://crates.io/crates/bobine)
 [![docs.rs](https://img.shields.io/docsrs/bobine)](https://docs.rs/bobine)
 [![PyPI](https://img.shields.io/pypi/v/bobine)](https://pypi.org/project/bobine/)
-[![Python](https://img.shields.io/pypi/pyversions/bobine)](https://pypi.org/project/bobine/)
+[![Python](https://img.shields.io/badge/python-3.9+-blue?logo=python&logoColor=white)](https://pypi.org/project/bobine/)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![onnxruntime](https://img.shields.io/badge/onnxruntime-%E2%89%A51.19-blue)](https://onnxruntime.ai)
 [![CI](https://github.com/opticsWolf/bobine/actions/workflows/ci.yml/badge.svg)](https://github.com/opticsWolf/bobine/actions/workflows/ci.yml)
