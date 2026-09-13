@@ -311,6 +311,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "binaryornot-rs"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6f0be1ed5da7ca09e6c09cf8eebef5b3a94de3581f3d785457c6085170b2488"
+dependencies = [
+ "encoding_rs",
+]
+
+[[package]]
 name = "bit_field"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -380,9 +389,10 @@ dependencies = [
 
 [[package]]
 name = "bobine"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "anyhow",
+ "binaryornot-rs",
  "csv",
  "embroider",
  "half",

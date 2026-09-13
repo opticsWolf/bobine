@@ -108,7 +108,14 @@ Routing signals (mirroring the Python heuristics):
 |---|---|
 | `.pdf` | `convert_pdf` |
 | `.docx .xlsx .pptx .doc .xls .ppt` | `convert_office_staged` (md + staged pictures) |
-| anything else | raw UTF-8 read |
+| anything else | `convert_text`: binary sniff, then raw UTF-8 read |
+
+The text fallback sniffs the first 512 bytes with `binaryornot-rs`
+(content-only — the extension already had its say in the dispatch). A
+binary file under a text-ish extension fails fast with
+`UnsupportedFormat("binary file, not text: …")` instead of a raw
+"invalid UTF-8" I/O error; an empty file is text and converts to `""`.
+(v0.5.11+)
 
 > Office export (Excel csv/json, picture staging) ships — see
 > `IMPLEMENTATION_PLAN_office.md` and §12.
