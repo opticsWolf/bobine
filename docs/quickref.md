@@ -55,6 +55,8 @@ latex = conv.recognize_formula("crop.png")     # r"\frac{1}{2}"
 
 # text files need no models at all
 md = conv.convert("notes.md", work_dir="/tmp/out")
+# binary files under text-ish extensions fail fast (UnsupportedFormat,
+# content-sniffed) instead of returning decode garbage
 ```
 
 ## Public API (`import bobine`)
