@@ -168,7 +168,8 @@ examples on either variant, so pick by hardware, not quality.
 
 On NVIDIA GPUs, point `ORT_DYLIB_PATH` at a GPU onnxruntime build —
 v0.4.9+ auto-enables CUDA for the layout and OCR slots when the loaded
-library registers the CUDA execution provider (measured 12.3x / 3.6x
+library exposes a usable CUDA execution provider (EP-availability probe,
+shared embroider crate since v0.5.10 — measured 12.3x / 3.6x
 speedups), and keeps table recognition pinned to CPU (SLANet measures
 2-9x slower on CUDA: its graph fragments across devices). Zero config
 needed; explicit per-slot overrides: `layout_ort_providers`,
