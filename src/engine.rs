@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+use embroider::{SessionPolicy, cuda_available};
 use tracing::info;
 
 use crate::config::{ConverterConfig, RoutingMode};
@@ -14,68 +15,23 @@ use crate::rapid_layout::RapidLayout;
 use crate::rapid_ocr::RapidOcr;
 use crate::tex_teller::TexTeller;
 
-/// Apply configured execution providers to an ort session builder.
-/// Unknown names are warned and skipped; CPU is always available implicitly.
-pub(crate) fn apply_providers(
-    builder: ort::session::builder::SessionBuilder,
+/// Session-builder entrypoint shared by every slot: the crate's session
+/// policy — ORT defaults; this engine never tunes threads/optimization —
+/// applied explicitly via `SessionPolicy::ort_defaults()`, then the shared
+/// clone-and-fallback provider plumbing from `embroider` (which also carries
+/// the corrected CUDA probe: EP availability, not the lax registration probe
+/// this crate used to duplicate here).
+/// Unknown provider names are warned and skipped; CPU is always available
+/// implicitly. The returned builder is ready for `commit_from_file`.
+pub(crate) fn session_builder(
     providers: &[String],
-) -> crate::error::Result<ort::session::builder::SessionBuilder> {
-    use ort::ep::*;
-    let mut eps: Vec<ExecutionProviderDispatch> = Vec::new();
-    for p in providers {
-        let lower = p.to_lowercase();
-        let dispatch = match lower.as_str() {
-            "cudaexecutionprovider" | "cuda" => Some(CUDA::default().build()),
-            "rocmexecutionprovider" | "rocm" => Some(ROCm::default().build()),
-            "directmlexecutionprovider" | "directml" => Some(DirectML::default().build()),
-            "openvinoexecutionprovider" | "openvino" => Some(OpenVINO::default().build()),
-            "coremlexecutionprovider" | "coreml" => Some(CoreML::default().build()),
-            "cpuexecutionprovider" | "cpu" => None, // implicit default
-            other => {
-                tracing::warn!(provider = other, "unknown ORT provider, skipping");
-                None
-            }
-        };
-        if let Some(d) = dispatch {
-            eps.push(d);
-        }
-    }
-    if eps.is_empty() {
-        return Ok(builder);
-    }
-
-    // Dynamic provider selection: with load-dynamic, whether an accelerator
-    // actually works depends solely on which ONNX Runtime shared library is
-    // loaded (ORT_DYLIB_PATH). A CPU-only library cannot register CUDA, so
-    // treat registration failure as "fall back to CPU" instead of failing
-    // the whole conversion. The clone deep-copies the session options
-    // (CloneSessionOptions), so the original stays pristine for fallback.
-    let attempt = builder.clone();
-    match attempt.with_execution_providers(&eps) {
-        Ok(configured) => Ok(configured),
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                requested = ?providers,
-                "accelerator providers unavailable in this ONNX Runtime library; using CPU"
-            );
-            Ok(builder)
-        }
-    }
-}
-
-/// Whether the loaded ONNX Runtime library can register the CUDA
-/// execution provider. Probed once — registration is the step that
-/// fails on a CPU-only dylib (see `apply_providers`).
-fn cuda_available() -> bool {
-    static PROBE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *PROBE.get_or_init(|| {
-        let Ok(builder) = ort::session::Session::builder() else {
-            return false;
-        };
-        let cuda = ort::ep::CUDA::default().build();
-        builder.with_execution_providers(std::slice::from_ref(&cuda)).is_ok()
-    })
+) -> Result<ort::session::builder::SessionBuilder> {
+    let builder =
+        ort::session::Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?;
+    let tuned = SessionPolicy::ort_defaults()
+        .apply(builder)
+        .map_err(|e| BobineError::Ort(e.to_string()))?;
+    Ok(embroider::apply_providers(tuned, providers))
 }
 
 // ------------------------------------------------------------------
@@ -459,11 +415,10 @@ mod tests {
             eprintln!("skipped: ORT_DYLIB_PATH not set");
             return;
         }
-        let builder = ort::session::Session::builder().unwrap();
-        let result = apply_providers(
-            builder,
-            &["CUDAExecutionProvider".to_string(), "cpu".to_string()],
-        );
+        let result = session_builder(&[
+            "CUDAExecutionProvider".to_string(),
+            "cpu".to_string(),
+        ]);
         assert!(
             result.is_ok(),
             "cuda request must fall back to cpu: {}",
@@ -481,11 +436,10 @@ mod tests {
             eprintln!("skipped: ORT_DYLIB_PATH not set");
             return;
         }
-        let builder = ort::session::Session::builder().unwrap();
-        let result = apply_providers(
-            builder,
-            &["warp-drive".to_string(), "CPUExecutionProvider".to_string()],
-        );
+        let result = session_builder(&[
+            "warp-drive".to_string(),
+            "CPUExecutionProvider".to_string(),
+        ]);
         assert!(result.is_ok());
     }
 

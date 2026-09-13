@@ -153,8 +153,9 @@ bobine.ConverterConfig(model_quantization=bobine.ModelQuantization.Int8)
 
 # GPU (dynamic): point ORT_DYLIB_PATH at a GPU-enabled ONNX Runtime library
 # (onnxruntime-gpu >= 1.19 + matching CUDA/cuDNN). v0.4.9+ auto-enables CUDA
-# for the layout and OCR slots when the loaded library registers the CUDA EP
-# (measured 12.3x / 3.6x on an RTX 3090) and pins table recognition to CPU
+# for the layout and OCR slots when the loaded library exposes a usable CUDA
+# EP (EP-availability probe, embroider since v0.5.10 — measured 12.3x / 3.6x
+# on an RTX 3090) and pins table recognition to CPU
 # (SLANet measures 2-9x slower on CUDA - its graph fragments across devices).
 # Same build, no rebuild needed; degrades gracefully to CPU otherwise.
 bobine.ConverterConfig()   # zero-config GPU defaults
