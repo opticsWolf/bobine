@@ -214,12 +214,9 @@ impl RapidTable {
             "Loading RapidTable (SLANet-plus) from {}",
             model_path.display()
         );
-        let session = crate::engine::apply_providers(
-            Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
-            providers,
-        )?
-        .commit_from_file(model_path)
-        .map_err(|e| BobineError::Ort(e.to_string()))?;
+        let session = crate::engine::session_builder(providers)?
+            .commit_from_file(model_path)
+            .map_err(|e| BobineError::Ort(e.to_string()))?;
 
         let dict: Vec<String> = session
             .metadata()

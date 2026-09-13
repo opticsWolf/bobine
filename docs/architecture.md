@@ -177,11 +177,20 @@ selects the default, which encodes the measured ledger:
 
 | Slot | Default resolution | Why |
 |---|---|---|
-| layout, ocr | **auto-GPU** — CUDAExecutionProvider prepended when the loaded dylib registers it (once-locked probe) | measured 12.3x / 3.6x on CUDA |
+| layout, ocr | **auto-GPU** — CUDAExecutionProvider prepended when the loaded dylib exposes a usable CUDA EP (EP-availability probe) | measured 12.3x / 3.6x on CUDA |
 | table | **CPU-pinned** | SLANet measures 2-9x slower on CUDA (graph fragments across devices) |
 | tex_teller | base `ort_providers` | Int8+CUDA guarded with a warning; Fp32+CUDA opt-in via the base list |
 
-On CPU-only ONNX Runtime builds the CUDA probe is false and every slot
+Session construction runs through `engine::session_builder()`: the
+`SessionPolicy::ort_defaults()` policy from the shared **embroider** crate
+(this engine never tunes threads/optimization — declared explicitly since
+v0.5.10), then embroider's `apply_providers` (clone-and-fallback
+registration) and its `cuda_available()` probe. The probe is an
+EP-availability check, deliberately not a registration probe: ort
+2.0.0-rc.13 `with_execution_providers` returns `Ok` even against a CPU-only
+dylib, which made the pre-embroider registration probe report CUDA on
+every CPU box (the dylib's own commit-time fallback warning was the only
+reveal). On CPU-only ONNX Runtime builds the probe is false and every slot
 resolves to plain CPU — zero cost, no config needed either way.
 
 ---
@@ -298,10 +307,12 @@ Rust dependencies are locked in `Cargo.lock` (update deliberately with
 `cargo update -p <crate>`, never blindly — the pdf_oxide 0.3.77→0.3.78
 roll moved whole-corpus golden output and was reviewed file-by-file before
 landing as v0.5.6). Current oxide pins: `office_oxide 0.1.10`,
-`pdf_oxide 0.3.78`. The one external binary contract is **onnxruntime
-itself**: `ort` 2.0-rc requires ≥1.19; a stale system DLL fails at session
-creation with a clear `BadVersion` error. Set `ORT_DYLIB_PATH` explicitly
-in CI/dev (e.g. the venv's `onnxruntime/capi/onnxruntime.dll`).
+`pdf_oxide 0.3.78`; the shared ONNX plumbing is pinned as `embroider 0.1`
+(crates.io — same crate OKFgraph's embeddings use). The one external
+binary contract is **onnxruntime itself**: `ort` 2.0-rc requires ≥1.19; a
+stale system DLL fails at session creation with a clear `BadVersion`
+error. Set `ORT_DYLIB_PATH` explicitly in CI/dev (e.g. the venv's
+`onnxruntime/capi/onnxruntime.dll`).
 
 ## 10. Testing strategy
 
@@ -382,7 +393,9 @@ zero code changes.
 - **Degradation beats failure**: per-page fast-path fallback (missing
   models), per-sheet CSV skips (empty sheets), per-sibling warn-and-
   continue (Excel siblings never abort an ingest), provider
-  auto-degradation (CUDA requested, CPU dylib loaded → CPU silently).
+  auto-degradation (CUDA requested, CPU dylib loaded → CPU; the
+  embroider EP-availability probe catches most of these up front — only
+  a registration failure degrades at commit time).
 - Ingest siblings and staging are best-effort with `warn!`; conversion
   results are exact or errored, never half-written (md written before
   staging, lint last).

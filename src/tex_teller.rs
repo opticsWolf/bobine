@@ -246,20 +246,14 @@ impl TexTeller {
     ) -> Result<Self> {
         info!("Loading TexTeller encoder from {}", encoder_path.display());
         let enc_prov = encoder_providers.unwrap_or(decoder_providers);
-        let encoder = crate::engine::apply_providers(
-            Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
-            enc_prov,
-        )?
-        .commit_from_file(encoder_path)
-        .map_err(|e| BobineError::Ort(e.to_string()))?;
+        let encoder = crate::engine::session_builder(enc_prov)?
+            .commit_from_file(encoder_path)
+            .map_err(|e| BobineError::Ort(e.to_string()))?;
 
         info!("Loading TexTeller decoder from {}", decoder_path.display());
-        let decoder = crate::engine::apply_providers(
-            Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
-            decoder_providers,
-        )?
-        .commit_from_file(decoder_path)
-        .map_err(|e| BobineError::Ort(e.to_string()))?;
+        let decoder = crate::engine::session_builder(decoder_providers)?
+            .commit_from_file(decoder_path)
+            .map_err(|e| BobineError::Ort(e.to_string()))?;
 
         info!(
             "Loading TexTeller tokenizer from {}",

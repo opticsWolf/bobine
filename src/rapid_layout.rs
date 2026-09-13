@@ -66,12 +66,9 @@ impl RapidLayout {
     /// Load the DocLayout-YOLO ONNX model from a file path.
     pub fn load(model_path: &Path, providers: &[String]) -> Result<Self> {
         info!("Loading RapidLayout from {}", model_path.display());
-        let session = crate::engine::apply_providers(
-            Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?,
-            providers,
-        )?
-        .commit_from_file(model_path)
-        .map_err(|e| BobineError::Ort(e.to_string()))?;
+        let session = crate::engine::session_builder(providers)?
+            .commit_from_file(model_path)
+            .map_err(|e| BobineError::Ort(e.to_string()))?;
 
         let max_side = std::env::var("BOB_LAYOUT_MAXSIDE")
             .ok()
