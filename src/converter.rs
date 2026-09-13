@@ -912,8 +912,29 @@ impl HybridConverter {
         match ext.as_str() {
             "pdf" => self.convert_pdf(input, work_dir),
             "docx" | "xlsx" | "pptx" | "doc" | "xls" | "ppt" => self.convert_office_staged(input, work_dir),
-            _ => std::fs::read_to_string(input).map_err(BobineError::Io),
+            _ => self.convert_text(input),
         }
+    }
+
+    /// Text fallback for extensions without a dedicated parser: read as
+    /// UTF-8, but only after a binary/text sniff. A binary file that slips
+    /// in under a text-ish extension (or none) fails fast with a clear
+    /// error instead of a raw "invalid UTF-8" I/O message or mojibake.
+    /// Content-based only (`is_binary_string`): the extension already had
+    /// its say in the dispatch above — the bytes get the final verdict.
+    pub fn convert_text(&mut self, input: &Path) -> Result<String> {
+        use std::io::Read;
+        let mut chunk = Vec::new();
+        std::fs::File::open(input)
+            .and_then(|mut f| f.take(binaryornot_rs::check::CHUNK_SIZE as u64).read_to_end(&mut chunk))
+            .map_err(BobineError::Io)?;
+        if binaryornot_rs::check::is_binary_string(&chunk) {
+            return Err(BobineError::UnsupportedFormat(format!(
+                "binary file, not text: {}",
+                input.display()
+            )));
+        }
+        std::fs::read_to_string(input).map_err(BobineError::Io)
     }
 
     // ==================================================================
@@ -2629,6 +2650,56 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    // ==================================================================
+    // Text fallback: binary sniff guards the no-parser path
+    // ==================================================================
+
+    #[test]
+    fn binary_file_under_text_extension_fails_fast() {
+        let d = temp_dir("bin_sniff");
+        let p = d.join("looks_like_text.md");
+        // PNG magic signature: a genuinely binary payload in text clothing.
+        std::fs::write(&p, b"\x89PNG\r\n\x1a\n\x00\x01\x02\x03binary blob").unwrap();
+        let mut conv = HybridConverter::new(
+            ConverterConfig::default(),
+            &temp_dir("bin_sniff_cache"),
+        );
+        let err = conv.convert(&p, &d).unwrap_err();
+        match err {
+            BobineError::UnsupportedFormat(msg) => {
+                assert!(msg.contains("binary file, not text"), "{msg}");
+            }
+            other => panic!("expected UnsupportedFormat, got {other}"),
+        }
+    }
+
+    #[test]
+    fn text_file_with_unknown_extension_still_converts() {
+        let d = temp_dir("txt_sniff");
+        let p = d.join("notes.weirdext");
+        std::fs::write(&p, "# Notes\n\nplain markdown body\n").unwrap();
+        let mut conv = HybridConverter::new(
+            ConverterConfig::default(),
+            &temp_dir("txt_sniff_cache"),
+        );
+        let md = conv.convert(&p, &d).unwrap();
+        assert!(md.contains("plain markdown body"), "{md}");
+    }
+
+    #[test]
+    fn empty_file_converts_to_empty_string() {
+        // is_binary_string(empty) == false (text) — an empty file stays a
+        // valid (empty) conversion, not a sniff failure.
+        let d = temp_dir("empty_sniff");
+        let p = d.join("empty.md");
+        std::fs::write(&p, b"").unwrap();
+        let mut conv = HybridConverter::new(
+            ConverterConfig::default(),
+            &temp_dir("empty_sniff_cache"),
+        );
+        assert_eq!(conv.convert(&p, &d).unwrap(), "");
     }
 
     // ==================================================================

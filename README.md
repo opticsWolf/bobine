@@ -93,6 +93,9 @@ md = bobine.convert_to_markdown(
 
 # Text documents need no models at all
 md = conv.convert("notes.txt", work_dir="/tmp/out")
+# Binary files under text-ish extensions fail fast (v0.5.11+):
+# UnsupportedFormat("binary file, not text: …") instead of a raw
+# "invalid UTF-8" I/O error — content-sniffed, extension-agnostic.
 ```
 
 ### PDF conversion with ONNX heavy passes
@@ -131,7 +134,7 @@ src/
 ├── lib.rs            crate root & re-exports
 ├── config.rs         ConverterConfig · RoutingMode · ModelPrecision
 ├── engine.rs         OnnxEngine (lazy model manager: TexTeller/Layout/OCR)
-├── converter.rs      HybridConverter (core PDF/Office pipeline)
+├── converter.rs      HybridConverter (core PDF/Office pipeline + binary-sniffed text fallback)
 ├── tex_teller.rs     TexTeller ONNX — ViT encoder → RoBERTa decoder
 ├── rapid_layout.rs   DocLayout-YOLO page layout analysis
 ├── rapid_ocr.rs      PaddleOCR det + rec (DBNet / CRNN, CTC decode)
