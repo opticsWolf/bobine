@@ -190,6 +190,14 @@ impl OnnxEngine {
         if !self.config.routing.use_onnx {
             return Ok(());
         }
+        // Shared-runtime report (plan-onnx-only Phase 3): which ORT binary
+        // serves every slot, and whether its CUDA EP is usable.
+        let ort = embroider::report();
+        info!(
+            dylib = ort.dylib_path.as_deref().unwrap_or("(loader search)"),
+            cuda_usable = ort.cuda_usable,
+            "ONNX Runtime: shared binary via embroider plumbing"
+        );
         match self.config.routing.routing_mode {
             RoutingMode::Never => {}
             RoutingMode::Surgical => {
