@@ -106,13 +106,14 @@ impl TexTeller {
         encoder_providers: Option<&[String]>,
         decoder_providers: &[String],
     ) -> Result<Self> {
-        let (owner, name) = repo
-            .split_once('/')
-            .ok_or_else(|| BobineError::Ort(format!("invalid repo: {repo}")))?;
+        // Shared validation (plan-onnx-only Phase 4): one owner/name rule for
+        // every HF fetch, failing before any network access.
+        let (owner, name) = embroider::parse_owner_name(repo)
+            .map_err(|e| BobineError::Ort(e.to_string()))?;
 
         let client =
             HFClientSync::new().map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
-        let repo_api = client.model(owner, name);
+        let repo_api = client.model(&owner, &name);
 
         let suffix = match precision {
             ModelPrecision::Fp16 => "_fp16",
