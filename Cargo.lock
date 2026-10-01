@@ -1061,9 +1061,9 @@ checksum = "9e5e8f6c15a24b9a3ee5efec809ccd006d3b30e8b3bb63c39af737c7f87daa1d"
 
 [[package]]
 name = "embroider"
-version = "0.1.3"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06ac1e45f88c609d4c15fc94f8a281a1d97fe4c25143aa771d5cdfa7c95e0116"
+checksum = "c46acdd68ea3a97e6bc83be85143b520a2b8ed82f117313f8cb677666dc0a162"
 dependencies = [
  "anyhow",
  "hf-hub",
