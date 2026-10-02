@@ -30,6 +30,12 @@ gpu = ["onnxruntime-gpu[cuda,cudnn]==1.29.0"]
 # TexTeller formula OCR (ONNX models auto-downloaded from HuggingFace)
 formula = []
 
+[tool.uv]
+# cpu XOR gpu enforced at resolve time (plan-onnx-only Step 2): both
+# distributions install the same `onnxruntime` module. pip can't express
+# this — the engine log + docs warn there.
+conflicts = [[{ extra = "cpu" }, { extra = "gpu" }]]
+
 [tool.maturin]
 features = ["extension-module"]
 python-source = "python"
