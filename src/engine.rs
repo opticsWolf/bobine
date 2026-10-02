@@ -21,6 +21,9 @@ use crate::tex_teller::TexTeller;
 /// clone-and-fallback provider plumbing from `embroider` (which also carries
 /// the corrected CUDA probe: EP availability, not the lax registration probe
 /// this crate used to duplicate here).
+/// Arena stays ON (plain `apply_providers`): the arena-off path exists for
+/// text embedding only (8x RSS win there) and must never leak into vision
+/// without its own benchmark — pinned by `vision_slots_never_use_text_policy`.
 /// Unknown provider names are warned and skipped; CPU is always available
 /// implicitly. The returned builder is ready for `commit_from_file`.
 pub(crate) fn session_builder(
@@ -28,10 +31,17 @@ pub(crate) fn session_builder(
 ) -> Result<ort::session::builder::SessionBuilder> {
     let builder =
         ort::session::Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?;
-    let tuned = SessionPolicy::ort_defaults()
+    let tuned = vision_policy()
         .apply(builder)
         .map_err(|e| BobineError::Ort(e.to_string()))?;
     Ok(embroider::apply_providers(tuned, providers))
+}
+
+/// The one session policy every vision slot gets (via `session_builder`).
+/// Its own fn so the test below pins what is actually wired, not just
+/// embroider's constructors.
+pub(crate) fn vision_policy() -> SessionPolicy {
+    SessionPolicy::ort_defaults()
 }
 
 // ------------------------------------------------------------------
@@ -190,6 +200,14 @@ impl OnnxEngine {
         if !self.config.routing.use_onnx {
             return Ok(());
         }
+        // Shared-runtime report (plan-onnx-only Phase 3): which ORT binary
+        // serves every slot, and whether its CUDA EP is usable.
+        let ort = embroider::report();
+        info!(
+            dylib = ort.dylib_path.as_deref().unwrap_or("(loader search)"),
+            cuda_usable = ort.cuda_usable,
+            "ONNX Runtime: shared binary via embroider plumbing"
+        );
         match self.config.routing.routing_mode {
             RoutingMode::Never => {}
             RoutingMode::Surgical => {
@@ -405,6 +423,21 @@ impl OnnxEngine {
 mod tests {
     use super::*;
     use crate::config::ProviderOpts;
+
+    /// Vision slots run untuned sessions, always. If anyone wires the
+    /// measured text policy (`Level3`, thread counts) into `session_builder`,
+    /// this fails loudly instead of silently retuning every vision model.
+    /// (plan-onnx-only Phase 4; needs no dylib — pure policy data.)
+    #[test]
+    fn vision_slots_never_use_text_policy() {
+        let vision = vision_policy();
+        assert!(vision.opt_level.is_none());
+        assert!(vision.intra_threads.is_none());
+        assert!(vision.inter_threads.is_none());
+        // The text policy IS tuned — the pin above is what keeps it out.
+        let text = embroider::SessionPolicy::text_embed();
+        assert!(text.opt_level.is_some());
+    }
 
     /// Requesting CUDA on a machine/library without it must degrade to CPU
     /// gracefully (Ok), never fail the session build.

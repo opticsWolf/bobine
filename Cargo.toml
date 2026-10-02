@@ -1,6 +1,6 @@
 [package]
 name = "bobine"
-version = "0.5.11"
+version = "0.5.12"
 edition = "2024"
 rust-version = "1.85"
 description = "PDF / Office / text → Markdown ingestion engine with ONNX formula OCR (TexTeller), layout analysis and OCR"
@@ -42,7 +42,7 @@ ort = { version = "2.0.0-rc.13", features = ["load-dynamic", "cuda", "rocm", "di
 # Shared ONNX plumbing: provider mapping, clone-and-fallback registration,
 # corrected CUDA probe (EP availability, not the lax registration probe this
 # crate used to carry), session policy. Also used by OKFgraph.
-embroider = "0.1"
+embroider = "0.2"
 
 # HuggingFace tokenizers (BPE tokenizer for TexTeller RoBERTa decoder)
 tokenizers = "0.21"
