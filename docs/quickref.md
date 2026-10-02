@@ -16,7 +16,7 @@ maturin develop --release          # editable install into current venv
 maturin build --release && pip install target/wheels/bobine-*.whl
 
 # ONNX Runtime libraries (auto-located on `import bobine`):
-pip install "bobine[cpu]"   # onnxruntime >= 1.28 (CPU)
+pip install "bobine[cpu]"   # onnxruntime == 1.29.0 (CPU)
 pip install "bobine[gpu]"   # onnxruntime-gpu + NVIDIA CUDA/cuDNN wheels
 ```
 

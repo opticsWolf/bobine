@@ -31,10 +31,17 @@ pub(crate) fn session_builder(
 ) -> Result<ort::session::builder::SessionBuilder> {
     let builder =
         ort::session::Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?;
-    let tuned = SessionPolicy::ort_defaults()
+    let tuned = vision_policy()
         .apply(builder)
         .map_err(|e| BobineError::Ort(e.to_string()))?;
     Ok(embroider::apply_providers(tuned, providers))
+}
+
+/// The one session policy every vision slot gets (via `session_builder`).
+/// Its own fn so the test below pins what is actually wired, not just
+/// embroider's constructors.
+pub(crate) fn vision_policy() -> SessionPolicy {
+    SessionPolicy::ort_defaults()
 }
 
 // ------------------------------------------------------------------
@@ -423,10 +430,10 @@ mod tests {
     /// (plan-onnx-only Phase 4; needs no dylib — pure policy data.)
     #[test]
     fn vision_slots_never_use_text_policy() {
-        let defaults = embroider::SessionPolicy::ort_defaults();
-        assert!(defaults.opt_level.is_none());
-        assert!(defaults.intra_threads.is_none());
-        assert!(defaults.inter_threads.is_none());
+        let vision = vision_policy();
+        assert!(vision.opt_level.is_none());
+        assert!(vision.intra_threads.is_none());
+        assert!(vision.inter_threads.is_none());
         // The text policy IS tuned — the pin above is what keeps it out.
         let text = embroider::SessionPolicy::text_embed();
         assert!(text.opt_level.is_some());

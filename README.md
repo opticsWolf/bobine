@@ -55,7 +55,7 @@ Runtime requirement: an ONNX Runtime library for the heavy passes — or
 nothing at all (Office/text/fast-path PDF work needs no models):
 
 ```bash
-pip install bobine[cpu]   # adds onnxruntime >= 1.28 (CPU)
+pip install bobine[cpu]   # adds onnxruntime == 1.29.0 (CPU)
 # or: pip install bobine[gpu]   # onnxruntime-gpu (self-contained CUDA)
 ```
 
@@ -68,8 +68,9 @@ export ORT_DYLIB_PATH=/path/to/onnxruntime.dll   # e.g. <venv>/Lib/site-packages
 ```
 
 `ort` loads the library dynamically (`load-dynamic`, no CUDA-version
-coupling) and refuses runtimes older than 1.28 (`BadVersion`) — hence the
-`>=1.28` pins. Never install both `onnxruntime` and `onnxruntime-gpu`
+coupling) and refuses runtimes older than 1.28 (`BadVersion`). The extras
+pin exactly `1.29.0`, the one runtime shared with okfgraph/embroider
+(embroider `COMPAT.md`). Never install both `onnxruntime` and `onnxruntime-gpu`
 (same module name, they clobber each other).
 
 ## Quick start (Python)
