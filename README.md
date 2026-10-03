@@ -274,17 +274,6 @@ maturin develop && python -c "import bobine"   # bindings smoke test
 Fixtures: trimmed CC BY 4.0 arXiv papers + a generated scanned page +
 generated OOXML fixtures — see `tests/fixtures/SOURCES.md` for provenance.
 
-## ONNX Runtime versioning
-
-`ort` requires onnxruntime ≥ 1.19 and fails loudly at session creation on
-older system libraries (`BadVersion`). Set `ORT_DYLIB_PATH` explicitly in CI
-or dev environments with multiple installations. GPU support = point the same
-variable at a CUDA-enabled build; layout/OCR then auto-enable CUDA per
-slot (v0.4.9+) and `ConverterConfig` exposes per-slot overrides
-(`layout_ort_providers`, `ocr_ort_providers`, `table_ort_providers`,
-`encoder_ort_providers`, `decoder_ort_providers`), with `ort_providers`
-as the base list for TexTeller.
-
 ## Docs
 
 - [**Quick reference**](https://github.com/opticsWolf/bobine/blob/main/docs/quickref.md) — install, API, config, common tasks
