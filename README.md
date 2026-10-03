@@ -1,4 +1,5 @@
 # bobine
+### Standalone PDF / Office / text → Markdown ingestion engine — a pure-Rust core with Python bindings.
 
 [![Crates.io](https://img.shields.io/crates/v/bobine)](https://crates.io/crates/bobine)
 [![docs.rs](https://img.shields.io/docsrs/bobine)](https://docs.rs/bobine)
@@ -8,9 +9,6 @@
 [![onnxruntime](https://img.shields.io/badge/onnxruntime-%E2%89%A51.19-blue)](https://onnxruntime.ai)
 [![CI](https://github.com/opticsWolf/bobine/actions/workflows/ci.yml/badge.svg)](https://github.com/opticsWolf/bobine/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-green)](https://github.com/opticsWolf/bobine/blob/main/LICENSE)
-
-Standalone **PDF / Office / text → Markdown ingestion engine** — a pure-Rust
-core with Python bindings.
 
 ## Contents
 
