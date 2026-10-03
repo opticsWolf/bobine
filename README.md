@@ -10,33 +10,43 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-green)](https://github.com/opticsWolf/bobine/blob/main/LICENSE)
 
 Standalone **PDF / Office / text → Markdown ingestion engine** — a pure-Rust
-core with Python bindings. Runs on a single `onnxruntime` shared library with
-no CUDA-version coupling: `pdf_oxide` for fast native PDF text extraction,
-ONNX models (TexTeller formula OCR, DocLayout-YOLO layout analysis, PaddleOCR)
-for the heavy passes. **No torch, no optimum, no opencv** — not even on the
-Python side.
+core with Python bindings.
+
+## Contents
+
+- [Why bobine?](#why-bobine)
+- [Installation](#installation) · [Runtime: ONNX Runtime](#runtime-onnx-runtime)
+- [Quick start](#quick-start-python) (Python · Rust)
+- [Routing modes](#routing-modes)
+- [Performance](#performance) (CPU vs CUDA vs quantization)
+- [Formula OCR](#formula-ocr) · [OCR batching](#ocr-batching)
+- [Office documents](#office-documents) · [Output contract](#output-contract)
+- [Module layout](#module-layout) · [Testing](#testing)
+- [Docs](#docs) · [License](#license)
+
+## What it is
+
+Runs on a single `onnxruntime` shared library with no CUDA-version
+coupling: `pdf_oxide` for fast native PDF text extraction, ONNX models
+(TexTeller formula OCR, DocLayout-YOLO layout analysis, PaddleOCR)
+for the heavy passes.
+
+**No torch, no optimum, no opencv** — not even on the Python side.
 
 Dual-licensed under the terms of either the MIT License or the Apache License,
 Version 2.0 — you may choose either (see [LICENSE](https://github.com/opticsWolf/bobine/blob/main/LICENSE)).
-
-## Docs
-
-- [**Quick reference**](https://github.com/opticsWolf/bobine/blob/main/docs/quickref.md) — install, API, config, common tasks
-- [**Architecture**](https://github.com/opticsWolf/bobine/blob/main/docs/architecture.md) — modules, data flow, coordinate spaces, model acquisition
-- [**Benchmarks & test results**](https://github.com/opticsWolf/bobine/blob/main/docs/benchmarks.md) — CPU vs CUDA timings, TexTeller fp32/int8, environment setup
-- [**Proposal: figures/tables/layout**](https://github.com/opticsWolf/bobine/blob/main/docs/proposal_media_tables.md) — plan for reading-order image placement and structured table extraction
-- [**Implementation plan**](https://github.com/opticsWolf/bobine/blob/main/IMPLEMENTATION_PLAN.md) — status, gap inventory, phased roadmap
-- [**Office export plan**](https://github.com/opticsWolf/bobine/blob/main/IMPLEMENTATION_PLAN_office.md) — md for all formats, Excel csv/json, picture extraction
 
 ## Why bobine?
 
 The ingestion pipeline was originally entangled with the knowledge-graph
 project it served (`OKFgraph`). This crate moves conversion into its own
 package so any consumer — a graph, a CLI, an MCP server, a batch tool — can
-reuse it without importing a database stack. The v0.3.0 rewrite ports the
-whole pipeline to Rust: same routing heuristics and output contract as the
-proven Python implementation (preserved under [`legacy/`](https://github.com/opticsWolf/bobine/tree/main/legacy)), with
-native speed and no Python ML dependencies.
+reuse it without importing a database stack.
+
+The v0.3.0 rewrite ports the whole pipeline to Rust: same routing
+heuristics and output contract as the proven Python implementation
+(preserved under [`legacy/`](https://github.com/opticsWolf/bobine/tree/main/legacy)),
+with native speed and no Python ML dependencies.
 
 ## Installation
 
@@ -51,13 +61,17 @@ cargo add bobine
 pip install maturin && maturin develop --release
 ```
 
-Runtime requirement: an ONNX Runtime library for the heavy passes — or
-nothing at all (Office/text/fast-path PDF work needs no models):
+## Runtime: ONNX Runtime
+
+The heavy passes need an ONNX Runtime library — or nothing at all
+(Office/text/fast-path PDF work needs no models):
 
 ```bash
 pip install bobine[cpu]   # adds onnxruntime == 1.29.0 (CPU)
 # or: pip install bobine[gpu]   # onnxruntime-gpu (self-contained CUDA)
 ```
+
+### Library discovery
 
 `import bobine` points `ORT_DYLIB_PATH` at the pip-installed library
 automatically; an already-set `ORT_DYLIB_PATH` always wins (e.g. a custom
@@ -67,11 +81,13 @@ CUDA build):
 export ORT_DYLIB_PATH=/path/to/onnxruntime.dll   # e.g. <venv>/Lib/site-packages/onnxruntime/capi/onnxruntime.dll
 ```
 
+### Version rules
+
 `ort` loads the library dynamically (`load-dynamic`, no CUDA-version
 coupling) and refuses runtimes older than 1.28 (`BadVersion`). The extras
 pin exactly `1.29.0`, the one runtime shared with okfgraph/embroider
-(embroider `COMPAT.md`). Never install both `onnxruntime` and `onnxruntime-gpu`
-(same module name, they clobber each other).
+(embroider `docs/compat.md`). Never install both `onnxruntime` and
+`onnxruntime-gpu` (same module name, they clobber each other).
 
 ## Quick start (Python)
 
@@ -99,7 +115,7 @@ md = conv.convert("notes.txt", work_dir="/tmp/out")
 # "invalid UTF-8" I/O error — content-sniffed, extension-agnostic.
 ```
 
-### PDF conversion with ONNX heavy passes
+### Routing modes
 
 `HybridConverter` routes pages through four modes:
 
@@ -153,12 +169,38 @@ python/bobine/        Python shim + type stubs        (import bobine)
 legacy/               frozen pure-Python bobine v0.2.0 (reference implementation)
 ```
 
-### Formula OCR (SURGICAL mode)
+## Performance
+
+Reference box: RTX 3090, ORT 1.28.1 (benches predate the 1.29.0 pin —
+ratios, not absolutes, are the takeaway). Full tables, fixtures, and
+repro commands in
+[docs/benchmarks.md](https://github.com/opticsWolf/bobine/blob/main/docs/benchmarks.md).
+
+| Workload | CPU | CUDA (RTX 3090) | Routing |
+|---|---|---|---|
+| Layout (DocLayout-YOLO, 1024²) | 480 ms | **37–38 ms (~12.8×)** | CUDA auto-enabled |
+| OCR det+rec (PP-OCRv4, 1024²) | 131 ms | **36 ms (~3.6×)** | CUDA auto-enabled |
+| OCR 47-line page (batched) | 0.79 s | **0.32 s (6.3× vs per-line)** | CUDA + chunked rec |
+| Table (SLANet-plus, 700×400) | **28.8 ms** | 49 ms (0.6× — slower) | Pinned to CPU |
+| Table (SLANet-plus, 1024²) | **133 ms** | 893 ms (0.15× — much slower) | Pinned to CPU |
+| TexTeller fp32 + KV-cache | 0.95 s | **0.42 s (~2.3×)** | CUDA opt-in (see below) |
+| TexTeller int8 | **0.50 s** | 1.32 s (slower) | CPU default |
+
+Takeaways:
+
+- **CUDA wins big on layout + OCR** (12.8× / 3.6×) — auto-enabled, zero config.
+- **Tables stay on CPU by design** — SLANet fragments across devices (2–9× slower on CUDA).
+- **Quantization is hardware-dependent**: int8 is ~1.9× faster than fp32 on CPU (identical output, ~319 MB vs ~1.25 GB) but loses on CUDA (dequant overhead, no KV-cache); Int8 + CUDA is discouraged and warned against.
+- **Batching is provider-gated**: chunked rec is 6.3× faster on CUDA but was measured 4.8× *slower* on CPU — CPU sessions keep the exact single-line path (byte-identical tensors).
+
+## Formula OCR
 
 Formulas are recognized by **TexTeller** (80M training pairs), decoded with
 KV-cache over a ViT encoder → RoBERTa decoder ONNX graph — roughly 5× faster
 per crop than the RapidLaTeXOCR backend used by the legacy Python package,
 with markedly better accuracy.
+
+### Model choice
 
 By default bobine downloads the quantized export
 (~319 MB total, HF `Ji-Ha/TexTeller3-ONNX-dynamic`) into the converter's
@@ -170,17 +212,20 @@ degraded recognition). Measured on a 10-formula corpus: Int8+CPU scores
 10/10, Fp32+CUDA 9/10 — occasional single-token decode noise flips between
 examples on either variant, so pick by hardware, not quality.
 
+### GPU
+
 On NVIDIA GPUs, point `ORT_DYLIB_PATH` at a GPU onnxruntime build —
 v0.4.9+ auto-enables CUDA for the layout and OCR slots when the loaded
 library exposes a usable CUDA execution provider (EP-availability probe,
-shared embroider crate since v0.5.10 — measured 12.3x / 3.6x
-speedups), and keeps table recognition pinned to CPU (SLANet measures
-2-9x slower on CUDA: its graph fragments across devices). Zero config
-needed; explicit per-slot overrides: `layout_ort_providers`,
+shared embroider crate since v0.5.10).
+
+Zero config needed; explicit per-slot overrides: `layout_ort_providers`,
 `ocr_ort_providers`, `table_ort_providers`, `encoder_ort_providers`,
 `decoder_ort_providers`. To also run Fp32 formula decode on the GPU, set
 `ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"]`
 (Int8 + CUDA is discouraged and warned against).
+
+### Formula regions
 
 Formula regions come from the PDF text layer (TeX math fonts such as
 `cmmi`/`cmsy`/`cmex`, plus unicode math codepoints), merged **line-aware** so
@@ -188,6 +233,8 @@ multi-line display equations become one crop while separate equations,
 columns and prose stay apart. For text-layer-hostile PDFs (Word/InDesign/OCR
 output without math fonts), set `formula_layout_fallback=True` to ask the
 layout model for equation regions instead (off by default).
+
+### OCR batching
 
 OCR recognition runs line crops in chunks of 32 on accelerators (6.3x faster
 on CUDA, measured) while CPU-only sessions keep the exact single-line path —
@@ -218,7 +265,7 @@ for unreferenced figures. Office docs additionally stage pictures into
 ## Testing
 
 ```bash
-cargo test                # 128 lib tests (ORT_DYLIB_PATH required — no dylib = abort)
+cargo test                # 132 lib tests (ORT_DYLIB_PATH required — no dylib = abort)
 cargo test --test test_office --test test_excel --test test_golden   # no models needed
 ORT_DYLIB_PATH=... cargo test --test test_converter                 # incl. full-paper AUTO run
 maturin develop && python -c "import bobine"   # bindings smoke test
@@ -237,6 +284,15 @@ slot (v0.4.9+) and `ConverterConfig` exposes per-slot overrides
 (`layout_ort_providers`, `ocr_ort_providers`, `table_ort_providers`,
 `encoder_ort_providers`, `decoder_ort_providers`), with `ort_providers`
 as the base list for TexTeller.
+
+## Docs
+
+- [**Quick reference**](https://github.com/opticsWolf/bobine/blob/main/docs/quickref.md) — install, API, config, common tasks
+- [**Architecture**](https://github.com/opticsWolf/bobine/blob/main/docs/architecture.md) — modules, data flow, coordinate spaces, model acquisition
+- [**Benchmarks & test results**](https://github.com/opticsWolf/bobine/blob/main/docs/benchmarks.md) — full CPU vs CUDA tables, TexTeller fp32/int8, OCR batching analysis, environment setup
+- [**Proposal: figures/tables/layout**](https://github.com/opticsWolf/bobine/blob/main/docs/proposal_media_tables.md) — plan for reading-order image placement and structured table extraction
+- [**Implementation plan**](https://github.com/opticsWolf/bobine/blob/main/IMPLEMENTATION_PLAN.md) — status, gap inventory, phased roadmap
+- [**Office export plan**](https://github.com/opticsWolf/bobine/blob/main/IMPLEMENTATION_PLAN_office.md) — md for all formats, Excel csv/json, picture extraction
 
 ## License
 
