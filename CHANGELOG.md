@@ -1,9 +1,11 @@
 # Changelog — bobine
 
-## Unreleased
+## 0.5.13 — 2026-10-03
 
 - ONNX plumbing on `embroider >=0.3, <0.4` (same floor as okfgraph;
   policy API unchanged, full suite green against 0.3.1).
+- Docs: implementation plans removed (superseded), README restructured
+  with Performance overview, embroider ownership boundary documented.
 
 ## 0.5.12
 
