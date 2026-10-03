@@ -115,7 +115,7 @@ pub struct ProviderOpts {
     /// Provider override for the RapidTable (SLANet-plus) session.
     /// `None` (default) = **always CPU**: SLANet's graph fragments
     /// across devices on CUDA and measures 2-9x slower than CPU
-    /// (IMPLEMENTATION_PLAN.md).
+    /// (measured 1.7x at 700x400, 6.7x at 1024x1024; see docs/benchmarks.md).
     #[serde(default)]
     pub table_ort_providers: Option<Vec<String>>,
 }

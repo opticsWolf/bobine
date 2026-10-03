@@ -246,8 +246,8 @@ markdown via `office_oxide` (`HybridConverter::convert_office(path)` or the
 `convert()` dispatcher — no models needed). Excel workbooks additionally export per-sheet
 csv/json (`convert_excel`, `<stem>.<sheet>.csv` + `<stem>.json` siblings).
 Embedded pictures stage into `<work_dir>/assets/office/` and rewrite to staged
-files, promoted to `okf-asset://` by `ingest_document` — details in the
-[**Office export plan**](https://github.com/opticsWolf/bobine/blob/main/IMPLEMENTATION_PLAN_office.md).
+files, promoted to `okf-asset://` by `ingest_document` — see §12 of the
+[architecture doc](https://github.com/opticsWolf/bobine/blob/main/docs/architecture.md).
 
 ## Output contract
 
@@ -278,8 +278,6 @@ generated OOXML fixtures — see `tests/fixtures/SOURCES.md` for provenance.
 - [**Architecture**](https://github.com/opticsWolf/bobine/blob/main/docs/architecture.md) — modules, data flow, coordinate spaces, model acquisition
 - [**Benchmarks & test results**](https://github.com/opticsWolf/bobine/blob/main/docs/benchmarks.md) — full CPU vs CUDA tables, TexTeller fp32/int8, OCR batching analysis, environment setup
 - [**Proposal: figures/tables/layout**](https://github.com/opticsWolf/bobine/blob/main/docs/proposal_media_tables.md) — plan for reading-order image placement and structured table extraction
-- [**Implementation plan**](https://github.com/opticsWolf/bobine/blob/main/IMPLEMENTATION_PLAN.md) — status, gap inventory, phased roadmap
-- [**Office export plan**](https://github.com/opticsWolf/bobine/blob/main/IMPLEMENTATION_PLAN_office.md) — md for all formats, Excel csv/json, picture extraction
 
 ## License
 

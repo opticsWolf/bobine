@@ -117,15 +117,14 @@ binary file under a text-ish extension fails fast with
 "invalid UTF-8" I/O error; an empty file is text and converts to `""`.
 (v0.5.11+)
 
-> Office export (Excel csv/json, picture staging) ships — see
-> `IMPLEMENTATION_PLAN_office.md` and §12.
+> Office export (Excel csv/json, picture staging) ships — see §12.
 
 ### Office conversion (`convert_office_staged`)
 
 ```
 Document::open(path)                       ← office_oxide, magic-byte sniffed
-md = doc.to_markdown()                     ← upstream rendering (quirks logged
-                                              in IMPLEMENTATION_PLAN_office.md)
+md = doc.to_markdown()                     ← upstream rendering (footnote/hyperlink/
+                                              formula-cell gaps logged upstream, no in-tree workarounds)
 if !extract_images: return md              ← knob respected, md untouched
 images = collect_office_images(doc.to_ir())
 if images.empty(): images = collect_package_images(path)
@@ -374,7 +373,7 @@ frozen tests under `legacy/tests/`.
 
 ## 12. Office export subsystem (v0.5.x)
 
-Full background: `IMPLEMENTATION_PLAN_office.md`. The subsystem has three
+The subsystem has three
 parts with deliberately different trust levels:
 
 - **`convert_office`** — thin delegation (`Document::open` +

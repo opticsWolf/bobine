@@ -6,7 +6,7 @@
 //! typed values, and formulas — plus uniform renderers ([`sheets_to_csv`],
 //! [`excel_to_json`], [`sheets_to_markdown`]).
 //!
-//! Design notes (see IMPLEMENTATION_PLAN_office.md Phase 2):
+//! Design notes (office export design):
 //! - Display text reuses office_oxide formatting (`format_cell_value` for
 //!   xlsx, `as_text` for xls): dates, percents, and currency render as seen.
 //! - Numbers that are exact integers (and fit in i64) map to JSON integers,
