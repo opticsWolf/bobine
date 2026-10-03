@@ -242,6 +242,11 @@ more than ~2 s per formula crop.
 Missing layout/OCR models degrade to the fast path per page; a missing
 table model only disables scanned-table recognition.
 
+Ownership: bobine fetches (own HF clients, own repo constants) and runs
+(own `ort` sessions) every model above. embroider contributes only the
+session policy (`SessionPolicy::ort_defaults()`), provider fallback, and
+CUDA probe — it never sees converter weights.
+
 ## Testing
 
 ```bash

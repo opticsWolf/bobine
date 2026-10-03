@@ -200,6 +200,15 @@ every CPU box (the dylib's own commit-time fallback warning was the only
 reveal). On CPU-only ONNX Runtime builds the probe is false and every slot
 resolves to plain CPU — zero cost, no config needed either way.
 
+Ownership boundary with embroider: the policy and provider plumbing above
+are the *only* things this engine takes from the shared crate (pinned as
+`embroider 0.2` — pre-vision, and nothing here needs more). Model fetch
+is per-slot `hf_fetch`/explicit paths with this engine's own `hf_hub`
+clients and repo constants (§8); every session is built and run here
+(`session_builder` + slot code). embroider never sees converter weights
+and runs no converter inference — it is an ORT session-policy library
+that happens to also contain a Jina engine this crate never calls.
+
 ---
 
 ## 5. Coordinate spaces (the one real trap)
