@@ -1,5 +1,10 @@
 # Changelog — bobine
 
+## Unreleased
+
+- ONNX plumbing on `embroider >=0.3, <0.4` (same floor as okfgraph;
+  policy API unchanged, full suite green against 0.3.1).
+
 ## 0.5.12
 
 - ONNX plumbing on `embroider 0.2` (`SessionPolicy`, `apply_providers`,
