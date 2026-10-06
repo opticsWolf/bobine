@@ -273,7 +273,7 @@ for unreferenced figures. Office docs additionally stage pictures into
 ## Testing
 
 ```bash
-cargo test                # 132 lib tests (ORT_DYLIB_PATH required — no dylib = abort)
+cargo test                # 137 lib tests (ORT_DYLIB_PATH required — no dylib = abort)
 cargo test --test test_office --test test_excel --test test_golden   # no models needed
 ORT_DYLIB_PATH=... cargo test --test test_converter                 # incl. full-paper AUTO run
 maturin develop && python -c "import bobine"   # bindings smoke test
