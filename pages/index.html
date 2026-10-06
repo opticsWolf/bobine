@@ -14,7 +14,7 @@
 <nav class="top" aria-label="Main navigation">
   <a class="brand" href="#top">
     <svg class="mark" viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M6 7 21 5 23 21 7 23 6 7Zm0 0 17 14M21 5 7 23" stroke="currentColor" stroke-width="1.5"/><g fill="currentColor"><circle cx="6" cy="7" r="3"/><circle cx="21" cy="5" r="3"/><circle cx="23" cy="21" r="3"/><circle cx="7" cy="23" r="3"/></g></svg>
-    bobine <span class="release">0.5.13</span>
+    bobine <span class="release">0.6.0</span>
   </a>
   <div class="links">
     <a href="#positioning">Why bobine</a>
@@ -56,7 +56,7 @@ md = conv.<span class="syntax-link">convert_pdf</span>(<span class="syntax-muted
     </div>
     <div class="preview-index"><span>Fast path first</span><span>heavy passes only where flagged</span></div>
     <div class="preview-query"><span class="syntax-muted">The rule the router keeps</span><strong>“Never fail a conversion over a model.”</strong><p>Missing or broken heavy models degrade to the fast path per page.<br>Text and Office work needs no models at all.</p></div>
-    <p class="preview-caption">Illustrative session · converter weights auto-download into the cache dir.</p>
+    <p class="preview-caption">Illustrative session · converter weights auto-download into the shared hub cache.</p>
   </figure>
   <ul class="principles" aria-label="At a glance">
     <li>PDF · Office · text</li><li>Rust core, Python wheels</li><li>TexTeller formula OCR</li><li>Single ORT binary</li>
@@ -99,7 +99,7 @@ md = conv.<span class="syntax-link">convert_pdf</span>(<span class="syntax-muted
 <section id="workflow" aria-labelledby="workflow-title">
   <div class="section-intro">
     <h2 id="workflow-title">From a PDF<br>to trusted Markdown.</h2>
-    <div class="prose"><p>One converter covers papers, scans, Office files, and plain text. The example below follows the standard path: install the wheel with one runtime, convert surgically, force the full pipeline only for scans, recognise a lone formula crop, and stage a document-level ingest.</p><p>Converter weights auto-download from HuggingFace on first use into your cache dir; explicit local paths can override them. Office, text, and fast-path PDF work needs no models at all.</p></div>
+    <div class="prose"><p>One converter covers papers, scans, Office files, and plain text. The example below follows the standard path: install the wheel with one runtime, convert surgically, force the full pipeline only for scans, recognise a lone formula crop, and stage a document-level ingest.</p><p>Converter weights auto-download from HuggingFace on first use into the shared hub cache under your cache dir (the hub-cache root); explicit local paths can override them. Office, text, and fast-path PDF work needs no models at all.</p></div>
   </div>
   <div class="setup">
     <div><h3>Install with one runtime</h3><p>Wheels for Linux, Windows x86_64, and macOS arm64. The <code>cpu</code> and <code>gpu</code> extras are alternatives — never install both <code>onnxruntime</code> packages. <code>import bobine</code> locates the library; an already-set <code>ORT_DYLIB_PATH</code> always wins.</p><pre tabindex="0" aria-label="Installation commands"><code>pip install bobine
@@ -171,7 +171,7 @@ doc.csv_by_sheet   # {'Data': 'Item,Count,...\n', ...}</code></pre></div>
 </section>
 
 <section id="features" aria-labelledby="features-title">
-  <div class="section-intro"><h2 id="features-title">Useful at every stage<br>of the ingest loop.</h2><div class="prose"><p>bobine owns fetching, preprocessing, session wiring, and decoding for every converter model. embroider contributes only the session policy, provider fallback, and CUDA probe — it never sees converter weights. That division keeps responsibilities inspectable.</p></div></div>
+  <div class="section-intro"><h2 id="features-title">Useful at every stage<br>of the ingest loop.</h2><div class="prose"><p>bobine owns fetching, preprocessing, session wiring, and decoding for every converter model. embroider contributes only the session policy, provider fallback, and CUDA probe — it never sees converter weights. That division keeps responsibilities inspectable. <code>model_status()</code> reports which converter weights are already cached — offline, per family.</p></div></div>
   <div class="feat-grid">
     <article><h3>Four routing modes</h3><p><code>Never</code> for the pure fast path, <code>Auto</code> for per-page heuristics, <code>Surgical</code> for TexTeller-only formulas, <code>Always</code> for full layout + OCR with hybrid formula refinement on born-digital pages.</p></article>
     <article><h3>TexTeller formula OCR</h3><p>Int8 by default (~319 MB, 10/10 on the corpus, ~0.5 s median on CPU); fp32 opt-in (~1.25 GB, ~0.42 s on CUDA). Int8 + CUDA is discouraged and warned against — quantized ops lose on the GPU path.</p></article>
@@ -180,7 +180,7 @@ doc.csv_by_sheet   # {'Data': 'Item,Count,...\n', ...}</code></pre></div>
     <article><h3>Output you can diff</h3><p>One Markdown string: inline <code>$…$</code> and display <code>$$…$$</code> LaTeX spliced in place, GFM tables, fenced code from monospaced runs, embedded images in <code>work_dir</code>, plus an <code>okf-asset://</code> staging store.</p></article>
     <article><h3>Graceful under failure</h3><p>Heavy models degrade to the fast path per page; binary files under text-ish extensions fail fast with <code>UnsupportedFormat</code> instead of decode garbage. A conversion never fails because a model did.</p></article>
     <article><h3>GPU with zero config</h3><p>Layout and OCR auto-enable CUDA when the loaded library exposes a usable EP (shared probe since v0.5.10). Per-slot <code>*_ort_providers</code> overrides pin any slot; CoreML entries cover Apple Silicon.</p></article>
-    <article><h3>Tested against fixtures</h3><p>132 lib tests plus office, excel, and golden suites; trimmed CC BY 4.0 arXiv papers with provenance in <code>SOURCES.md</code>. The frozen Python v0.2.0 tree stays under <code>legacy/</code> as the reference implementation.</p></article>
+    <article><h3>Tested against fixtures</h3><p>137 lib tests plus office, excel, and golden suites; trimmed CC BY 4.0 arXiv papers with provenance in <code>SOURCES.md</code>. The frozen Python v0.2.0 tree stays under <code>legacy/</code> as the reference implementation.</p></article>
   </div>
 </section>
 
@@ -229,13 +229,13 @@ BobineConverter::default()
 // precision, quantization</code></pre><a class="text-link" href="https://docs.rs/bobine">API docs <span aria-hidden="true">↗</span></a></article>
     <article><h3>Graphs for context</h3><p>OKFgraph consumes staged Markdown behind a replaceable converter boundary; embroider supplies the session policy bobine builds on. Each package versions and ships alone.</p><pre tabindex="0" aria-label="Stack pins"><code># one shared ORT binary:
 onnxruntime==1.29.0
-# bobine 0.5.x ↔ embroider policy
+# bobine 0.6.x ↔ embroider >=0.3.3 (policy + cache_info_files)
 # okfgraph 0.8.x ↔ bobine 0.5.x+</code></pre><a class="text-link" href="https://github.com/opticsWolf/bobine/blob/main/docs/architecture.md">Architecture <span aria-hidden="true">↗</span></a></article>
   </div>
 </section>
 
 <section id="stack" aria-labelledby="stack-title">
-  <div class="section-intro"><h2 id="stack-title">A focused trio,<br>with clear ownership.</h2><div class="prose"><p>bobine owns document conversion end to end. OKFgraph owns the knowledge workflow that consumes its Markdown; embroider owns the session policy its ONNX sessions are built on. Each consumer owns its sessions; sharing policy doesn't mean sharing inference state.</p><p>The v0.5.13 stack shares one ONNX Runtime 1.29.0 binary across all three packages, located via <code>ORT_DYLIB_PATH</code> or the pip-installed build. On Windows, a stale <code>System32\onnxruntime.dll</code> (1.17.x) breaks the load — point at the venv build.</p></div></div>
+  <div class="section-intro"><h2 id="stack-title">A focused trio,<br>with clear ownership.</h2><div class="prose"><p>bobine owns document conversion end to end. OKFgraph owns the knowledge workflow that consumes its Markdown; embroider owns the session policy its ONNX sessions are built on. Each consumer owns its sessions; sharing policy doesn't mean sharing inference state.</p><p>The v0.6.0 stack shares one ONNX Runtime 1.29.0 binary across all three packages, located via <code>ORT_DYLIB_PATH</code> or the pip-installed build. On Windows, a stale <code>System32\onnxruntime.dll</code> (1.17.x) breaks the load — point at the venv build.</p></div></div>
   <div class="package" id="okfgraph">
     <div class="package-heading"><h3>OKFgraph <span class="ver">0.9.0</span></h3><p>Local knowledge graph + agent memory</p><a class="text-link" href="https://opticswolf.github.io/OKFgraph/">Website <span aria-hidden="true">↗</span></a> <a class="text-link" href="https://github.com/opticsWolf/OKFgraph">Repository <span aria-hidden="true">↗</span></a></div>
     <div class="prose"><p>Consumes staged Markdown behind the <code>DocumentConverter</code> seam — install the PDF extra and bobine stages the conversion before import. Bundle import and maintenance stay outside the agent tool surface.</p></div>
@@ -249,13 +249,13 @@ onnxruntime==1.29.0
     <tr><th scope="row">TexTeller fp32</th><td>0.95 s</td><td>0.42 s</td><td>CUDA opt-in</td></tr>
   </tbody></table></div><a class="text-link" href="https://github.com/opticsWolf/bobine/blob/main/docs/benchmarks.md">Methodology and full results <span aria-hidden="true">↗</span></a></details>
   <div class="package" id="embroider">
-    <div class="package-heading"><h3>embroider <span class="ver">0.3.1</span></h3><p>Jina v5 → ONNX embeddings</p><a class="text-link" href="https://opticswolf.github.io/embroider/">Website <span aria-hidden="true">↗</span></a> <a class="text-link" href="https://github.com/opticsWolf/embroider">Repository <span aria-hidden="true">↗</span></a></div>
-    <div class="prose"><p>Supplies the session policy (<code>SessionPolicy::ort_defaults()</code>), provider fallback, and CUDA probe bobine builds converter sessions from. Converter weights, preprocessing, and decoding stay with bobine by design.</p><p><a href="https://github.com/opticsWolf/embroider/blob/main/docs/quickref.md">API quick reference</a> · <a href="https://github.com/opticsWolf/embroider/blob/main/docs/compat.md">Runtime compatibility</a></p></div>
+    <div class="package-heading"><h3>embroider <span class="ver">0.3.3</span></h3><p>Jina v5 → ONNX embeddings</p><a class="text-link" href="https://opticswolf.github.io/embroider/">Website <span aria-hidden="true">↗</span></a> <a class="text-link" href="https://github.com/opticsWolf/embroider">Repository <span aria-hidden="true">↗</span></a></div>
+    <div class="prose"><p>Supplies the session policy (<code>SessionPolicy::ort_defaults()</code>), provider fallback, and CUDA probe bobine builds converter sessions from. Converter weights, preprocessing, and decoding stay with bobine by design. Its shared <code>cache_info_files</code> lookup also powers <code>model_status()</code>: one offline cache report per converter family.</p><p><a href="https://github.com/opticsWolf/embroider/blob/main/docs/quickref.md">API quick reference</a> · <a href="https://github.com/opticsWolf/embroider/blob/main/docs/compat.md">Runtime compatibility</a></p></div>
   </div>
   <div class="table-wrap" tabindex="0" role="region" aria-label="Package versions"><table><caption>Published stack</caption><thead><tr><th scope="col">Responsibility</th><th scope="col">Package</th><th scope="col">Version</th></tr></thead><tbody>
     <tr><th scope="row">Knowledge graph · retrieval · MCP</th><td><a href="https://pypi.org/project/okfgraph/">okfgraph</a></td><td>0.9.0</td></tr>
-    <tr><th scope="row">PDF / Office conversion</th><td><a href="https://pypi.org/project/bobine/">bobine</a></td><td>0.5.13</td></tr>
-    <tr><th scope="row">Jina embeddings · runtime policy</th><td><a href="https://pypi.org/project/embroider/">embroider</a></td><td>0.3.1</td></tr>
+    <tr><th scope="row">PDF / Office conversion</th><td><a href="https://pypi.org/project/bobine/">bobine</a></td><td>0.6.0</td></tr>
+    <tr><th scope="row">Jina embeddings · runtime policy</th><td><a href="https://pypi.org/project/embroider/">embroider</a></td><td>0.3.3</td></tr>
     <tr><th scope="row">Inference runtime (CPU or GPU)</th><td>onnxruntime</td><td>1.29.0</td></tr>
   </tbody></table></div>
   <aside class="note"><h3>Open code. Separately licensed models.</h3><p>bobine's code is Apache-2.0 OR MIT. Converter weights carry their own terms — TexTeller, DocLayout-YOLO, PP-OCRv4, and SLANet-plus sources among them. Test fixtures are CC BY 4.0 with attribution in <code>SOURCES.md</code>. Review model cards before commercial use or redistribution.</p></aside>
