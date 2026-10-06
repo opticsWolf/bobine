@@ -95,7 +95,7 @@ import bobine
 
 conv = bobine.HybridConverter(
     bobine.ConverterConfig(routing_mode=bobine.RoutingMode.Surgical),
-    cache_dir="~/.cache/bobine",       # TexTeller models auto-download here
+    cache_dir="~/.cache/bobine",       # hub-cache root (models shared machine-wide)
 )
 
 md = conv.convert_pdf("paper.pdf", work_dir="/tmp/out")
@@ -129,6 +129,15 @@ RapidLayout and RapidOCR weights also auto-download from HuggingFace on
 first use (DocStructBench YOLO ~72 MB, PP-OCRv4 ~16 MB); explicit local
 paths can override them. Missing/broken heavy models degrade gracefully to
 the fast path per page — a conversion never fails because of them.
+
+Converter models live in the standard HuggingFace hub cache (0.6.0+):
+`cache_dir` is the hub-cache root — an override of the env-resolved
+default, shared machine-wide, never a per-output sidecar. The first
+fetch after upgrading downloads once; repeats reuse the blob (a cached
+file costs zero network, logged as "using cached").
+`bobine.model_status(cache_dir=None)` reports per-family status offline
+(same dict keys as okfgraph's `model_info`); `ingest_document` accepts
+an optional `cache_dir` (`None` = standard cache).
 
 ## Quick start (Rust)
 

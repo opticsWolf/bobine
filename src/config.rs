@@ -60,7 +60,7 @@ pub enum ModelPrecision {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelQuantization {
-    /// Full-precision TexTeller (default).
+    /// Full-precision TexTeller.
     Fp32,
     /// onnx-community int8 exports (compact memory footprint).
     Int8,

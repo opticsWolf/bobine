@@ -86,6 +86,7 @@ fn ingest_writes_excel_sibling_files() {
         None,
         None,
         &bobine::ProgressHooks::default(),
+        None,
     )
     .expect("ingest xlsx");
     assert_eq!(doc.data_files.len(), 3, "{:?}", doc.data_files);

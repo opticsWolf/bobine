@@ -401,7 +401,7 @@ struct PyCallbacks<'py> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, output_dir, config=None, lint_callback=None, should_continue=None, on_page=None))]
+#[pyo3(signature = (path, output_dir, config=None, lint_callback=None, should_continue=None, on_page=None, cache_dir=None))]
 fn ingest_document<'py>(
     py: Python<'py>,
     path: &str,
@@ -410,6 +410,7 @@ fn ingest_document<'py>(
     lint_callback: Option<Bound<'py, PyAny>>,
     should_continue: Option<Bound<'py, PyAny>>,
     on_page: Option<Bound<'py, PyAny>>,
+    cache_dir: Option<&str>,
 ) -> PyResult<PyConvertedDocument> {
     let cbs = PyCallbacks {
         lint: lint_callback,
@@ -459,15 +460,76 @@ fn ingest_document<'py>(
 
     // LintFn is a reference type; keep the boxed closure alive in this scope.
     let owned_lint = lint_fn;
+    // Hub-cache alignment: None resolves the standard hub cache (no more
+    // <output>/.cache sidecar); pass a dir to pin models elsewhere.
+    let default_cache;
+    let cache_opt: Option<&std::path::Path> = match cache_dir {
+        Some(d) => Some(std::path::Path::new(d)),
+        None => {
+            default_cache = hf_hub::resolve_cache_dir();
+            Some(default_cache.as_path())
+        }
+    };
     let doc = pipeline::ingest_document(
         std::path::Path::new(path),
         std::path::Path::new(output_dir),
         config.map(|c| &c.inner),
         owned_lint.as_ref().map(|f| f as &crate::pipeline::LintFn),
         &hooks,
+        cache_opt,
     )
     .map_err(to_py_err)?;
     Ok(PyConvertedDocument { inner: doc })
+}
+
+/// Offline converter-model cache status (hub-cache alignment): one report
+/// dict per family — TexTeller (default variant), layout, OCR (det+rec),
+/// SLANet-plus — through embroider's shared surface. Same keys as
+/// okfgraph's `model_info` (`model_id, repo, precision, cache_dir,
+/// files, cached, snapshot_path, disk_usage_bytes`); `precision` is None
+/// (converter lookups have no tier). `cache_dir=None` resolves the
+/// standard hub cache. Raises nothing for missing files.
+#[pyfunction]
+#[pyo3(signature = (cache_dir=None,))]
+fn model_status<'py>(
+    py: Python<'py>,
+    cache_dir: Option<&str>,
+) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+    use crate::engine::OnnxEngine;
+
+    let default_cache;
+    let dir: &std::path::Path = match cache_dir {
+        Some(d) => std::path::Path::new(d),
+        None => {
+            default_cache = hf_hub::resolve_cache_dir();
+            &default_cache
+        }
+    };
+    // Default config: the status covers the default TexTeller variant;
+    // configured pipelines read OnnxEngine::model_status instead.
+    let engine = OnnxEngine::new(&ConverterConfig::default(), dir);
+    let reps = engine.model_status().map_err(to_py_err)?;
+    let mut out = Vec::with_capacity(reps.len());
+    for r in &reps {
+        let d = pyo3::types::PyDict::new(py);
+        d.set_item("model_id", &r.model_id)?;
+        d.set_item("repo", &r.repo)?;
+        d.set_item("precision", r.precision.map(|p| p.as_str()))?;
+        d.set_item("cache_dir", r.cache_dir.display().to_string())?;
+        let files = pyo3::types::PyDict::new(py);
+        for (name, path) in &r.files {
+            files.set_item(name, path.as_ref().map(|p| p.display().to_string()))?;
+        }
+        d.set_item("files", files)?;
+        d.set_item("cached", r.cached)?;
+        d.set_item(
+            "snapshot_path",
+            r.snapshot_path.as_ref().map(|p| p.display().to_string()),
+        )?;
+        d.set_item("disk_usage_bytes", r.disk_usage_bytes)?;
+        out.push(d);
+    }
+    Ok(out)
 }
 
 #[pyfunction]
@@ -525,5 +587,6 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(convert_excel, m)?)?;
     m.add_function(wrap_pyfunction!(ingest_document, m)?)?;
     m.add_function(wrap_pyfunction!(convert_directory, m)?)?;
+    m.add_function(wrap_pyfunction!(model_status, m)?)?;
     Ok(())
 }

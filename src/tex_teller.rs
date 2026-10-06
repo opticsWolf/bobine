@@ -5,7 +5,6 @@
 
 use std::path::Path;
 
-use hf_hub::HFClientSync;
 use image::DynamicImage;
 use ndarray::{Array4, s};
 use ort::{inputs, session::Session};
@@ -65,6 +64,13 @@ fn harvest_kv(
 }
 
 /// Full TexTeller pipeline: encoder + decoder + tokenizer.
+///
+/// Hub-cache alignment: `cache_dir` on every constructor below is the
+/// hub-cache root — files resolve into the shared `models--*` layout
+/// (no flat copies, no `texteller_int8/` subdir: the int8 variant's own
+/// repo gives it its own hub folder, so variants cannot collide).
+/// The filename lists are shared with [`crate::engine::OnnxEngine::model_status`]
+/// (structural test pins status names == fetch names).
 pub struct TexTeller {
     /// Decode step budget (defaults to MAX_TOKENS). Callers may lower it
     /// for small crops: a crop physically cannot contain more math than
@@ -82,11 +88,39 @@ pub struct TexTeller {
     kv_cache: bool,
 }
 
+/// Canonical TexTeller repo (fp32/fp16 single-repo layout).
+pub(crate) const TEX_TELLER_REPO: &str = "OleehyO/TexTeller";
+/// Shared tokenizer filename (fetched per-variant, never shared across
+/// repos — each variant reads its own repo root).
+pub(crate) const TEX_TELLER_TOKENIZER: &str = "tokenizer.json";
+/// Int8 variant repo: its own hub folder isolates it from fp32/fp16.
+pub(crate) const TEX_TELLER_INT8_REPO: &str = "Ji-Ha/TexTeller3-ONNX-dynamic";
+/// Int8 variant files (encoder, decoder, tokenizer).
+pub(crate) const TEX_TELLER_INT8_FILES: [&str; 3] = [
+    "onnx/encoder_model_int8.onnx",
+    "onnx/decoder_model_merged_int8.onnx",
+    "tokenizer.json",
+];
+
+/// TexTeller (encoder, decoder, tokenizer) filenames for a precision
+/// tier — the single source of truth for fetch and status.
+pub(crate) fn texteller_filenames(precision: ModelPrecision) -> [String; 3] {
+    let suffix = match precision {
+        ModelPrecision::Fp16 => "_fp16",
+        ModelPrecision::Fp32 => "",
+    };
+    [
+        format!("encoder_model{suffix}.onnx"),
+        format!("decoder_model_merged{suffix}.onnx"),
+        TEX_TELLER_TOKENIZER.to_string(),
+    ]
+}
+
 impl TexTeller {
     /// Download models from HuggingFace Hub and load.
     ///
     /// * `repo` — e.g. `"OleehyO/TexTeller"`
-    /// * `cache_dir` — where to store downloaded files
+    /// * `cache_dir` — hub-cache root (shared `models--*` layout)
     /// * `precision` — `Fp32` or `Fp16`
     pub fn from_pretrained(
         repo: &str,
@@ -106,41 +140,24 @@ impl TexTeller {
         encoder_providers: Option<&[String]>,
         decoder_providers: &[String],
     ) -> Result<Self> {
-        // Shared validation (plan-onnx-only Phase 4): one owner/name rule for
-        // every HF fetch, failing before any network access.
         let (owner, name) = embroider::parse_owner_name(repo)
             .map_err(|e| BobineError::Ort(e.to_string()))?;
 
-        let client =
-            HFClientSync::new().map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
-        let repo_api = client.model(&owner, &name);
-
-        let suffix = match precision {
-            ModelPrecision::Fp16 => "_fp16",
-            ModelPrecision::Fp32 => "",
-        };
-
-        // hf-hub's single-file + local_dir path always re-downloads (it never
-        // checks the destination), so probe for an existing copy first.
-        // Files land flat: <cache_dir>/<filename>.
-        let mut fetch = |name: String, what: &'static str| -> Result<std::path::PathBuf> {
-            let dest = cache_dir.join(&name);
-            if dest.exists() {
-                info!("TexTeller {what}: using cached {}", dest.display());
-                return Ok(dest);
-            }
-            info!("Downloading TexTeller {what} from {repo}...");
-            repo_api
-                .download_file()
-                .filename(name)
-                .local_dir(cache_dir.to_path_buf())
-                .send()
-                .map_err(|e| BobineError::Ort(format!("download {what}: {e}")))
-        };
-
-        let encoder_path = fetch(format!("encoder_model{suffix}.onnx"), "encoder")?;
-        let decoder_path = fetch(format!("decoder_model_merged{suffix}.onnx"), "decoder")?;
-        let tokenizer_path = fetch("tokenizer.json".to_string(), "tokenizer")?;
+        // Cache-mode fetch through the shared hub cache (no local_dir
+        // side-copies, no destination probes): a cached file returns its
+        // snapshot path with zero network ("using cached").
+        let [enc_name, dec_name, tok_name] = texteller_filenames(precision);
+        let encoder_path =
+            crate::hub_cache::hub_fetch(cache_dir, &owner, &name, &enc_name, "TexTeller encoder")?;
+        let decoder_path =
+            crate::hub_cache::hub_fetch(cache_dir, &owner, &name, &dec_name, "TexTeller decoder")?;
+        let tokenizer_path = crate::hub_cache::hub_fetch(
+            cache_dir,
+            &owner,
+            &name,
+            &tok_name,
+            "TexTeller tokenizer",
+        )?;
 
         Self::load_with_provider_split(
             &encoder_path,
@@ -171,38 +188,37 @@ impl TexTeller {
         encoder_providers: Option<&[String]>,
         decoder_providers: &[String],
     ) -> Result<Self> {
-        const OWNER: &str = "Ji-Ha";
-        const NAME: &str = "TexTeller3-ONNX-dynamic";
+        let (owner, name) = TEX_TELLER_INT8_REPO
+            .split_once('/')
+            .expect("int8 repo constant is owner/name");
 
-        let client = hf_hub::HFClientSync::new()
-            .map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
-        let repo_api = client.model(OWNER, NAME);
-
-        // hf-hub's single-file + local_dir path never checks the destination;
-        // probe first. Everything lands under <cache>/texteller_int8/ so the
-        // variant's files can never collide with the fp32 layout.
-        let sub = cache_dir.join("texteller_int8");
-        let mut fetch = |name: String, what: &'static str| -> Result<std::path::PathBuf> {
-            let dest = sub.join(&name);
-            if dest.exists() {
-                info!("TexTeller int8 {what}: using cached {}", dest.display());
-                return Ok(dest);
-            }
-            info!("Downloading TexTeller int8 {what} from {OWNER}/{NAME}...");
-            repo_api
-                .download_file()
-                .filename(name)
-                .local_dir(sub.clone())
-                .send()
-                .map_err(|e| BobineError::Ort(format!("download int8 {what}: {e}")))
-        };
-
-        let encoder_path = fetch("onnx/encoder_model_int8.onnx".to_string(), "encoder")?;
-        let decoder_path = fetch("onnx/decoder_model_merged_int8.onnx".to_string(), "decoder")?;
+        // Same hub-cache fetch as fp32/fp16 (no `texteller_int8/` subdir:
+        // the variant's own repo isolates it in the hub layout).
+        let [enc_name, dec_name, tok_name] = TEX_TELLER_INT8_FILES;
+        let encoder_path = crate::hub_cache::hub_fetch(
+            cache_dir,
+            owner,
+            name,
+            enc_name,
+            "TexTeller int8 encoder",
+        )?;
+        let decoder_path = crate::hub_cache::hub_fetch(
+            cache_dir,
+            owner,
+            name,
+            dec_name,
+            "TexTeller int8 decoder",
+        )?;
 
         // Tokenizer comes from THIS repository root - never share tokenizer
         // files across model variants.
-        let tokenizer_path = fetch("tokenizer.json".to_string(), "tokenizer")?;
+        let tokenizer_path = crate::hub_cache::hub_fetch(
+            cache_dir,
+            owner,
+            name,
+            tok_name,
+            "TexTeller int8 tokenizer",
+        )?;
 
         Self::load_with_provider_split(
             &encoder_path,

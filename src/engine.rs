@@ -60,31 +60,12 @@ const OCR_REPO: (&str, &str) = ("SWHL", "RapidOCR");
 const OCR_DET_FILENAME: &str = "PP-OCRv4/ch_PP-OCRv4_det_infer.onnx";
 const OCR_REC_FILENAME: &str = "PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx";
 
-/// Download a file from HuggingFace into `cache_dir/<filename>` unless it
-/// already exists (download_file never probes the destination itself).
-fn hf_fetch(cache_dir: &Path, repo: (&str, &str), filename: &str) -> Result<PathBuf> {
-    let dest = cache_dir.join(filename);
-    if dest.exists() {
-        return Ok(dest);
-    }
-    info!(
-        repo = repo.0,
-        file = filename,
-        "Downloading model from HuggingFace..."
-    );
-    let client =
-        hf_hub::HFClientSync::new().map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    client
-        .model(repo.0, repo.1)
-        .download_file()
-        .filename(filename.to_string())
-        .local_dir(cache_dir.to_path_buf())
-        .send()
-        .map_err(|e| BobineError::Ort(format!("download {filename}: {e}")))?;
-    Ok(dest)
+/// Download a file from HuggingFace through the shared hub cache (see
+/// [`crate::hub_cache`]): `cache_dir` is the hub-cache root, the file
+/// resolves to its snapshot path, and an already-cached file costs zero
+/// network ("using cached").
+fn hf_fetch(cache_dir: &Path, repo: (&str, &str), filename: &str, what: &str) -> Result<PathBuf> {
+    crate::hub_cache::hub_fetch(cache_dir, repo.0, repo.1, filename, what)
 }
 
 /// Manages the ONNX model lifecycle with lazy loading.
@@ -104,7 +85,8 @@ pub struct OnnxEngine {
     /// only when a scanned table region is actually encountered).
     table: Option<crate::rapid_table::RapidTable>,
 
-    /// Cache directory for downloaded models.
+    /// Cache directory for downloaded models: the hub-cache root (an
+    /// override of the standard HuggingFace cache, not a flat model dir).
     cache_dir: PathBuf,
 
     /// Path to the RapidLayout ONNX model file.
@@ -164,6 +146,9 @@ impl OnnxEngine {
     }
 
     pub fn new(config: &ConverterConfig, cache_dir: &Path) -> Self {
+        // `cache_dir` is the hub-cache root (0.6.0): converter models
+        // resolve into its standard `models--*` layout, shared with
+        // every other caller on the machine.
         Self {
             config: config.clone(),
             tex_teller: None,
@@ -208,6 +193,24 @@ impl OnnxEngine {
             cuda_usable = ort.cuda_usable,
             "ONNX Runtime: shared binary via embroider plumbing"
         );
+        // Cache preflight (hub-cache alignment): one offline lookup per
+        // family, logged before anything loads — a second ingest reuses
+        // every blob and only re-HEADs.
+        match self.model_status() {
+            Ok(reps) => {
+                for r in &reps {
+                    info!(
+                        repo = %r.repo,
+                        cached = r.cached,
+                        bytes = r.disk_usage_bytes,
+                        "converter model cache status"
+                    );
+                }
+            }
+            Err(e) => {
+                info!("converter model cache preflight failed: {e}");
+            }
+        }
         match self.config.routing.routing_mode {
             RoutingMode::Never => {}
             RoutingMode::Surgical => {
@@ -220,6 +223,62 @@ impl OnnxEngine {
             }
         }
         Ok(())
+    }
+
+    /// Offline cache status for every converter-model family (hub-cache
+    /// alignment): one [`embroider::CacheReport`] per family — TexTeller
+    /// (the configured precision/quantization variant), layout, OCR
+    /// (det + rec), SLANet-plus — through embroider's shared
+    /// `cache_info_files` surface, the same report contract okfgraph's
+    /// `model_info` emits. Missing files read `cached: false` and raise
+    /// nothing; the only errors are impossible repo ids (all constants).
+    pub fn model_status(&self) -> Result<Vec<embroider::CacheReport>> {
+        // Variant selection mirrors ensure_tex_teller so the status
+        // filenames are exactly the fetch filenames (pinned by test).
+        // (Owned names hoisted: the probe borrows them.)
+        let tt_owned: Option<[String; 3]> = match self.config.models.model_quantization {
+            crate::config::ModelQuantization::Fp32 => Some(
+                crate::tex_teller::texteller_filenames(self.config.models.model_precision),
+            ),
+            crate::config::ModelQuantization::Int8 => None,
+        };
+        let (tt_repo, tt_files): (&str, Vec<(&str, bool)>) = match &tt_owned {
+            Some(names) => (
+                crate::tex_teller::TEX_TELLER_REPO,
+                names.iter().map(|s| (s.as_str(), true)).collect(),
+            ),
+            None => (
+                crate::tex_teller::TEX_TELLER_INT8_REPO,
+                crate::tex_teller::TEX_TELLER_INT8_FILES
+                    .iter()
+                    .map(|f| (*f, true))
+                    .collect(),
+            ),
+        };
+        let dir = Some(self.cache_dir.clone());
+        let probe = |repo: &str, files: &[(&str, bool)]| {
+            embroider::cache_info_files(repo, files, None, dir.clone())
+                .map_err(|e| BobineError::Ort(e.to_string()))
+        };
+        let mut out = Vec::with_capacity(4);
+        out.push(probe(tt_repo, &tt_files)?);
+        out.push(probe(
+            &format!("{}/{}", LAYOUT_REPO.0, LAYOUT_REPO.1),
+            &[(LAYOUT_FILENAME, true)],
+        )?);
+        out.push(probe(
+            &format!("{}/{}", OCR_REPO.0, OCR_REPO.1),
+            &[(OCR_DET_FILENAME, true), (OCR_REC_FILENAME, true)],
+        )?);
+        out.push(probe(
+            &format!(
+                "{}/{}",
+                crate::rapid_table::SLANET_PLUS_REPO.0,
+                crate::rapid_table::SLANET_PLUS_REPO.1
+            ),
+            &[(crate::rapid_table::SLANET_PLUS_FILENAME, true)],
+        )?);
+        Ok(out)
     }
 
     // ------------------------------------------------------------------
@@ -258,7 +317,7 @@ impl OnnxEngine {
                 .unwrap_or_else(|| self.config.providers.ort_providers.clone());
             let tt = match self.config.models.model_quantization {
                 crate::config::ModelQuantization::Fp32 => TexTeller::from_pretrained_split(
-                    "OleehyO/TexTeller",
+                crate::tex_teller::TEX_TELLER_REPO,
                     &self.cache_dir,
                     self.config.models.model_precision,
                     enc_providers,
@@ -330,7 +389,7 @@ impl OnnxEngine {
         if self.layout.is_none() {
             let path = match self.layout_model_path.clone() {
                 Some(p) => p,
-                None => hf_fetch(&self.cache_dir, LAYOUT_REPO, LAYOUT_FILENAME)?,
+                None => hf_fetch(&self.cache_dir, LAYOUT_REPO, LAYOUT_FILENAME, "RapidLayout")?,
             };
             info!("Loading RapidLayout from {}...", path.display());
             let providers = self.resolve_auto_gpu_providers(
@@ -359,11 +418,11 @@ impl OnnxEngine {
         if self.ocr.is_none() {
             let det = match self.ocr_det_path.clone() {
                 Some(p) => p,
-                None => hf_fetch(&self.cache_dir, OCR_REPO, OCR_DET_FILENAME)?,
+                None => hf_fetch(&self.cache_dir, OCR_REPO, OCR_DET_FILENAME, "RapidOCR det")?,
             };
             let rec = match self.ocr_rec_path.clone() {
                 Some(p) => p,
-                None => hf_fetch(&self.cache_dir, OCR_REPO, OCR_REC_FILENAME)?,
+                None => hf_fetch(&self.cache_dir, OCR_REPO, OCR_REC_FILENAME, "RapidOCR rec")?,
             };
             info!(
                 "Loading RapidOCR from {} and {}...",
@@ -532,5 +591,120 @@ mod tests {
             "ocr",
         );
         assert_eq!(pinned, vec!["CPUExecutionProvider".to_string()]);
+    }
+
+    // ---- model_status: shared-surface preflight -------------------------
+
+    #[test]
+    fn model_status_empty_cache_raises_nothing() {
+        // Offline-only (local_files_only underneath); the unroutable
+        // endpoint would fail any accidental request loudly anyway.
+        let saved = std::env::var("HF_ENDPOINT").ok();
+        // SAFETY: test-only; no other thread reads HF_ENDPOINT here.
+        unsafe { std::env::set_var("HF_ENDPOINT", "http://127.0.0.1:1"); }
+
+        let dir = std::env::temp_dir().join(format!("bobine-status-empty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Explicit fp32: the default config selects int8 (covered below).
+        let cfg = ConverterConfig {
+            models: crate::config::ModelOpts {
+                model_quantization: crate::config::ModelQuantization::Fp32,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let engine = OnnxEngine::new(&cfg, &dir);
+        let reps = engine.model_status().unwrap();
+        assert_eq!(reps.len(), 4);
+        for r in &reps {
+            assert!(!r.cached);
+            assert!(r.files.values().all(|p| p.is_none()));
+            assert!(r.snapshot_path.is_none());
+            assert_eq!(r.disk_usage_bytes, 0);
+        }
+        // One report per family, repos in engine order.
+        let repos: Vec<&str> = reps.iter().map(|r| r.repo.as_str()).collect();
+        assert_eq!(
+            repos,
+            [
+                crate::tex_teller::TEX_TELLER_REPO,
+                "wybxc/DocLayout-YOLO-DocStructBench-onnx",
+                "SWHL/RapidOCR",
+                "opendatalab/PDF-Extract-Kit-1.0",
+            ]
+        );
+
+        // SAFETY: test-only; restores the pre-test value.
+        unsafe {
+            match saved {
+                Some(v) => std::env::set_var("HF_ENDPOINT", v),
+                None => std::env::remove_var("HF_ENDPOINT"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn model_status_filenames_match_fetch_filenames() {
+        // Structural pin: status names are exactly fetch names — both
+        // sides read the same constants, so a rename breaks one side
+        // loudly instead of silently reporting the wrong files.
+        let dir = std::env::temp_dir().join(format!("bobine-status-names-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = ConverterConfig {
+            models: crate::config::ModelOpts {
+                model_quantization: crate::config::ModelQuantization::Fp32,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let engine = OnnxEngine::new(&cfg, &dir);
+        let reps = engine.model_status().unwrap();
+
+        let tt = &reps[0];
+        let expected: Vec<String> =
+            crate::tex_teller::texteller_filenames(crate::config::ModelPrecision::Fp32)
+                .into_iter()
+                .collect();
+        // BTreeMap iterates sorted — compare sorted for clarity.
+        let mut got: Vec<&str> = tt.files.keys().map(String::as_str).collect();
+        got.sort_unstable();
+        let mut want: Vec<&str> = expected.iter().map(String::as_str).collect();
+        want.sort_unstable();
+        assert_eq!(got, want);
+
+        let layout = &reps[1];
+        assert!(layout.files.contains_key(LAYOUT_FILENAME));
+        let ocr = &reps[2];
+        assert!(ocr.files.contains_key(OCR_DET_FILENAME));
+        assert!(ocr.files.contains_key(OCR_REC_FILENAME));
+        let table = &reps[3];
+        assert!(table
+            .files
+            .contains_key(crate::rapid_table::SLANET_PLUS_FILENAME));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn model_status_int8_config_selects_int8_repo() {
+        let dir = std::env::temp_dir().join(format!("bobine-status-int8-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = ConverterConfig {
+            models: crate::config::ModelOpts {
+                model_quantization: crate::config::ModelQuantization::Int8,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let engine = OnnxEngine::new(&cfg, &dir);
+        let reps = engine.model_status().unwrap();
+        assert_eq!(reps[0].repo, crate::tex_teller::TEX_TELLER_INT8_REPO);
+        for f in crate::tex_teller::TEX_TELLER_INT8_FILES {
+            assert!(reps[0].files.contains_key(f), "missing {f}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

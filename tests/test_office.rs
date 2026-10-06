@@ -234,6 +234,7 @@ fn ingest_promotes_office_images_to_asset_store() {
         None,
         None,
         &bobine::ProgressHooks::default(),
+        None,
     )
     .expect("ingest docx");
     assert_eq!(doc.image_count, 1, "one staged picture");

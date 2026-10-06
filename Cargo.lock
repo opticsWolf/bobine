@@ -389,7 +389,7 @@ dependencies = [
 
 [[package]]
 name = "bobine"
-version = "0.5.13"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "binaryornot-rs",
@@ -1061,9 +1061,9 @@ checksum = "9e5e8f6c15a24b9a3ee5efec809ccd006d3b30e8b3bb63c39af737c7f87daa1d"
 
 [[package]]
 name = "embroider"
-version = "0.3.1"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "782bc853c9d763e0816b6a9767671048480975d347d41ee2a8d6510dc56be121"
+checksum = "edab7f379d1f2bb31547c0e2ddc8065825be7b0e3a58c7bb906d29fb25e01c9d"
 dependencies = [
  "anyhow",
  "hf-hub",

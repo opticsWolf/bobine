@@ -9,6 +9,7 @@ pub mod documents;
 pub mod engine;
 pub mod error;
 pub mod excel;
+pub mod hub_cache;
 pub mod office_images;
 pub mod pdf_source;
 pub mod pipeline;

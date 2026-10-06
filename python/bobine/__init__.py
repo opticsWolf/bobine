@@ -102,6 +102,7 @@ from bobine._native import (
     convert_excel,
     ingest_document,
     convert_directory,
+    model_status,
 )
 
 __all__ = [
@@ -116,5 +117,6 @@ __all__ = [
     "convert_excel",
     "ingest_document",
     "convert_directory",
+    "model_status",
     "ORT_DYLIB_PATH",
 ]

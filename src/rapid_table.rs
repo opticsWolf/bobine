@@ -173,30 +173,21 @@ pub fn build_html(structures: &[String], matched: &[Vec<usize>], ocr_texts: &[St
 pub const SLANET_PLUS_REPO: (&str, &str) = ("opendatalab", "PDF-Extract-Kit-1.0");
 pub const SLANET_PLUS_FILENAME: &str = "models/TabRec/SlanetPlus/slanet-plus.onnx";
 
-/// Destination of the SLANet-plus ONNX model:
-/// `<cache_dir>/models/TabRec/SlanetPlus/slanet-plus.onnx`.
-pub fn slanet_plus_dest(cache_dir: &Path) -> std::path::PathBuf {
-    cache_dir.join(SLANET_PLUS_FILENAME)
-}
-
-/// Fetch slanet-plus.onnx (~7.8 MB) under `cache_dir`, returning its path.
-/// Skips the network entirely when the file is already cached (hf-hub's
-/// single-file + local_dir path does not do this check itself).
+/// Fetch slanet-plus.onnx (~7.8 MB) through the shared hub cache (see
+/// [`crate::hub_cache`]), returning its snapshot path to load.
+/// `cache_dir` is the hub-cache root. Skips the network entirely when
+/// the file is already cached ("using cached").
+///
+/// (0.6.0 removed `slanet_plus_dest`: the flat `<cache>/models/...`
+/// destination no longer exists — the file lives in the hub layout.)
 pub fn download_slanet_plus(cache_dir: &Path) -> Result<std::path::PathBuf> {
-    let dest = slanet_plus_dest(cache_dir);
-    if dest.exists() {
-        return Ok(dest);
-    }
-    info!("Downloading slanet-plus.onnx from HuggingFace...");
-    let client =
-        hf_hub::HFClientSync::new().map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?;
-    let repo_api = client.model(SLANET_PLUS_REPO.0, SLANET_PLUS_REPO.1);
-    repo_api
-        .download_file()
-        .filename(SLANET_PLUS_FILENAME.to_string())
-        .local_dir(cache_dir.to_path_buf())
-        .send()
-        .map_err(|e| BobineError::Ort(format!("download table model: {e}")))
+    crate::hub_cache::hub_fetch(
+        cache_dir,
+        SLANET_PLUS_REPO.0,
+        SLANET_PLUS_REPO.1,
+        SLANET_PLUS_FILENAME,
+        "slanet-plus",
+    )
 }
 
 /// SLANet-plus table structure recognizer.

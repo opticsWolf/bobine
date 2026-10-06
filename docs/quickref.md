@@ -67,7 +67,8 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `HybridConverter.convert_office(path)` | Office → markdown (associated fn, no staging; `convert()` stages) |
 | `convert_to_markdown(path, config, work_dir, cache_dir)` | Raw markdown string, one-shot |
 | `convert_excel(path)` | Workbook → `ExcelDocument`: `.markdown`, `.sheet_names`, `.csv_by_sheet`, `.json` |
-| `ingest_document(path, output_dir, ...)` | Staged bundle → `ConvertedDocument` (`.md_text`, `.data_files`, lint/hooks) |
+| `ingest_document(path, output_dir, ...)` | Staged bundle → `ConvertedDocument` (`.md_text`, `.data_files`, lint/hooks; `cache_dir=None` = standard hub cache) |
+| `model_status(cache_dir=None)` | Offline per-family cache status (TexTeller variant, layout, OCR, SLANet) — same dict keys as okfgraph's `model_info` |
 | `convert_directory(source_dir, output_dir, ...)` | Batch ingest |
 | `ConverterConfig` | Tuning knobs (see table below) |
 | `RoutingMode` | `Never` / `Auto` / `Surgical` / `Always` |
@@ -233,11 +234,15 @@ more than ~2 s per formula crop.
 
 | Model | Source | Size |
 |---|---|---|
-| TexTeller encoder + decoder + tokenizer | auto-download from HuggingFace `OleehyO/TexTeller` into `cache_dir` | ~1.25 GB |
-| RapidLayout (DocLayout-YOLO) | auto-download from HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` into cache dir, or `set_layout_model` | ~72 MB |
-| RapidOCR PP-OCRv4 det + rec | auto-download from HF `SWHL/RapidOCR` into `<cache>/PP-OCRv4/`, or `set_ocr_models` | ~16 MB |
-| RapidTable (SLANet-plus) | auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` into `<cache>/models/`, or `set_table_model` | ~7.8 MB |
-| TexTeller Int8 (default formula weights) | auto-download from HF `Ji-Ha/TexTeller3-ONNX-dynamic` into `<cache>/texteller_int8/` (KV-cache-capable merged graph) | ~319 MB |
+| TexTeller encoder + decoder + tokenizer | auto-download from HuggingFace `OleehyO/TexTeller` into the hub cache | ~1.25 GB |
+| RapidLayout (DocLayout-YOLO) | auto-download from HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` into the hub cache, or `set_layout_model` | ~72 MB |
+| RapidOCR PP-OCRv4 det + rec | auto-download from HF `SWHL/RapidOCR` into the hub cache, or `set_ocr_models` | ~16 MB |
+| RapidTable (SLANet-plus) | auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` into the hub cache, or `set_table_model` | ~7.8 MB |
+| TexTeller Int8 (default formula weights) | auto-download from HF `Ji-Ha/TexTeller3-ONNX-dynamic` into the hub cache (KV-cache-capable merged graph) | ~319 MB |
+
+`cache_dir` is the hub-cache root (an override of the standard HF
+cache, shared machine-wide); `model_status(cache_dir=None)` reports
+per-family offline status without loading anything.
 
 Missing layout/OCR models degrade to the fast path per page; a missing
 table model only disables scanned-table recognition.

@@ -112,6 +112,12 @@ pub fn convert_to_markdown(
 /// into the asset store, rewrite links to `okf-asset://`, and optionally run
 /// the lint hook on the result.
 ///
+/// `cache_dir` is the converter-model hub-cache root (`None` = the
+/// env-resolved standard cache). It is NOT derived from `output_dir`
+/// anymore (0.6.0): the old `<output>/.cache` sidecar made the default
+/// temp-dir flow re-download every model per ingest and delete them
+/// after. Pass an explicit dir to pin models somewhere else.
+///
 /// Returns a [`ConvertedDocument`]. Nothing is imported anywhere — a
 /// consumer receives the staged bundle.
 pub fn ingest_document(
@@ -120,6 +126,7 @@ pub fn ingest_document(
     config: Option<&ConverterConfig>,
     lint_fn: Option<&LintFn<'_>>,
     hooks: &ProgressHooks<'_>,
+    cache_dir: Option<&Path>,
 ) -> Result<ConvertedDocument> {
     if !path.is_file() {
         return Err(BobineError::Io(std::io::Error::new(
@@ -142,9 +149,19 @@ pub fn ingest_document(
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("document");
-    let cache_dir = output_dir.join(".cache");
+    // Hub-cache alignment: models live in the shared hub cache, never in
+    // a per-output sidecar. `None` resolves the standard default, so the
+    // default temp-dir flow downloads once per machine, not per ingest.
+    let default_cache;
+    let cache_dir: &Path = match cache_dir {
+        Some(d) => d,
+        None => {
+            default_cache = hf_hub::resolve_cache_dir();
+            &default_cache
+        }
+    };
 
-    let md = convert_to_markdown(path, config, output_dir, &cache_dir, hooks)?;
+    let md = convert_to_markdown(path, config, output_dir, cache_dir, hooks)?;
 
     let md_path = output_dir.join(format!("{stem}.md"));
     std::fs::write(&md_path, &md)?;
@@ -254,7 +271,7 @@ pub fn convert_directory(
     let hooks = ProgressHooks::default();
     let mut results = Vec::new();
     for file_path in sources {
-        match ingest_document(&file_path, output_dir, config, lint_fn, &hooks) {
+        match ingest_document(&file_path, output_dir, config, lint_fn, &hooks, None) {
             Ok(doc) => results.push(doc),
             Err(e) => warn!("{}: {e}", file_path.display()),
         }
@@ -309,7 +326,7 @@ mod tests {
         let src = src_dir.join("My Note.txt");
         fs::write(&src, "hello\nworld\n").unwrap();
 
-        let doc = ingest_document(&src, &out_dir, None, None, &ProgressHooks::default()).unwrap();
+        let doc = ingest_document(&src, &out_dir, None, None, &ProgressHooks::default(), None).unwrap();
         assert_eq!(doc.md_path, out_dir.join("My Note.md"));
         assert_eq!(doc.md_text, "hello\nworld\n");
         assert_eq!(doc.image_count, 0);
@@ -331,7 +348,7 @@ mod tests {
         let src = src_dir.join("note.md");
         fs::write(&src, "# T\n\n![pic](pic.png)\n").unwrap();
 
-        let doc = ingest_document(&src, &out_dir, None, None, &ProgressHooks::default()).unwrap();
+        let doc = ingest_document(&src, &out_dir, None, None, &ProgressHooks::default(), None).unwrap();
         assert_eq!(doc.image_count, 1);
         assert!(doc.md_text.contains("okf-asset://img_"), "{}", doc.md_text);
         assert_eq!(fs::read_dir(&doc.image_dir).unwrap().count(), 1);
@@ -354,7 +371,7 @@ mod tests {
             })
         };
         let doc =
-            ingest_document(&src, &out_dir, None, Some(&lint), &ProgressHooks::default()).unwrap();
+            ingest_document(&src, &out_dir, None, Some(&lint), &ProgressHooks::default(), None).unwrap();
         assert!(doc.md_text.contains("<!-- linted -->"));
 
         fs::remove_dir_all(src_dir).unwrap();
@@ -370,6 +387,7 @@ mod tests {
             None,
             None,
             &ProgressHooks::default(),
+            None,
         )
         .unwrap_err();
         assert!(err.to_string().contains("not found"));
