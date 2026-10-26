@@ -72,3 +72,6 @@ docs/_build/
 .python-version
 .codegraph/
 *.pdb
+
+# ikat corpus staging (JATS/PDF/ground-truth fixtures) — untracked, see ikat-corpus/README.md
+/ikat-corpus/
