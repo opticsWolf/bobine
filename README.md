@@ -288,6 +288,7 @@ generated OOXML fixtures — see `tests/fixtures/SOURCES.md` for provenance.
 - [**Architecture**](https://github.com/opticsWolf/bobine/blob/main/docs/architecture.md) — modules, data flow, coordinate spaces, model acquisition
 - [**Benchmarks & test results**](https://github.com/opticsWolf/bobine/blob/main/docs/benchmarks.md) — full CPU vs CUDA tables, TexTeller fp32/int8, OCR batching analysis, environment setup
 - [**Proposal: figures/tables/layout**](https://github.com/opticsWolf/bobine/blob/main/docs/proposal_media_tables.md) — plan for reading-order image placement and structured table extraction
+- [**Proposal: JATS/MathML formulas**](https://github.com/opticsWolf/bobine/blob/main/docs/proposal_jats_mml.md) — `mml_to_tex` in Rust, JATS input adapter, OCR sanitizer + benchmark, okfgraph/gossamer phases
 
 ## License
 
