@@ -67,6 +67,8 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `HybridConverter.convert_office(path)` | Office → markdown (associated fn, no staging; `convert()` stages) |
 | `convert_to_markdown(path, config, work_dir, cache_dir)` | Raw markdown string, one-shot |
 | `convert_excel(path)` | Workbook → `ExcelDocument`: `.markdown`, `.sheet_names`, `.csv_by_sheet`, `.json` |
+| `convert_jats(path, work_dir, config?)` | JATS `.xml`/`.jats` → `JatsDocument` (no models, no ORT; see below) |
+| `HybridConverter.convert_jats(path, work_dir)` | Same, as a converter method |
 | `ingest_document(path, output_dir, ...)` | Staged bundle → `ConvertedDocument` (`.md_text`, `.data_files`, lint/hooks; `cache_dir=None` = standard hub cache) |
 | `model_status(cache_dir=None)` | Offline per-family cache status (TexTeller variant, layout, OCR, SLANet) — same dict keys as okfgraph's `model_info` |
 | `convert_directory(source_dir, output_dir, ...)` | Batch ingest |
@@ -137,6 +139,35 @@ import json; data = json.loads(doc.json)  # typed values, formulas kept
 | `math_char_threshold` | `30` | Auto: math chars before flagging a page |
 | `scanned_text_threshold` | `50` | Auto: max chars for scanned-page detection |
 | `ocr_lang` | `"en"` | CTC charset fallback when the rec model lacks metadata |
+| `sanitize_ocr` | `True` | Post-OCR LaTeX repair (fence fixup, `\left`/`\right` balance, script split); set `False` to get raw OCR text |
+
+## Structured sources: JATS (v0.7.0)
+
+Publisher full-text XML (`.xml` / `.jats` — PLOS, PMC, EuropePMC) bypasses
+rendering/OCR entirely: MathML → LaTeX (`mml.rs`), section headings, GFM
+tables, figures as remote-`href` links. Needs no models and no ORT.
+`convert()` routes `.xml`/`.jats` here automatically.
+
+```python
+doc = bobine.convert_jats("paper.xml", work_dir="/tmp/out")
+doc.md_path     # <work_dir>/<stem>.md (written by the call)
+doc.title       # first `#` line, marker stripped
+doc.n_formulas  # MathML-backed formula elements (health signal, not a display count:
+                # inline `$…$` from non-MathML markup is not counted)
+doc.n_figures   # <fig> floats
+doc.n_tables    # <table-wrap> grids
+```
+
+Errors are `RuntimeError` with stable prefixes: `JATS error: XML parse: …`
+(malformed XML), `JATS error: not a JATS article` (root isn't `<article>`).
+Output dollars are guaranteed balanced (conversion fails otherwise).
+
+## OCR sanitizer (v0.6.1)
+
+ONNX-path markdown passes through `sanitize.rs` when
+`text.sanitize_ocr` is set (default on): unclosed-fence fixup,
+`\\left`/`\\right` balancing, consecutive-script splitting
+(`x^a^b` → `x^a{}^b`). Disable only to debug raw OCR output.
 
 ## Common tasks
 
@@ -258,7 +289,7 @@ CUDA probe — it never sees converter weights.
 ## Testing
 
 ```bash
-cargo test                 # 128 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
+cargo test                 # 160 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
 ORT_DYLIB_PATH=... cargo test --test test_converter   # incl. full-paper AUTO run
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```

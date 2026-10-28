@@ -1,6 +1,11 @@
 # Proposal: Figures, Images & Tables — Correct-Order Extraction
 
-Status: proposal / plan (not yet implemented)
+Status: implemented in 0.7.1 (deferred media trio: `ImageMode::EmbedBase64`
++ `max_embed_bytes` cap, side-by-side caption pairing, `preserve_layout`
+visual-order fast path — `src/config.rs`, `src/converter.rs`, Python
+`ConverterConfig(image_mode, max_embed_bytes, preserve_layout)`).
+Remaining: none open — this proposal is closed; see `benchmarks.md` and
+`architecture.md` for the shipped shapes.
 Scope: bobine Rust core (`converter.rs`, `pdf_source.rs`, `engine.rs`, `config.rs`) + Python bindings
 Related: [benchmarks.md](benchmarks.md) (measured CPU/CUDA numbers), [architecture.md](architecture.md)
 

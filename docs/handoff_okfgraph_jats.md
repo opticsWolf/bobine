@@ -458,8 +458,8 @@ unblocks everything here.
    else file the reverse-edge follow-up.
 2. `ConvertedDocument.page_count=0` consumers: grep first; fix any
    `==0`-as-failure assumption at the consumer.
-3. Stored-vs-ephemeral heading for formula chunks (§5.3 took ephemeral
-   — revisit only on measured retrieval loss).
+3. Stored-vs-ephemeral heading for formula chunks (§5.2 item 3 took
+   ephemeral — revisit only on measured retrieval loss).
 4. Ordinal slugs for untagged displays: acceptable instability, or
    content-hash slugs? (Hash slugs are stable but unreadable; pick one
    and document it.)

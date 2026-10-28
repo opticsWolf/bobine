@@ -274,6 +274,15 @@ crates.io upload stays under 10 MB (fixtures excluded, already the rule).
 4. **Docs**: QUICKREF document section + skills note; `store=True,
    include_images=True` behaviour unchanged.
 
+> **Decisions (0.7.1 handoff `docs/handoff_gossamer_jats.md` is
+> authoritative — it deviates from §5 in three places):**
+> (a) the flag is `prefer_jats`, not `prefer_structured`;
+> (b) `extract_document_structured` is explicitly out of scope
+> (deferred follow-up, no JATS-backed variant in this handoff);
+> (c) the route lives *after* robots/rate-limit gating, *before* the
+> pages branch and cache lookup, with silent fall-through when nothing
+> resolves and loud errors post-resolution.
+
 ## 6. Continuation: okfgraph (after gossamer route lands)
 
 1. **`kind='jats'`** in `okfgraph/components/ingest.py`: accept a JATS
@@ -295,6 +304,20 @@ crates.io upload stays under 10 MB (fixtures excluded, already the rule).
 5. **Zero-code interim**: ingest `ikat/examples/auto-proof/full/*.md`
    (clean, verified math) via `kind='md'` today — useful immediately, and
    the reference point for judging bobine/`jats` output quality.
+
+> **Decisions (0.7.1 handoff `docs/handoff_okfgraph_jats.md` is
+> authoritative — it deviates from §6 in five places):**
+> (a) a separate `JatsConverter` class satisfying the `DocumentConverter`
+> protocol, not a `convert_jats` function on `converters.py`; the protocol
+> `pdf_path` param name is kept for structural conformance;
+> (b) lint autofix is delimiters-only (`MATH002`/`MATH003`); `MATH001`
+> (unbalanced `$`) and `MATH004` (cross-block fence) are report-only;
+> (c) the section heading travels with formula chunks in the *embedding
+> payload only* (ephemeral) — not baked into stored text;
+> (d) formula→paper edges are wikilinks + backlink search; paper bodies
+> are never mutated for reverse edges;
+> (e) the executed interim ingested `ikat-corpus/ground-truth/*.md` as
+> `ikat-ground-truth/*` (not `ikat/examples/auto-proof/full/*.md`).
 
 ---
 

@@ -343,7 +343,7 @@ error. Set `ORT_DYLIB_PATH` explicitly in CI/dev (e.g. the venv's
 
 Three layers:
 
-1. **Unit tests** (`#[cfg(test)]` modules, 128 lib tests): pure logic —
+1. **Unit tests** (`#[cfg(test)]` modules, 160 lib tests): pure logic —
    tables parsing, splice/ws_replace, math-font/unicode classifiers,
    TexTeller preprocessing shape/range, white-border trim, LetterBox,
    IoU/NMS, config serde round-trip, Excel renderers (GFM/CSV/JSON schema),
