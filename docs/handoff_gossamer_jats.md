@@ -2,7 +2,7 @@
 
 **From:** bobine 0.7.1 (`dev` branch; JATS adapter P-B shipped in 0.7.0)
 **To:** gossamer implementer (repo at `D:/User/Documents/Python/gossamer`,
-target branch `dev_rust`; intended gossamer-side copy:
+version 0.9.35, target branch `dev_rust`; intended gossamer-side copy:
 `planning/handoff_bobine_jats.md`)
 **Status:** bobine side is done, tested, and dependency-ready. Nothing in
 this handoff requires bobine changes unless noted as an open question.
@@ -77,8 +77,18 @@ md: str = conv.convert(path_with_xml_or_jats_suffix, work_dir)
 
 `JatsDocument` properties: `md_path: str` (`<work_dir>/<stem>.md`,
 written by the call), `title: str` (first `#` line, marker stripped),
-`n_formulas: int` (inline + display), `n_figures: int` (`<fig>` floats),
+`n_formulas: int`, `n_figures: int` (`<fig>` floats),
 `n_tables: int` (`<table-wrap>` grids).
+
+`n_formulas` semantics (observed, not just documented): the counter
+increments for MathML-backed `<inline-formula>` / `<disp-formula>`
+elements whose MathML converts to non-empty TeX (bobine `src/jats.rs`).
+Inline `$…$` spans synthesized from *non-MathML* markup (sub/sup runs
+— the bulk of chem-olive's inline math) are **not** counted. So
+chem-olive reports `n_formulas=2` (its two displays) despite dozens of
+inline spans; math-hilfer reports 511. The `test_jats.rs` census pairs
+are `(n_formulas, n_figures)`. Treat counts as health signals and
+re-verify them against the bobine version under test.
 
 Errors surface as `RuntimeError` with stable prefixes — map them to
 gossamer's JSON error schema, do not string-match beyond the prefix:
@@ -124,7 +134,8 @@ Crib from the frozen golden `tests/golden/jats-chem-olive-2024.md`
   gossamer `tests/fixtures/`), `med-ioannidis-2005.xml` (80 KB).
 - `ground-truth/*.md` — TeX-verified markdown per paper (the reference
   point for "is the JATS route better than the PDF route").
-- Display/inline census per paper (displays, inlines):
+- `(n_formulas, n_figures)` census per paper (`tests/test_jats.rs`;
+  sums to the 692-fixture MML gate):
   bio-medsea `0/14`, chem-olive `2/7`, cs-bodvw `9/6`, earth-ph `0/4`,
   econ-tax `28/0`, eng-disk `29/4`, math-hilfer `511/4`,
   med-ioannidis `0/2`, physics-pauli `113/8`, psych-maia `0/1`.
@@ -132,7 +143,7 @@ Crib from the frozen golden `tests/golden/jats-chem-olive-2024.md`
   byte-identical to the Python reference) and `tests/test_jats.rs`
   (census + `figures_link_out` + `display_equations_carry_tags` +
   frozen golden). Gossamer needs only the chem-olive XML + its expected
-  counts (`n_formulas=9, n_figures=7, n_tables=2`; title starts
+  counts (`n_formulas=2, n_figures=7, n_tables=2`; title starts
   `Olive leaf extract-assisted green synthesis`).
 
 ---
@@ -143,7 +154,7 @@ Crib from the frozen golden `tests/golden/jats-chem-olive-2024.md`
 
 In `gossamer/document.py`, `DocumentExtractor.extract_document`, insert
 the JATS attempt **after** URL validation/robots/rate-limit gating and
-**before** `normalize_url`/cache lookup — it must flow through the same
+**before** the pages branch and cache lookup — it must flow through the same
 `_tb` machinery (SSRF guard, robots, per-domain rate limit, budget,
 guard via `_finish_document`). Pseudocode:
 
@@ -162,9 +173,12 @@ def extract_document(self, source, pages=None, structured=False, *,
 
 `_try_jats_route(source, …) -> Optional[str]` returns the finished JSON
 string on success, `None` when the source is not JATS-resolvable
-(caller falls through silently). Hard errors (network failure *after* a
-JATS URL resolved, `JATS error: XML parse`) return the JSON error —
-same policy as the PDF path.
+(caller falls through silently). Fetched XML bytes live in a
+`NamedTemporaryFile(suffix=".xml")` (mirror the discipline in
+`_extract_document_structured_impl`: convert, then unlink — the XML is
+never cached, only the converted markdown). Hard errors (network
+failure *after* a JATS URL resolved, `JATS error: XML parse`) return
+the JSON error — same policy as the PDF path.
 
 ### 3.2 DOI acquisition (reuse, don't reinvent)
 
@@ -173,10 +187,13 @@ same policy as the PDF path.
 - `https://doi.org/…` or publisher landing URL → normalize to DOI first
   (strip query/fragment; `normalize_doi` already rejects those — catch
   `ValueError` → not JATS-resolvable → fall through).
-- **Local PDF file** → existing `agent_tools._doi_from_pdf`
-  (`citations.find_doi_in_text`, first DOI in text). Local `.xml`/`.jats`
-  file → attempt `convert_jats` directly; `not a JATS article` → fall
-  through to the normal path (an `.xml` feed must keep working).
+- **Local PDF file** → DOI from text via the `_doi_from_pdf` logic
+  (today a method on the toolbox class in `agent_tools.py`, using
+  `self._doc`; reusing it from `document.py` needs a small refactor —
+  extract to a shared helper first, do not reach across the class
+  boundary). Local `.xml`/`.jats` file → attempt `convert_jats`
+  directly; `not a JATS article` → fall through to the normal path
+  (an `.xml` feed must keep working).
 - Non-DOI, non-resolvable URLs (arXiv abs/pdf, generic pages) → `None`
   immediately, zero extra requests. (arXiv Vanity/CEUR HTML is out of
   scope; the PDF path already serves arXiv.)
@@ -235,9 +252,15 @@ def extract_document(self, source, pages=None, structured=False, *,
   `prefer_structured`: `structured=True` already means "structured
   payload (metadata/tables/links)" and the two flags must compose
   without confusion. Default `True` (proposal §5.2: corpus justifies it).
-- MCP `extract_document` tool + `agent_tools.extract_document_structured`
-  pass-through: add optional `prefer_jats` (default True) to the tool
-  schema; `extract_document_structured(source)` stays PDF-only/unchanged.
+- Three-touch threading (single-method inheritance — the MCP surface
+  auto-exposes the registry): (1) `DocumentExtractor.extract_document`
+  (`document.py`) gains the param + route; (2)
+  `WebResearcherToolbox.extract_document` (`agent_tools.py:1049`, thin
+  delegation) passes it through; (3) a
+  `ToolParam("prefer_jats", bool, True, …)` entry in the
+  `extract_document` spec (`config.py:294`, `TOOL_REGISTRY`) plus the
+  CLI flag below exposes it on MCP. `extract_document_structured`
+  (agent_tools.py:1082) is untouched.
 - CLI: `extract … [--prefer-jats | --no-prefer-jats]` (default on).
   No change to `--pages/--structured/--store/--include-images/--tables-as`
   spellings.
@@ -249,7 +272,10 @@ def extract_document(self, source, pages=None, structured=False, *,
   re-run without pages or with --no-prefer-jats`). JATS has sections,
   not pages; silent page-dropping would corrupt citations.
 - `structured=True` → JATS route **skipped** (structured payload stays
-  PDF-backed). Rationale: separate feature, separate tests.
+  PDF-backed). Rationale: separate feature, separate tests. (The
+  proposal mentions `extract_document_structured` in passing; this
+  handoff deliberately defers it — a JATS-backed structured payload
+  is a follow-up, not part of the flat-path route.)
 - `tables_as != "markdown"` → JATS route skipped unless `"markdown"`.
   JATS tables are already GFM pipes; transcoding them to JSON/CSV is a
   new feature, not this handoff. (With `"markdown"` — the common case —
@@ -276,7 +302,8 @@ def extract_document(self, source, pages=None, structured=False, *,
   `resolved_doi`, `jats_source` (`europepmc`|`pmc-oa`|`plos`),
   `jats_title`, `n_formulas`, `n_figures`, `n_tables`.
   These numbers are the cheapest health metric the LLM consumer gets
-  (`n_formulas == 0` on a math-heavy paper ⇒ suspect rendering).
+  (`n_formulas == 0` on a math-heavy paper ⇒ suspect input, e.g. a
+  landing page resolved by mistake).
 - `links=extract_links(full_content)` runs unchanged — figure `href`s and
   `info:doi/…` strings flow into follow-up candidates for free.
 - `store` writes are **not** cached (existing policy); the XML bytes for
@@ -304,15 +331,100 @@ bobine is a pure-Python-side dependency).
 > (`jats_source`, `n_formulas`, …) say which route served the request;
 > absence of `jats_source` means the PDF path served it.
 
-Token-budget note (for QUICKREF): JATS markdown is typically 10–30%
-shorter than the same paper's PDF extraction (no hyphenation fragments,
-no `?`-glyph noise, no repeated running heads) — and the math is
-*correct*, which is the actual win for embedding quality.
+Token-budget note (for QUICKREF): measured 23% shorter on chem-olive
+(32.4 KB PDF fast-path markdown vs 25.0 KB JATS markdown — no
+hyphenation fragments, no `?`-glyph noise, no repeated running heads).
+One-paper sample: state the direction, not the number, and measure per
+corpus. The math being *correct* is the actual win for embedding
+quality.
 
 ---
 
 ## 5. Testing (gossamer side)
 
 - **Offline unit (no network, no models):** vendor
-  `bobine-repo/ikat-corpus/jats/chem-olive-2024.xml` → 
-...[truncated 3074 chars]
+  `bobine-repo/ikat-corpus/jats/chem-olive-2024.xml` into
+  `gossamer/tests/fixtures/jats-chem-olive-2024.xml`; stub the
+  resolver (monkeypatch the fetch layer to return the fixture bytes for
+  the EuropePMC URL): assert route taken (`jats_source == 'europepmc'`),
+  title, counts (`n_formulas=2, n_figures=7, n_tables=2`), balanced
+  dollars, and `## Methods` present. No network, no models, no ORT.
+- **Fallback order:** resolver returning no-PMC-hit → PMC OA stub with
+  a minimal `<record><link format="tgz"/>` → stubbed tarball containing
+  one `.nxml`; assert `jats_source == 'pmc-oa'`. Resolver returning
+  nothing → assert fall-through to the PDF path (stubbed) with no
+  `jats_source` in provenance.
+- **Flag matrix:** `pages=` + stubbed JATS hit → actionable error;
+  `structured=True` → PDF path (assert no JATS fetch attempted);
+  `tables_as='json'` → PDF path; `store=True` → `.xml` + `.md`
+  written, `include_images=True` → documented no-op note in manifest.
+- **Live-marked (network):** one DOI end-to-end (chem-olive
+  `10.1371/journal.pone.0306040`) asserting live shape conformance
+  (PMCID construction, fullTextXML content-type, title/counts match
+  the fixture within converter-version tolerance); PLOS branch asserting
+  graceful `None` on non-200. Mark slow/network; never gate CI on them.
+- **PDF-parity comparison (the §5.3 proof):** same paper via
+  `prefer_jats=True` vs `prefer_jats=False`; assert the JATS output
+  has balanced dollars, carries `\tag{` displays, and is byte-shorter
+  than the PDF output. This is the test that justifies default-on.
+
+Acceptance (all must hold): offline suite green with no network;
+fixture counts match; fall-through silent when unresolvable, loud on
+post-resolution failure; live test passes for at least one DOI;
+no existing `extract` test changes behavior with default flags
+(`prefer_jats=True` must be a no-op for non-DOI sources — assert zero
+extra requests via a counting transport stub).
+
+## 6. Docs to update (gossamer side)
+
+1. `docs/QUICKREF.md` document row: extend the `extract_document` line
+   with `[--prefer-jats | --no-prefer-jats]` (default on) + one line on
+   the JATS route (sections/GFM tables/remote-figure hrefs/fused math);
+   add the token-budget note from §4 (direction, not the number).
+2. Scholarly pipeline line (QUICKREF, the `research … → check … →
+   locate-pdf …` chain): insert the JATS step —
+   `research … → check … → locate-pdf … → extract (JATS-first) →
+   cite` — so the documented happy path uses the new route.
+3. Skills note: the agent skill shipped in the wheel + `skills://gossamer`
+   MCP resource — one line that scholarly extraction prefers publisher
+   full text when resolvable, with the `prefer_jats` override named.
+4. CLI `--help` strings (they *are* user docs): document the remote-figure
+   no-op and the pages/JATS error in the flag help.
+5. `CHANGELOG.md`: one entry (route, default-on, fallback order,
+   provenance fields).
+
+## 7. Rollout, dependencies, open questions
+
+**Order:** resolver + route + flags + provenance → tests → docs. One PR;
+the route is additive (fall-through preserves every existing behavior),
+so no feature flag beyond `prefer_jats` itself is needed.
+
+**Dependencies:** `bobine>=0.7.0` (new dependency — see §2.1 for why
+it can live in core deps). No model downloads, no ORT configuration,
+no keystore entries, no Rust changes. EuropePMC needs no key (optional
+operator email only).
+
+**Open questions for the implementer (decide, don't defer silently):**
+
+1. Exact EuropePMC JSON field names — assert against the live response
+   in the live test (§3.3); do not guess from the documented schema.
+2. PMCID construction when `id` arrives already prefixed vs numeric —
+   handle both, test both.
+3. PLOS journal-segment derivation: landing-page host parse is
+   specified; if it proves flaky in practice, drop PLOS to
+   never-attempted and say so in the PR (the three-tier order still stands).
+4. EuropePMC `email=` politeness param: wire it to the existing
+   OpenAlex email config, or leave it out? (Rate limiting already
+   paces requests; the email only identifies heavy use.)
+5. Retry policy on transient fetch failures post-resolution: reuse the
+   existing fetch retry, or fail fast to the PDF path? Recommend the
+   latter for robustness (a slow XML endpoint should not stall
+   extraction), but say which you chose.
+6. Should `extract_document_structured` gain a JATS-backed variant
+   later? Out of this handoff; file a follow-up if the flat path proves
+   the approach.
+
+---
+
+*End of handoff — questions back to the bobine side via the linked
+proposal (§5) and the okfgraph twin handoff.*

@@ -61,7 +61,7 @@ doc = bobine.convert_jats(jats_path: str, work_dir: str,
                           config: Optional[ConverterConfig] = None)
 doc.md_path     # str  <work_dir>/<stem>.md  (written by the call)
 doc.title       # str  first '#…' line, marker stripped
-doc.n_formulas  # int  inline + display spans from MathML
+doc.n_formulas  # int  MathML-backed formula elements (see §2 semantics)
 doc.n_figures   # int  <fig> floats encountered
 doc.n_tables    # int  <table-wrap> grids encountered
 ```
@@ -80,16 +80,18 @@ doc.n_tables    # int  <table-wrap> grids encountered
   - `JATS error: XML parse: …` → malformed XML (JSON error, as today).
   - `JATS error: not a JATS article` → root isn't `<article>` (an RSS
     feed or CrossRef record fed by mistake). For `kind='jats'` this is a
-    hard error (the caller named the kind); see §3.5 for the one
-    fallback case.
+    hard error (the caller named the kind; §3.5 — no sniffing fallback).
   - Prose segments are dollar-balance-checked (`check_dollars`) — output
     is balanced or the call fails. There is no silent-unbalanced case.
   - DTDs (`<!DOCTYPE article PUBLIC …>`) are stripped; JATS 1.1/1.2/1.3
     all parse (local-name matching, namespaces ignored).
-- **Counts semantics for provenance:** `n_formulas` counts *spans*
-  (inline + display), not display equations. A paper with 511 displays
-  reports a larger number once inlines are included — record the raw
-  counts, don't reinterpret them.
+- **Counts semantics for provenance (observed):** `n_formulas`
+  increments for MathML-backed `<inline-formula>` / `<disp-formula>`
+  elements with non-empty TeX — *not* for inline `$…$` spans
+  synthesized from non-MathML markup (sub/sup runs), and *not* a
+  display-only count either (chem-olive: 2 displays → `n_formulas=2`;
+  math-hilfer: 511 displays → 511). Record the raw counts, don't
+  reinterpret them; re-verify per bobine version.
 
 ---
 
@@ -150,10 +152,12 @@ add the JATS row — same contract, `page_count=0`/empty-images semantics.
   which is correct: image-ingestion `mode` is inapplicable (remote
   figures, §3.5) and routing is meaningless.
 - New `if kind == "jats":` branch mirroring the `pdf` branch step for
-  step: `_require_file(jats_path)` → `_resolve_converter(...)` (extended
-  to build `JatsConverter` for this kind; an explicit `converter=`
-  instance is still honoured verbatim) → convert into temp dir (auto
-  import) or `output_dir` → **`_lint_converted_md(md_path,
+  step: `_require_file(jats_path)` → `_resolve_converter(...)`
+  (extended with kind-awareness — its current signature takes
+  routing/extract flags that are meaningless for JATS, so either add a
+  kind parameter or a small `_resolve_jats_converter` sibling; an
+  explicit `converter=` instance is still honoured verbatim) → convert
+  into temp dir (auto import) or `output_dir` → **`_lint_converted_md(md_path,
   auto_fix=True)`** (math-aware after §6.2) → `_import_work_dir(…)`.
 - Namespace: extend `_ingest_namespace` with a JATS twin keyed
   `jats-<hash12>` of the source XML bytes (same stability/idempotence
@@ -175,11 +179,22 @@ add the JATS row — same contract, `page_count=0`/empty-images semantics.
   (--kind jats)"); the existing `--output-dir` / `--no-auto-import` /
   `--mode`-family wiring applies unchanged. `--routing-mode` and
   `--no-extract-images` with `kind=jats` must produce the honours-table
-  `BAD_VALUE` (verify in tests — it falls out of §3.2 for free).
-- MCP `ingest` tool: extend the `kind` enum and add the `jats_path`
-  param; `data` per kind gains jats →
-  `{concept_ids, jats_title, n_formulas, n_figures, n_tables,
-  chunk_count, …}`. `kind="md"`/`"pdf"` shapes byte-identical.
+  `BAD_VALUE`: the honours table only sees the `passed` dict
+  (`md_path … bib_path`) — `routing_mode`/`extract_images`/`mode` are
+  separate params, so the jats branch must reject them explicitly
+  (`routing_mode != "auto"`, `extract_images is False`, or
+  `mode != "text"` → `OKFError(BAD_VALUE)` naming the param).
+  Mirror the pdf auto-import rule: with `auto_import=True`, `output_dir`
+  is excluded from the jats honours set (explicit work-dir export only).
+- MCP `ingest` tool (`mcp_server.py:302`, `kind: Literal["md",
+  "pdf", "thoughts"]` — note it already lags the Python API, which
+  also supports `"bib"`; add `"jats"` here, and consider closing
+  the `"bib"` gap in the same change rather than repeating the
+  pattern): extend the Literal, add `jats_path` + `formula_concepts`
+  params with per-kind descriptions in the existing style; `data` per
+  kind gains jats → `{concept_ids, jats_title, n_formulas, n_figures,
+  n_tables, chunk_count, …}`. `kind="md"`/`"pdf"` shapes
+  byte-identical.
 - `skills/okfgraph-ingest/SKILL.md` kind table: add the JATS row
   (`kind='jats'` | JATS XML file → converted + imported; counts
   returned; remote figures not staged). One row, same style as the
@@ -204,8 +219,10 @@ upgrade note (no `convert_jats` exists there).
 - **Figures**: remote `href`s (`info:doi/…`, publisher CDN URLs) are
   preserved in the markdown and surface via `extract_links` as
   follow-up candidates for free. Never download them during ingest
-  (license + size + SSRF surface). `image_count` for a jats import is 0
-  with the manifest note "figures are remote hrefs".
+  (license + size + SSRF surface). The jats return dict carries no
+  image manifest (neither does pdf's) — `image_dir` is an empty staging
+  dir, `page_count` is 0; document "figures are remote hrefs" in the
+  skill row and CLI help instead of inventing a manifest field.
 - **Re-imports**: namespace hash makes them idempotent upserts, same as
   pdf. `force` semantics unchanged.
 - **Huge single-file displays**: handled at chunk time (§6.3), never at
@@ -269,7 +286,7 @@ Probed against the installed mordant (`MarkdownChunker.get_all_chunks`):
 - A standalone `$$…$$` display is already its **own `Paragraph` block**
   — mordant does not merge it with surrounding prose. The common case
   is therefore already intact.
-- `_split_into_chunks` (`embedding.py:1233`) already prepends the
+- `_split_into_chunks` (`embedding.py:1235`) already prepends the
   current section heading as ephemeral `heading_context` in the
   *embedding payload* (not stored). The proposal's "section heading
   travels with the chunk" is thus **half-done** — keep it, extend it.
@@ -289,19 +306,17 @@ Probed against the installed mordant (`MarkdownChunker.get_all_chunks`):
 2. **Tag travels automatically** — `\tag{N}` sits inside the display
    block, so atomicity is sufficient. No extra code; assert it in tests
    (tag present in the same `chunk_text` as its formula).
-3. **Heading, stored this time.** `heading_context` is payload-ephemeral
-   today; for formula chunks additionally accept the duplication cost
-   and prepend the section heading *into the stored `chunk_text`*
-   (`{heading}\n\n{display}`)? Or keep ephemeral? **Decision: keep
-   ephemeral, do not duplicate into storage.** Rationale: reconstruction
-   (`reconstruct_document`, ~98% fidelity) rejoins stored text, and
-   baked-in headings would double them; retrieval already embeds the
-   heading via the payload. Revisit only with a measured retrieval
-   regression on formula queries.
+3. **Heading: keep ephemeral (decided).** `heading_context` is
+   payload-ephemeral today; baking it into stored `chunk_text` was
+   considered and rejected: reconstruction (`reconstruct_document`,
+   ~98% fidelity) rejoins stored text, and baked-in headings would
+   double them; retrieval already embeds the heading via the payload.
+   Revisit only with a measured retrieval regression on formula queries.
 4. **Inline `$…$` spans** inside prose blocks: atomicity at the *span*
-   level is desirable but word-tiling already keeps them whole in
-   practice (they rarely exceed budget alone); explicitly out of scope
-   unless a failing test says otherwise.
+   level would need the same span-aware cuts (an inline span can be
+   split when its *enclosing* block exceeds budget, even though the span
+   itself is small). Explicitly deferred: wait for a failing test before
+   paying for it.
 
 ### 5.3 Acceptance
 
@@ -361,9 +376,10 @@ imported content — the same scan as MATH001, reused not reinvented):
 
 ### 6.3 Acceptance
 
-- chem-olive import with the flag: `len(formula_concept_ids) ==
-  n_displays`, each concept's `latex` fence-balanced (run the §6.2
-  scan over them), each links its paper, search for a distinctive
+- chem-olive import with the flag: `len(formula_concept_ids)` equals
+  the number of `$$…$$` display spans in the post-lint markdown
+  (2 for chem-olive), each concept's `latex` fence-balanced (run the
+  §6.2 scan over them), each links its paper, search for a distinctive
   symbol (e.g. `CdCl`) surfaces the formula concept.
 - Flag off (default): byte-identical import to today (no new concepts,
   no new frontmatter keys on paper concepts).
@@ -400,10 +416,11 @@ re-import and note the new content hash in the PR.
 
 Corpus fixtures (bobine repo, vendor don't duplicate): smallest JATS
 `ikat-corpus/jats/chem-olive-2024.xml` (62 KB) for unit tests;
-`med-ioannidis-2005.xml` (80 KB) as the second shape (0 displays, 2
-inlines — exercises the empty path). Expected chem-olive counts:
-`n_formulas=9, n_figures=7, n_tables=2` (re-verify against the bobine
-version under test; counts are converter-version-sensitive).
+`med-ioannidis-2005.xml` (80 KB) as the second shape (0 formulas,
+2 figures per the census — exercises the near-empty math path). Expected chem-olive counts:
+`n_formulas=2, n_figures=7, n_tables=2` (verified against bobine 0.7.1;
+re-verify on bump — inline spans from non-MathML markup are not counted,
+§2).
 
 ---
 
