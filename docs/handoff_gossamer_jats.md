@@ -426,5 +426,25 @@ operator email only).
 
 ---
 
+## 8. Endpoint liveness log (2026-10-28)
+
+Probed via gossamer's own `check_sources` (status mode = HEAD/minimal GET
+through the shared fetch pipeline; no body fetched).
+
+| URL | Result | Use in this handoff |
+|---|---|---|
+| `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=DOI:10.1371/journal.pone.0306040&format=json` | **HTTP 200** | §3.3 tier 1 (DOI → PMCID search) |
+| `https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/?ids=10.1371/journal.pone.0306040` | **HTTP 200** | §3.3 tier 2 (alternate DOI → PMCID path) |
+| `https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0306040&type=manuscript` | **HTTP 403** (bot mitigation on probe) | §3.3 tier 3 (last resort; full GET with browser headers may still succeed — treat non-200 as `None`) |
+
+Notes: content-mode fetch of the EuropePMC search URL returns status
+only (JSON bodies are not inspectable through that tool) — the *shape*
+assertions in §3.3 come from the documented schema and must be asserted
+against the live response in tests (open question §7.1). Re-probe before
+implementation if more than a few weeks have passed; endpoints, not
+results, are what's pinned here.
+
+---
+
 *End of handoff — questions back to the bobine side via the linked
 proposal (§5) and the okfgraph twin handoff.*
