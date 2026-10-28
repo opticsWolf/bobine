@@ -288,6 +288,14 @@ impl PyHybridConverter {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    fn convert_jats(&self, path: &str, work_dir: &str) -> PyResult<PyJatsDocument> {
+        let inner = self.inner.convert_jats(
+            std::path::Path::new(path),
+            std::path::Path::new(work_dir),
+        ).map_err(to_py_err)?;
+        Ok(PyJatsDocument { inner })
+    }
+
     fn __repr__(&self) -> String {
         "HybridConverter(...)".into()
     }
@@ -304,6 +312,68 @@ fn convert_to_markdown(
     converter
         .convert(std::path::Path::new(path), std::path::Path::new(work_dir))
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+}
+
+// -- JATS layer -------------------------------------------------------------
+
+use crate::jats::JatsDocument;
+
+#[pyclass(name = "JatsDocument")]
+pub struct PyJatsDocument {
+    inner: JatsDocument,
+}
+
+#[pymethods]
+impl PyJatsDocument {
+    #[getter]
+    fn md_path(&self) -> String {
+        self.inner.md_path.display().to_string()
+    }
+    #[getter]
+    fn title(&self) -> String {
+        self.inner.title.clone()
+    }
+    #[getter]
+    fn n_formulas(&self) -> usize {
+        self.inner.n_formulas
+    }
+    #[getter]
+    fn n_figures(&self) -> usize {
+        self.inner.n_figures
+    }
+    #[getter]
+    fn n_tables(&self) -> usize {
+        self.inner.n_tables
+    }
+    fn __repr__(&self) -> String {
+        format!(
+            "JatsDocument(title={:?}, formulas={}, figures={}, tables={})",
+            self.inner.title, self.inner.n_formulas, self.inner.n_figures, self.inner.n_tables
+        )
+    }
+}
+
+/// JATS XML (publisher full text) -> Markdown. Formulas via MathML,
+/// figures as `![alt](href)` links, real tables as GFM. No ONNX needed;
+/// `config` is accepted for forward compatibility (no knobs read yet).
+#[pyfunction]
+#[pyo3(signature = (path, work_dir, config=None))]
+fn convert_jats(
+    path: &str,
+    work_dir: &str,
+    config: Option<&PyConverterConfig>,
+) -> PyResult<PyJatsDocument> {
+    let cfg = config.map(|c| c.inner.clone()).unwrap_or_default();
+    let default_cache;
+    let cache_dir: &std::path::Path = {
+        default_cache = hf_hub::resolve_cache_dir();
+        default_cache.as_path()
+    };
+    let converter = HybridConverter::new(cfg, cache_dir);
+    let inner = converter
+        .convert_jats(std::path::Path::new(path), std::path::Path::new(work_dir))
+        .map_err(to_py_err)?;
+    Ok(PyJatsDocument { inner })
 }
 
 // -- pipeline layer ---------------------------------------------------------
@@ -592,6 +662,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyConvertedDocument>()?;
     m.add_class::<PyExcelDocument>()?;
     m.add_function(wrap_pyfunction!(convert_excel, m)?)?;
+    m.add_function(wrap_pyfunction!(convert_jats, m)?)?;
+    m.add_class::<PyJatsDocument>()?;
     m.add_function(wrap_pyfunction!(ingest_document, m)?)?;
     m.add_function(wrap_pyfunction!(convert_directory, m)?)?;
     m.add_function(wrap_pyfunction!(model_status, m)?)?;

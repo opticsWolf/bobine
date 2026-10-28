@@ -165,6 +165,8 @@ src/
 ├── rapid_ocr.rs      PaddleOCR det + rec (DBNet / CRNN, CTC decode)
 ├── rapid_table.rs    SLANet-plus table-structure recognition (scans)
 ├── sanitize.rs       Post-OCR LaTeX repair (split_cmds, fence fixup, script split)
+├── mml.rs            MathML → LaTeX (verbatim port, fixture-parity gated)
+├── jats.rs           JATS XML → GFM (formulas/tables/figures, no ONNX needed)
 ├── pdf_source.rs     PdfSource trait — page text without a real PDF file
 ├── tables.rs         HTML table → GFM pipe-table converter
 ├── excel.rs          Excel workbooks → per-sheet csv/json/md

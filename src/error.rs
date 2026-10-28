@@ -23,6 +23,9 @@ pub enum BobineError {
     #[error("Unsupported file format: {0}")]
     UnsupportedFormat(String),
 
+    #[error("JATS error: {0}")]
+    Jats(String),
+
     #[error("{0}")]
     Other(String),
 }

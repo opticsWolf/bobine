@@ -1,6 +1,6 @@
 # Proposal: JATS/MathML formula ingestion — `mml_to_tex` in Rust
 
-Status: proposal / plan (not yet implemented)
+Status: P-A + P-B + P-C implemented in 0.7.0 (P-D benchmark + P-E okfgraph/gossamer follow-ups open)
 Scope: bobine Rust core (`mml.rs` new, `converter.rs`, `config.rs`, `py_bindings.rs`) + test harness; continuation phases in okfgraph (`components/ingest.py`, `components/converters.py`) and gossamer (`document.py`, `open_access.py`)
 Related: [architecture.md](architecture.md) · [benchmarks.md](benchmarks.md) · [proposal_media_tables.md](proposal_media_tables.md) (house format)
 Provenance: the converter and the ground-truth corpus come from the ikat M7.8 work (`ikat/examples/auto-proof/mml.py`, 488 lines, stdlib-only; 10-paper corpus, 511 display formulas with publisher-MathML-derived LaTeX verified by TeX compilation and a width audit to 0 overfulls).

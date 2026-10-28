@@ -52,6 +52,14 @@ src/
 ├── rapid_ocr.rs      PaddleOCR DBNet + CRNN: DB unclip (min-area rect +
 │                     polygon offset), rotation-aware crops, CTC decode
 ├── rapid_table.rs    RapidTable (SLANet-plus): scanned-table → HTML
+├── sanitize.rs       Post-OCR LaTeX repair (fences, split_cmds, script split)
+├── mml.rs            MathML → LaTeX verbatim port (GREEK/OPS/FUNC_NAMES…
+│                     tables, mml_to_tex + mathify + merge_math; 692-fixture
+│                     byte-parity gate vs the shimmed Python reference)
+├── jats.rs           JATS XML → GFM: convert_jats_str + JatsDocument
+│                     (inline $…$ fused, display $$…\tag{N}$$, GFM tables,
+│                     figure ![alt](href) links, sections/back-matter;
+│                     .xml/.jats route here from convert())
 ├── tables.rs         HTML <table> → GFM pipe-table converter
 ├── excel.rs          Excel export: convert_excel → ExcelDocument
 │                     (SheetData/CellData/CellJson) + csv/json/md renderers

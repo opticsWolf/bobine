@@ -1,5 +1,18 @@
 # Changelog — bobine
 
+## 0.7.0 — 2026-10-28
+
+- JATS input adapter (proposal P-B): `HybridConverter::convert_jats` +
+  `JatsDocument { md_path, title, n_formulas, n_figures, n_tables }` —
+  publisher full-text XML to GFM via `mml.rs` (inline `$…$` fused with
+  `merge_math`, display `$$tex \tag{N}$$`), real JATS tables, figures
+  as `![alt](href)` (remote URLs preserved), sections as headings.
+  No ONNX needed; `.xml`/`.jats` now route to it in `convert()`.
+  Python: `bobine.convert_jats` + `converter.convert_jats` +
+  `JatsDocument` + stubs.
+- `mml.rs` (proposal P-A, 0.7.0-alpha): verbatim MathML→LaTeX port with
+  692-fixture byte-parity gate vs the shimmed Python reference.
+
 ## 0.6.1 — 2026-10-28
 
 - Post-OCR LaTeX sanitizer (proposal P-C): `sanitize_latex` repair pass

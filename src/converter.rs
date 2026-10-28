@@ -943,6 +943,13 @@ impl HybridConverter {
         match ext.as_str() {
             "pdf" => self.convert_pdf(input, work_dir),
             "docx" | "xlsx" | "pptx" | "doc" | "xls" | "ppt" => self.convert_office_staged(input, work_dir),
+            // Structured source beats the text fallback: JATS carries
+            // MathML/table/figure structure that plain UTF-8 reading
+            // would flatten into tag soup.
+            "xml" | "jats" => {
+                let doc = self.convert_jats(input, work_dir)?;
+                std::fs::read_to_string(&doc.md_path).map_err(BobineError::Io)
+            }
             _ => self.convert_text(input),
         }
     }
