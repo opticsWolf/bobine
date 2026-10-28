@@ -37,7 +37,8 @@ src/
 ├── config.rs         ConverterConfig (Routing/Render/Model/Text/Provider
 │                     option groups, #[serde(flatten)] — wire format unchanged),
 │                     RoutingMode, FormulaBackend, ModelPrecision,
-│                     ModelQuantization
+│                     ModelQuantization, ImageMode (Link/EmbedBase64) +
+│                     RenderOpts.image_mode/max_embed_bytes/preserve_layout
 ├── error.rs          BobineError enum
 ├── engine.rs         OnnxEngine — lazy model manager (TexTeller/RapidLayout/RapidOCR)
 ├── converter.rs      HybridConverter — core PDF/Office pipeline (~3.4 kLOC,

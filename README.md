@@ -157,7 +157,7 @@ let md = conv.convert_pdf(std::path::Path::new("paper.pdf"),
 ```
 src/
 ├── lib.rs            crate root & re-exports
-├── config.rs         ConverterConfig · RoutingMode · ModelPrecision
+├── config.rs         ConverterConfig · RoutingMode · ModelPrecision · ImageMode
 ├── engine.rs         OnnxEngine (lazy model manager: TexTeller/Layout/OCR)
 ├── converter.rs      HybridConverter (core PDF/Office pipeline + binary-sniffed text fallback)
 ├── tex_teller.rs     TexTeller ONNX — ViT encoder → RoBERTa decoder
@@ -261,6 +261,19 @@ csv/json (`convert_excel`, `<stem>.<sheet>.csv` + `<stem>.json` siblings).
 Embedded pictures stage into `<work_dir>/assets/office/` and rewrite to staged
 files, promoted to `okf-asset://` by `ingest_document` — see §12 of the
 [architecture doc](https://github.com/opticsWolf/bobine/blob/main/docs/architecture.md).
+
+## Structured sources (JATS)
+
+Publisher full-text XML (`.xml` / `.jats`) routes to `convert_jats`
+(no ONNX needed): presentation MathML → LaTeX via `mml.rs` (fused
+`$…$` inline, `$$tex \tag{N}$$` display), real JATS tables → GFM
+pipes, figures as `![alt](href)` with remote URLs preserved, sections
+as headings. Returns `JatsDocument { md_path, title, n_formulas,
+n_figures, n_tables }`; Python: `bobine.convert_jats` /
+`converter.convert_jats`. See the
+[proposal](https://github.com/opticsWolf/bobine/blob/main/docs/proposal_jats_mml.md)
+for the P-A→P-D ladder (sanitizer, benchmark harness, okfgraph/gossamer
+phases).
 
 ## Output contract
 
