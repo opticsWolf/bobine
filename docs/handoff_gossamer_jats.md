@@ -108,7 +108,12 @@ Crib from the frozen golden `tests/golden/jats-chem-olive-2024.md`
 - Inline math fused: `…sulfonamide group (SO$_{2}$NH) and…`
   (MathML → LaTeX via `mml.rs`, then `merge_math` fuses adjacent spans).
 - Display equations: `$$… \tag{Eq 1}$$` / `$$… \tag{1}$$` — the JATS
-  `<label>` becomes the `\tag{}` verbatim.
+  `<label>` becomes the `\tag{}`, minus surrounding parens
+  (`emit_eq`, `src/jats.rs`: `(1)` → `\tag{1}`; `(Eq 1)` →
+  `\tag{Eq 1}`; no `<label>` → bare `$$…$$` with no tag). chem-olive's
+  two displays are labeled `(Eq 1)` / `(Eq 2)` in the source XML — the
+  `\tag{}` contract *does* fire on the fixture. math-hilfer is the
+  mixed case (100 displays, 29 unlabeled → 29 bare `$$` fences).
 - Tables: GFM pipes, caption preserved; figures:
   `![Fig 1: Schematic representation …](info:doi/10.1371/…​.g001)` —
   **remote `xlink:href` URLs are preserved as-is** (no download, no
@@ -365,7 +370,10 @@ quality.
   graceful `None` on non-200. Mark slow/network; never gate CI on them.
 - **PDF-parity comparison (the §5.3 proof):** same paper via
   `prefer_jats=True` vs `prefer_jats=False`; assert the JATS output
-  has balanced dollars, carries `\tag{` displays, and is byte-shorter
+  has balanced dollars, carries `\tag{Eq 1}` (exact — chem-olive's
+  labels are `(Eq 1)`/`(Eq 2)`, parens stripped) and bare `$$` stays
+  tagless (assert the negative on a math-hilfer display with no
+  `<label>`), and is byte-shorter
   than the PDF output. This is the test that justifies default-on.
 
 Acceptance (all must hold): offline suite green with no network;

@@ -72,7 +72,8 @@ doc.n_tables    # int  <table-wrap> grids encountered
 - **Output markdown shapes** (frozen golden:
   bobine `tests/golden/jats-chem-olive-2024.md`): `#` title, `##`/`###`
   sections, fused `$…$` inline, `$$… \tag{N}$$` displays (JATS `<label>`
-  verbatim), GFM tables, `![alt](remote-href)` figures with `xlink:href`
+  text with surrounding parens stripped; unlabeled displays emit bare
+  `$$`), GFM tables, `![alt](remote-href)` figures with `xlink:href`
   preserved, `[ [`ref01`]]` citation xrefs (stable, greppable — do not
   post-process).
 - **Guarantees / errors** (`RuntimeError`, stable prefixes — map, don't
@@ -378,7 +379,8 @@ imported content — the same scan as MATH001, reused not reinvented):
 
 - chem-olive import with the flag: `len(formula_concept_ids)` equals
   the number of `$$…$$` display spans in the post-lint markdown
-  (2 for chem-olive), each concept's `latex` fence-balanced (run the
+  (2 for chem-olive; slugs `eq-1`, `eq-2` from the `Eq 1`/`Eq 2` labels),
+  each concept's `latex` fence-balanced (run the
   §6.2 scan over them), each links its paper, search for a distinctive
   symbol (e.g. `CdCl`) surfaces the formula concept.
 - Flag off (default): byte-identical import to today (no new concepts,
