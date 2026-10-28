@@ -1,6 +1,6 @@
 # Release workflow — dual publish on version tags.
 #
-# Tag `vX.Y.Z` on **main** (after merging rust_dev) triggers:
+# Tag `vX.Y.Z` on **main** (after merging dev) triggers:
 #   1. crates.io  — pure-Rust crate `bobine` (default features, no pyo3)
 #   2. PyPI       — full Python package `bobine` via maturin (extension-module)
 #
