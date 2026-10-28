@@ -149,6 +149,7 @@ Status: the harness is implemented and validated; the accuracy table is
 **withheld until the upstream renderer is fixed** — publishing the current
 0%-exact numbers would misattribute a rasterizer bug to the OCR models.
 Re-run `BOBINE_BENCH_OCR=1` (GPU recommended) once renders are correct.
+(Full record: `docs/cid_render_blocker.md`.)
 
 ## Pitfall: stale onnxruntime.dll in System32
 
