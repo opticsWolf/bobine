@@ -1,6 +1,6 @@
 [package]
 name = "bobine"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 rust-version = "1.85"
 description = "PDF / Office / text → Markdown ingestion engine with ONNX formula OCR (TexTeller), layout analysis and OCR"
@@ -30,6 +30,7 @@ default = []
 extension-module = ["dep:pyo3", "pyo3/extension-module"]
 
 [dependencies]
+base64 = "0.22"
 # Document parsing
 pdf_oxide = { version = "0.3", features = ["rendering"] }
 office_oxide = "0.1"

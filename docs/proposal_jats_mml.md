@@ -1,6 +1,8 @@
 # Proposal: JATS/MathML formula ingestion — `mml_to_tex` in Rust
 
-Status: P-A + P-B + P-C implemented in 0.7.0 (P-D benchmark + P-E okfgraph/gossamer follow-ups open)
+Status: P-A + P-B + P-C implemented in 0.7.0 (P-D harness implemented in
+0.7.1 with the accuracy table withheld — pdf_oxide renderer blocker, see
+benchmarks.md; P-E okfgraph/gossamer follow-ups open)
 Scope: bobine Rust core (`mml.rs` new, `converter.rs`, `config.rs`, `py_bindings.rs`) + test harness; continuation phases in okfgraph (`components/ingest.py`, `components/converters.py`) and gossamer (`document.py`, `open_access.py`)
 Related: [architecture.md](architecture.md) · [benchmarks.md](benchmarks.md) · [proposal_media_tables.md](proposal_media_tables.md) (house format)
 Provenance: the converter and the ground-truth corpus come from the ikat M7.8 work (`ikat/examples/auto-proof/mml.py`, 488 lines, stdlib-only; 10-paper corpus, 511 display formulas with publisher-MathML-derived LaTeX verified by TeX compilation and a width audit to 0 overfulls).
@@ -191,6 +193,14 @@ ground truth (TeX-verified), (b) the original PDF.
 * **Deliverable**: `docs/benchmarks.md` gains a TexTeller accuracy table
   (per publisher, born-digital vs scanned) — turning "80M training pairs"
   marketing into a measured number on real publisher PDFs.
+  *Status 0.7.1: harness implemented as `tests/test_bench_ocr.rs`
+  (Always mode, order alignment, normalized exact match, `report.md` +
+  `mismatches.md`, rescore mode); accuracy table WITHHELD — the ikat
+  corpus (PLOS ONE, Type0/CIDFontType2 fonts) renders glyph-corrupted
+  under pdf_oxide 0.3.78, so all Always-mode OCR output inherits the
+  corruption (details + counter-proof in `docs/benchmarks.md`). Also
+  fixed en route: `rec_input` normalization now `(x/255-0.5)/0.5` per
+  the PP-OCRv4 spec. Re-run once the upstream renderer is fixed.*
 
 ### P-E. Surface parity (bobine's own rule)
 

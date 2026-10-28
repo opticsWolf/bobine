@@ -1,5 +1,26 @@
 # Changelog — bobine
 
+## 0.7.1 — 2026-10-28
+
+- Deferred media trio (proposal_media_tables): `ImageMode::{Link,
+  EmbedBase64}` + `max_embed_bytes` cap (default 256 KiB, MIME-sniffed
+  data URIs; over-cap figures stay links) threaded through all three
+  figure paths (ONNX branch, crop path, fast-path interleave + gallery
+  with embed-aware dedup); `preserve_layout` fast-path mode (strict
+  visual order, no heading/table merging); side-by-side caption fix
+  (vertical-overlap gate was dead code — now co-extent + small-gap
+  checked first, unit-pinned). Mirrored in Python
+  (`ImageMode`, `image_mode`, `max_embed_bytes`, `preserve_layout`).
+- P-D OCR benchmark harness: `tests/test_bench_ocr.rs` (`#[ignore]`-gated,
+  Always mode, order alignment, normalized exact match, `report.md` +
+  `mismatches.md`, rescore mode) — accuracy table WITHHELD: the ikat
+  corpus (PLOS ONE CID fonts) renders glyph-corrupted under pdf_oxide
+  0.3.78, so Always-mode OCR inherits the corruption (analysis +
+  solitons counter-proof in `docs/benchmarks.md`). Also fixed en
+  route: RapidOCR `rec_input` normalization now `(x/255-0.5)/0.5` per
+  the PP-OCRv4 spec. GPU path validated (RTX 3090, ORT 1.28.1
+  cuda13 + cuDNN 9.24).
+
 ## 0.7.0 — 2026-10-28
 
 - JATS input adapter (proposal P-B): `HybridConverter::convert_jats` +

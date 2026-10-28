@@ -389,9 +389,10 @@ dependencies = [
 
 [[package]]
 name = "bobine"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "binaryornot-rs",
  "csv",
  "embroider",

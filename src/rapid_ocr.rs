@@ -219,14 +219,16 @@ fn rec_input(crop: &DynamicImage) -> Option<Array3<f32>> {
             rgb.put_pixel(x, y, image::Rgb([p.0[0], p.0[1], p.0[2]]));
         }
     }
-    // Normalize: (x/255 - 0.5) / 0.5
+    // Normalize: (x/255 - 0.5) / 0.5 (PP-OCRv4 rec spec: [-1, 1]).
+    // A missing /0.5 halves the dynamic range and the rec model
+    // degrades to near-gibberish (P-D benchmark finding).
     let mut arr = Array3::<f32>::zeros((REC_IMG_C as usize, new_h as usize, new_w as usize));
     for y in 0..new_h as usize {
         for x in 0..new_w as usize {
             let p = rgb.get_pixel(x as u32, y as u32);
-            arr[[0, y, x]] = p.0[0] as f32 / 255.0 - 0.5;
-            arr[[1, y, x]] = p.0[1] as f32 / 255.0 - 0.5;
-            arr[[2, y, x]] = p.0[2] as f32 / 255.0 - 0.5;
+            arr[[0, y, x]] = (p.0[0] as f32 / 255.0 - 0.5) / 0.5;
+            arr[[1, y, x]] = (p.0[1] as f32 / 255.0 - 0.5) / 0.5;
+            arr[[2, y, x]] = (p.0[2] as f32 / 255.0 - 0.5) / 0.5;
         }
     }
     Some(arr)
@@ -918,7 +920,7 @@ mod tests {
         let crop = image::DynamicImage::ImageRgb8(img);
         let a = rec_input(&crop).expect("valid crop");
         assert_eq!(a.shape(), &[3, 48, 96]); // 20 * 48/10
-        assert!((a[[0, 0, 0]] - 0.5).abs() < 1e-6); // 255/255 - 0.5
+        assert!((a[[0, 0, 0]] - 1.0).abs() < 1e-6); // (255/255 - 0.5)/0.5
         let tiny = image::DynamicImage::ImageRgb8(image::RgbImage::new(2, 2));
         assert!(rec_input(&tiny).is_none());
     }

@@ -111,6 +111,45 @@ Takeaways:
 - The int8 export has no KV-cache (full-sequence recompute), which further
   penalizes it despite being smaller.
 
+## OCR accuracy vs ikat ground truth (P-D harness — 0.7.1)
+
+Harness: `tests/test_bench_ocr.rs` (`#[ignore]`-gated; needs model cache +
+`ORT_DYLIB_PATH`). Forces `RoutingMode::Always`, converts each
+`ikat-corpus/pdf/*.pdf`, extracts GT display spans (`$$…$$` + `\tag{N}`)
+from `ikat-corpus/ground-truth/*.md`, extracts OCR `$$` spans (multi-line
+join + unterminated-fence salvage), aligns by document order, and scores
+normalized exact match (whitespace squeeze; `\left`/`\right` identity;
+space-insensitive around `{`/`}`/`(`/`)`/`[`/`]`). Env: `BOBINE_BENCH_OCR=1`
+to run, `BOBINE_BENCH_PAPERS=` subset, `BOBINE_BENCH_CACHE=` to reuse
+`target/bench_ocr/*.md`, `BOBINE_BENCH_RESCORE=1` to re-score saved
+outputs without re-running OCR. Writes `report.md` + `mismatches.md`.
+
+Validated on GPU (RTX 3090, ORT 1.28.1 cuda13 + CUDA 13.3 + cuDNN 9.24):
+`ORT_DYLIB_PATH` at the `-gpu_cuda13` build, CUDA/cuDNN `bin` dirs on
+`PATH`; layout/OCR slots auto-enable CUDA, table stays on CPU.
+
+Two findings, one fixed and one blocking:
+
+1. **Fixed — `rec_input` normalization** (`src/rapid_ocr.rs`): the rec path
+   computed `x/255 - 0.5` while the comment and the PP-OCRv4 spec require
+   `(x/255 - 0.5) / 0.5` (the det path already did this correctly).
+   Half-range inputs reached the rec model. Fixed + unit-test pinned.
+2. **Blocker — pdf_oxide 0.3.78 renderer corrupts CID fonts.** The PLOS
+   ONE papers that make up the ikat corpus use Type0/CIDFontType2 subset
+   fonts; the renderer draws them with shifted glyph IDs, so every render
+   carries corrupted text (`RESECRCJ CRTKCLE` for `RESEARCH ARTICLE`).
+   All downstream ONNX consumers (RapidOCR text, TexTeller formula crops)
+   inherit the corruption, so corpus accuracy numbers would measure the
+   renderer bug, not the models. Counter-proof: arXiv-style Type1-only
+   PDFs (`tests/fixtures/solitons.pdf`) render and OCR correctly
+   (page-0 lines at 0.96–0.99 confidence, verbatim correct). The fast path
+   is unaffected (it reads the text layer, whose ToUnicode map is fine).
+
+Status: the harness is implemented and validated; the accuracy table is
+**withheld until the upstream renderer is fixed** — publishing the current
+0%-exact numbers would misattribute a rasterizer bug to the OCR models.
+Re-run `BOBINE_BENCH_OCR=1` (GPU recommended) once renders are correct.
+
 ## Pitfall: stale onnxruntime.dll in System32
 
 This machine has an old `C:\Windows\System32\onnxruntime.dll` (**v1.17.1**) that
