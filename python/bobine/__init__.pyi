@@ -65,6 +65,7 @@ class ConverterConfig:
         formula_inline_max_width_pts: float = 220.0,
         formula_pad_pts: float = 4.0,
         formula_layout_fallback: bool = False,
+        sanitize_ocr: bool = True,
         math_char_threshold: int = 30,
         scanned_text_threshold: int = 50,
         ocr_lang: str = "en",
@@ -88,6 +89,8 @@ class ConverterConfig:
     @property
     def table_ort_providers(self) -> list[str] | None: ...
 
+    @property
+    def sanitize_ocr(self) -> bool: ...
     @property
     def extract_images(self) -> bool: ...
     @property

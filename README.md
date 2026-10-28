@@ -164,6 +164,7 @@ src/
 ├── rapid_layout.rs   DocLayout-YOLO page layout analysis
 ├── rapid_ocr.rs      PaddleOCR det + rec (DBNet / CRNN, CTC decode)
 ├── rapid_table.rs    SLANet-plus table-structure recognition (scans)
+├── sanitize.rs       Post-OCR LaTeX repair (split_cmds, fence fixup, script split)
 ├── pdf_source.rs     PdfSource trait — page text without a real PDF file
 ├── tables.rs         HTML table → GFM pipe-table converter
 ├── excel.rs          Excel workbooks → per-sheet csv/json/md

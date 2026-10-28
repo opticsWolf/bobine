@@ -92,6 +92,7 @@ impl PyConverterConfig {
         formula_inline_max_width_pts = 220.0f64,
         formula_pad_pts = 4.0f64,
         formula_layout_fallback = false,
+        sanitize_ocr = true,
         math_char_threshold = 30usize,
         scanned_text_threshold = 50usize,
         ocr_lang = "en".to_string(),
@@ -124,6 +125,7 @@ impl PyConverterConfig {
         formula_inline_max_width_pts: f64,
         formula_pad_pts: f64,
         formula_layout_fallback: bool,
+        sanitize_ocr: bool,
         math_char_threshold: usize,
         scanned_text_threshold: usize,
         ocr_lang: String,
@@ -184,6 +186,7 @@ impl PyConverterConfig {
                     formula_inline_max_width_pts,
                     formula_pad_pts,
                     formula_layout_fallback,
+                    sanitize_ocr,
                     math_char_threshold,
                     scanned_text_threshold,
                 },
@@ -240,6 +243,10 @@ impl PyConverterConfig {
     #[getter]
     fn table_ort_providers(&self) -> Option<Vec<String>> {
         self.inner.providers.table_ort_providers.clone()
+    }
+    #[getter]
+    fn sanitize_ocr(&self) -> bool {
+        self.inner.text.sanitize_ocr
     }
     fn __repr__(&self) -> String {
         format!(

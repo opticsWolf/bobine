@@ -206,6 +206,12 @@ pub struct TextOpts {
     /// Fall back to layout model for equation detection.
     pub formula_layout_fallback: bool,
 
+    /// Post-OCR LaTeX repair pass over TexTeller output (command splitting,
+    /// fence fixup, same-level script separation, brace-balance hard-fail).
+    /// Default true — bug-fix positioning. Disable only to measure raw
+    /// recognizer output.
+    pub sanitize_ocr: bool,
+
     /// Threshold for page_math_signal → flag page as math-heavy.
     pub math_char_threshold: usize,
 
@@ -296,6 +302,7 @@ impl Default for TextOpts {
             formula_inline_max_width_pts: 220.0,
             formula_pad_pts: 4.0,
             formula_layout_fallback: false,
+            sanitize_ocr: true,
             math_char_threshold: 30,
             scanned_text_threshold: 50,
         }

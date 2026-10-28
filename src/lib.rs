@@ -16,6 +16,7 @@ pub mod pipeline;
 pub mod rapid_layout;
 pub mod rapid_ocr;
 pub mod rapid_table;
+pub mod sanitize;
 pub mod tables;
 pub mod tex_teller;
 
@@ -33,5 +34,6 @@ pub use excel::{CellData, CellJson, ExcelDocument, SheetData, convert_excel, exc
 pub use office_images::{OfficeImage, collect_office_images, collect_package_images, splice_office_images};
 pub use pipeline::{ConvertedDocument, LintOutcome};
 pub use rapid_table::RapidTable;
+pub use sanitize::{SanitizeOutcome, sanitize_latex};
 pub use tables::html_tables_to_gfm;
 pub use tex_teller::TexTeller;

@@ -531,6 +531,32 @@ fn gap_empty(chars: &[SourceChar], x0: f32, y0: f32, x1: f32, y1: f32) -> bool {
 /// to append (0..N: hybrid refinement can emit prose + several equations).
 /// Consumes refined text-layer math boxes from `page_math_boxes` so
 /// overlapping regions cannot re-emit them.
+/// Post-OCR repair (proposal P-C): normalize shredded commands, close
+/// stray fences, split same-level scripts. Returns `None` on brace
+/// imbalance — the caller falls back to the raw text layer (or skips the
+/// span when no text layer exists, e.g. scans).
+fn sanitize_ocr_latex(config: &ConverterConfig, latex: &str) -> Option<String> {
+    if !config.text.sanitize_ocr {
+        return Some(latex.to_string());
+    }
+    match crate::sanitize::sanitize_latex(latex) {
+        Some(o) => {
+            if o.fences_closed > 0 || o.scripts_split > 0 {
+                tracing::debug!(
+                    fences_closed = o.fences_closed,
+                    scripts_split = o.scripts_split,
+                    "sanitize_ocr repaired span"
+                );
+            }
+            Some(o.latex)
+        }
+        None => {
+            tracing::warn!("sanitize_ocr: brace-imbalanced OCR span dropped");
+            None
+        }
+    }
+}
+
 fn math_blocks(
     ctx: &RegionCtx<'_>,
     pdf: &mut dyn PdfSource,
@@ -654,6 +680,9 @@ fn math_blocks(
                     let budget = ((cluster.bounds.width * cluster.bounds.height) / 40.0)
                         .clamp(64.0, 512.0) as usize;
                     if let Some(latex) = engine.recognize_formula_capped(&p, budget)? {
+                        let Some(latex) = sanitize_ocr_latex(ctx.config, &latex) else {
+                            continue;
+                        };
                         if std::env::var("BOB_DEBUG_HYBRID").is_ok() {
                             eprintln!("HYBRID-png {}", p.display());
                             eprintln!(
@@ -722,8 +751,10 @@ fn math_blocks(
                     let budget =
                         ((bbox.width * bbox.height) / 40.0).clamp(64.0, 512.0) as usize;
                     if let Some(latex) = engine.recognize_formula_capped(&p, budget)? {
-                        out.push(format!("$$\n{}\n$$", latex));
-                        return Ok(out);
+                        if let Some(latex) = sanitize_ocr_latex(ctx.config, &latex) {
+                            out.push(format!("$$\n{}\n$$", latex));
+                            return Ok(out);
+                        }
                     }
                 }
             }
@@ -1213,6 +1244,9 @@ impl HybridConverter {
         let mut replacements: Vec<(String, String)> = Vec::new();
         for (j, crop_path) in &crops {
             if let Some(latex) = self.engine.recognize_formula(crop_path)? {
+                let Some(latex) = sanitize_ocr_latex(&self.config, &latex) else {
+                    continue;
+                };
                 let cluster = &clusters[*j];
                 let display = cluster.bounds.height > 1.6 * line_height
                     || cluster.bounds.width > self.config.text.formula_inline_max_width_pts as f32;

@@ -1,5 +1,17 @@
 # Changelog — bobine
 
+## 0.6.1 — 2026-10-28
+
+- Post-OCR LaTeX sanitizer (proposal P-C): `sanitize_latex` repair pass
+  over TexTeller output at all three OCR call sites (hybrid refinement,
+  whole-region fallback, surgical splice) — command splitting (`\inL` →
+  `\in L`, longest-known-prefix so `\infty}` is never shredded),
+  unclosed-fence fixup (`\left` imbalance → `\right.`), same-level
+  script separation (`x^a^b` → `x^a{}^b`), brace-balance hard-fail back
+  to raw text. Gated by new `text.sanitize_ocr` (default true, mirrored
+  in `ConverterConfig(..., sanitize_ocr=...)` + stubs). New `sanitize`
+  module; `mml.rs` (P-A) will reuse `split_cmds` directly.
+
 ## 0.6.0 — 2026-10-06
 
 - Hub-cache alignment (cache-alignment plan Phase 2): converter models
