@@ -77,6 +77,11 @@ thiserror = "2"
 # Regex (whitespace-tolerant text splicing, table parsing)
 regex = "1"
 
+# XML parsing (MathML in JATS; namespace-aware, zero-copy)
+roxmltree = "0.20"
+# NFKD decomposition for Unicode math letters (ports unicodedata.normalize)
+unicode-normalization = "0.1"
+
 # Logging
 tracing = "0.1"
 tracing-subscriber = "0.3"

@@ -1,0 +1,35 @@
+<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML" display="inline" id="M1">
+<mml:mo>[</mml:mo>
+<mml:mtable>
+<mml:mtr>
+<mml:mtd>
+<mml:mrow>
+<mml:mtext>win.</mml:mtext>
+<mml:mspace width="4pt" />
+<mml:mtext>sz.</mml:mtext>
+<mml:mspace width="4pt" />
+<mml:mn>7</mml:mn>
+<mml:mo>×</mml:mo>
+<mml:mn>7</mml:mn>
+<mml:mo>,</mml:mo>
+</mml:mrow>
+</mml:mtd>
+</mml:mtr>
+<mml:mtr>
+<mml:mtd>
+<mml:mrow>
+<mml:mtext>dim</mml:mtext>
+<mml:mspace width="4pt" />
+<mml:mtext>128,</mml:mtext>
+<mml:mspace width="4pt" />
+<mml:mtext>head</mml:mtext>
+<mml:mspace width="4pt" />
+<mml:mtext>4</mml:mtext>
+</mml:mrow>
+</mml:mtd>
+</mml:mtr>
+</mml:mtable>
+<mml:mo>]</mml:mo>
+<mml:mo>×</mml:mo>
+<mml:mn>2</mml:mn>
+</mml:math>

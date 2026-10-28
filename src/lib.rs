@@ -10,6 +10,7 @@ pub mod engine;
 pub mod error;
 pub mod excel;
 pub mod hub_cache;
+pub mod mml;
 pub mod office_images;
 pub mod pdf_source;
 pub mod pipeline;
@@ -34,6 +35,7 @@ pub use excel::{CellData, CellJson, ExcelDocument, SheetData, convert_excel, exc
 pub use office_images::{OfficeImage, collect_office_images, collect_package_images, splice_office_images};
 pub use pipeline::{ConvertedDocument, LintOutcome};
 pub use rapid_table::RapidTable;
+pub use mml::{MmlStats, mathify, merge_math, mml_to_tex, split_cmds as mml_split_cmds};
 pub use sanitize::{SanitizeOutcome, sanitize_latex};
 pub use tables::html_tables_to_gfm;
 pub use tex_teller::TexTeller;

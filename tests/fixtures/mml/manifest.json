@@ -1,0 +1,2774 @@
+{
+ "count": 692,
+ "special_shimmed": true,
+ "fixtures": [
+  {
+   "id": 0,
+   "paper": "chem-olive-2024"
+  },
+  {
+   "id": 1,
+   "paper": "chem-olive-2024"
+  },
+  {
+   "id": 2,
+   "paper": "cs-bodvw-2024"
+  },
+  {
+   "id": 3,
+   "paper": "cs-bodvw-2024"
+  },
+  {
+   "id": 4,
+   "paper": "cs-bodvw-2024"
+  },
+  {
+   "id": 5,
+   "paper": "cs-bodvw-2024"
+  },
+  {
+   "id": 6,
+   "paper": "cs-bodvw-2024"
+  },
+  {
+   "id": 7,
+   "paper": "cs-bodvw-2024"
+  },
+  {
+   "id": 8,
+   "paper": "cs-bodvw-2024"
+  },
+  {
+   "id": 9,
+   "paper": "cs-bodvw-2024"
+  },
+  {
+   "id": 10,
+   "paper": "cs-bodvw-2024"
+  },
+  {
+   "id": 11,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 12,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 13,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 14,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 15,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 16,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 17,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 18,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 19,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 20,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 21,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 22,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 23,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 24,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 25,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 26,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 27,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 28,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 29,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 30,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 31,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 32,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 33,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 34,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 35,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 36,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 37,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 38,
+   "paper": "econ-tax-2019"
+  },
+  {
+   "id": 39,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 40,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 41,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 42,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 43,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 44,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 45,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 46,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 47,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 48,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 49,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 50,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 51,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 52,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 53,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 54,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 55,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 56,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 57,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 58,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 59,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 60,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 61,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 62,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 63,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 64,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 65,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 66,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 67,
+   "paper": "eng-disk-2024"
+  },
+  {
+   "id": 68,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 69,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 70,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 71,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 72,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 73,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 74,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 75,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 76,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 77,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 78,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 79,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 80,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 81,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 82,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 83,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 84,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 85,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 86,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 87,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 88,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 89,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 90,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 91,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 92,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 93,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 94,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 95,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 96,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 97,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 98,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 99,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 100,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 101,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 102,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 103,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 104,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 105,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 106,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 107,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 108,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 109,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 110,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 111,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 112,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 113,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 114,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 115,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 116,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 117,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 118,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 119,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 120,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 121,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 122,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 123,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 124,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 125,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 126,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 127,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 128,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 129,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 130,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 131,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 132,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 133,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 134,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 135,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 136,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 137,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 138,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 139,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 140,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 141,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 142,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 143,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 144,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 145,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 146,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 147,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 148,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 149,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 150,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 151,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 152,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 153,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 154,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 155,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 156,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 157,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 158,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 159,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 160,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 161,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 162,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 163,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 164,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 165,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 166,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 167,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 168,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 169,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 170,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 171,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 172,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 173,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 174,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 175,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 176,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 177,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 178,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 179,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 180,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 181,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 182,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 183,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 184,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 185,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 186,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 187,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 188,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 189,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 190,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 191,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 192,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 193,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 194,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 195,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 196,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 197,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 198,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 199,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 200,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 201,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 202,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 203,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 204,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 205,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 206,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 207,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 208,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 209,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 210,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 211,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 212,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 213,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 214,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 215,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 216,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 217,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 218,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 219,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 220,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 221,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 222,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 223,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 224,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 225,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 226,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 227,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 228,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 229,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 230,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 231,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 232,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 233,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 234,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 235,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 236,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 237,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 238,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 239,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 240,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 241,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 242,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 243,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 244,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 245,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 246,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 247,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 248,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 249,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 250,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 251,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 252,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 253,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 254,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 255,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 256,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 257,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 258,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 259,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 260,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 261,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 262,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 263,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 264,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 265,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 266,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 267,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 268,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 269,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 270,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 271,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 272,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 273,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 274,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 275,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 276,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 277,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 278,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 279,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 280,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 281,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 282,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 283,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 284,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 285,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 286,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 287,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 288,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 289,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 290,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 291,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 292,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 293,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 294,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 295,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 296,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 297,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 298,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 299,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 300,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 301,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 302,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 303,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 304,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 305,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 306,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 307,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 308,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 309,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 310,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 311,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 312,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 313,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 314,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 315,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 316,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 317,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 318,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 319,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 320,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 321,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 322,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 323,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 324,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 325,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 326,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 327,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 328,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 329,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 330,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 331,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 332,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 333,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 334,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 335,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 336,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 337,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 338,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 339,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 340,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 341,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 342,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 343,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 344,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 345,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 346,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 347,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 348,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 349,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 350,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 351,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 352,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 353,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 354,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 355,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 356,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 357,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 358,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 359,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 360,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 361,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 362,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 363,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 364,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 365,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 366,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 367,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 368,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 369,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 370,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 371,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 372,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 373,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 374,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 375,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 376,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 377,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 378,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 379,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 380,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 381,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 382,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 383,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 384,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 385,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 386,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 387,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 388,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 389,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 390,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 391,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 392,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 393,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 394,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 395,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 396,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 397,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 398,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 399,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 400,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 401,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 402,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 403,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 404,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 405,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 406,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 407,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 408,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 409,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 410,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 411,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 412,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 413,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 414,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 415,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 416,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 417,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 418,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 419,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 420,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 421,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 422,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 423,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 424,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 425,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 426,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 427,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 428,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 429,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 430,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 431,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 432,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 433,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 434,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 435,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 436,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 437,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 438,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 439,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 440,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 441,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 442,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 443,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 444,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 445,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 446,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 447,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 448,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 449,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 450,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 451,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 452,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 453,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 454,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 455,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 456,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 457,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 458,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 459,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 460,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 461,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 462,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 463,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 464,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 465,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 466,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 467,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 468,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 469,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 470,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 471,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 472,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 473,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 474,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 475,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 476,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 477,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 478,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 479,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 480,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 481,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 482,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 483,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 484,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 485,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 486,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 487,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 488,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 489,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 490,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 491,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 492,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 493,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 494,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 495,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 496,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 497,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 498,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 499,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 500,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 501,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 502,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 503,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 504,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 505,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 506,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 507,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 508,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 509,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 510,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 511,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 512,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 513,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 514,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 515,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 516,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 517,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 518,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 519,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 520,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 521,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 522,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 523,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 524,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 525,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 526,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 527,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 528,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 529,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 530,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 531,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 532,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 533,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 534,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 535,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 536,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 537,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 538,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 539,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 540,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 541,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 542,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 543,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 544,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 545,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 546,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 547,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 548,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 549,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 550,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 551,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 552,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 553,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 554,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 555,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 556,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 557,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 558,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 559,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 560,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 561,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 562,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 563,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 564,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 565,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 566,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 567,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 568,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 569,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 570,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 571,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 572,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 573,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 574,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 575,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 576,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 577,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 578,
+   "paper": "math-hilfer-2024"
+  },
+  {
+   "id": 579,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 580,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 581,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 582,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 583,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 584,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 585,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 586,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 587,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 588,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 589,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 590,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 591,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 592,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 593,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 594,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 595,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 596,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 597,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 598,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 599,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 600,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 601,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 602,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 603,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 604,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 605,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 606,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 607,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 608,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 609,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 610,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 611,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 612,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 613,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 614,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 615,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 616,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 617,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 618,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 619,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 620,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 621,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 622,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 623,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 624,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 625,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 626,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 627,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 628,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 629,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 630,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 631,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 632,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 633,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 634,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 635,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 636,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 637,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 638,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 639,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 640,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 641,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 642,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 643,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 644,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 645,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 646,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 647,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 648,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 649,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 650,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 651,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 652,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 653,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 654,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 655,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 656,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 657,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 658,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 659,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 660,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 661,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 662,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 663,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 664,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 665,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 666,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 667,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 668,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 669,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 670,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 671,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 672,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 673,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 674,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 675,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 676,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 677,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 678,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 679,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 680,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 681,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 682,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 683,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 684,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 685,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 686,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 687,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 688,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 689,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 690,
+   "paper": "physics-pauli-2024"
+  },
+  {
+   "id": 691,
+   "paper": "physics-pauli-2024"
+  }
+ ]
+}

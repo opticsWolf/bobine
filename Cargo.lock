@@ -404,6 +404,7 @@ dependencies = [
  "pdf_oxide",
  "pyo3",
  "regex",
+ "roxmltree",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -412,6 +413,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "uuid",
 ]
 

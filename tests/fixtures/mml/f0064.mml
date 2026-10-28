@@ -1,0 +1,3 @@
+<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML" display="block" id="M26">
+<mml:mrow><mml:msub><mml:mi>Z</mml:mi><mml:mi>u</mml:mi></mml:msub><mml:mo>=</mml:mo><mml:mfrac><mml:mrow><mml:msub><mml:mi>q</mml:mi><mml:mn>2</mml:mn></mml:msub><mml:mo>−</mml:mo><mml:msub><mml:mi>r</mml:mi><mml:mn>2</mml:mn></mml:msub><mml:msub><mml:mi>q</mml:mi><mml:mn>1</mml:mn></mml:msub></mml:mrow><mml:mrow><mml:msub><mml:mi>r</mml:mi><mml:mn>2</mml:mn></mml:msub><mml:mo>−</mml:mo><mml:msub><mml:mi>r</mml:mi><mml:mn>1</mml:mn></mml:msub></mml:mrow></mml:mfrac></mml:mrow>
+</mml:math>
