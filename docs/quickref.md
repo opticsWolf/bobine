@@ -124,6 +124,9 @@ import json; data = json.loads(doc.json)  # typed values, formulas kept
 | `structured_tables` | `True` | Grid-extract table regions before text-dump fallback |
 | `min_figure_area_pts` | `100.0` | Smaller embedded images count as decoration |
 | `image_output_dir` | `"assets"` | Asset tree root: `<dir>/p{page}/img{k}.{ext}` |
+| `image_mode` | `Link` | `Link` (default) or `EmbedBase64` (data URIs ≤ cap) |
+| `max_embed_bytes` | `262144` | Cap for `EmbedBase64`; larger figures stay links |
+| `preserve_layout` | `False` | Fast path: strict visual order, no reflow (ONNX paths ignore it) |
 | `promote_headings` | `True` | Scholarly section patterns (`I.`, `3.1`, `A.`) → markdown headings |
 | `promote_title` | `True` | Document title → `# ` (first short block or top title-like heading) |
 | `convert_html_tables` | `True` | HTML tables → GFM pipes |

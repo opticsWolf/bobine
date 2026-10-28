@@ -26,8 +26,8 @@ pub mod tex_teller;
 mod py_bindings;
 
 pub use config::{
-    ConverterConfig, FormulaBackend, ModelOpts, ModelPrecision, ModelQuantization, ProviderOpts,
-    RenderOpts, RoutingMode, RoutingOpts, TextOpts,
+    ConverterConfig, FormulaBackend, ImageMode, ModelOpts, ModelPrecision, ModelQuantization,
+    ProviderOpts, RenderOpts, RoutingMode, RoutingOpts, TextOpts,
 };
 pub use converter::{HybridConverter, ProgressHooks};
 pub use engine::OnnxEngine;

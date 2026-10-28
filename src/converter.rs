@@ -4,11 +4,12 @@
 
 use std::path::{Path, PathBuf};
 
+use base64::Engine as _;
 use image::DynamicImage;
 use pdf_oxide::{api::Pdf, geometry::Rect};
 use tracing::{info, warn};
 
-use crate::config::{ConverterConfig, RoutingMode};
+use crate::config::{ConverterConfig, ImageMode, RoutingMode};
 use crate::engine::OnnxEngine;
 use crate::error::{BobineError, Result};
 use crate::pdf_source::{PdfSource, SourceChar};
@@ -224,6 +225,37 @@ fn caption_block(page_chars: &[SourceChar], lines: &[Vec<usize>], lab: &str) -> 
     }
 }
 
+/// Resolve a work-dir-relative figure path to its markdown src: plain
+/// link by default, or a `data:` URI when `ImageMode::EmbedBase64`
+/// and the file fits `max_embed_bytes` (larger figures stay links —
+/// data URIs bloat/diff badly). Unit-tested (no ONNX).
+fn figure_src(work_dir: &Path, rel: &str, render: &crate::config::RenderOpts) -> String {
+    if render.image_mode != ImageMode::EmbedBase64 {
+        return rel.to_string();
+    }
+    // `/`-joined rel paths resolve fine on Windows too.
+    let path = work_dir.join(rel);
+    let bytes = std::fs::read(&path).unwrap_or_default();
+    if bytes.is_empty() || bytes.len() > render.max_embed_bytes {
+        return rel.to_string();
+    }
+    let mime = match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        _ => "image/png",
+    };
+    format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(&bytes)
+    )
+}
 /// Figure/image arm (extracted from the dispatch loop). Returns the markdown
 /// image link (`Some`) or `None` when neither an embedded raster nor a
 /// render crop could be produced. Terminal: no fall-through — `None` simply
@@ -244,6 +276,7 @@ fn figure_block(ctx: &RegionCtx<'_>, bbox: Rect, block_no: usize) -> Option<Stri
         Some(a) => format!("![{}]({})", a, src),
         None => format!("![]({})", src),
     };
+    let mk_img_src = |rel: &str| mk_img(&figure_src(ctx.work_dir, rel, &ctx.config.render));
     // Prefer the ORIGINAL embedded raster when this region covers it
     // (≥ 60% of the raster inside the box): lossless bytes at native
     // resolution beat a 300-dpi render crop that bakes in surrounding
@@ -262,7 +295,7 @@ fn figure_block(ctx: &RegionCtx<'_>, bbox: Rect, block_no: usize) -> Option<Stri
             ctx.page_index + 1,
             a.rel_path
         );
-        return Some(mk_img(&a.rel_path));
+        return Some(mk_img_src(&a.rel_path));
     }
     if let Some(crop) = crop_image(ctx.img, bbox, ctx.dpi, 0.0) {
         // Page-scoped structured name: every page restarts its block
@@ -280,7 +313,7 @@ fn figure_block(ctx: &RegionCtx<'_>, bbox: Rect, block_no: usize) -> Option<Stri
                 ctx.page_index,
                 p.file_name().unwrap().to_string_lossy()
             );
-            return Some(mk_img(&rel));
+            return Some(mk_img_src(&rel));
         }
     }
     None
@@ -1046,7 +1079,7 @@ impl HybridConverter {
             };
             let page_md = self.route_page(pdf, i, work_dir, &assets)?;
             let final_md = if self.config.render.extract_images && self.config.render.append_unreferenced_images {
-                maybe_append_gallery(page_md, &assets)
+                maybe_append_gallery(page_md, &assets, &self.config.render, work_dir)
             } else {
                 page_md
             };
@@ -1100,7 +1133,7 @@ impl HybridConverter {
         assets: &[EmbeddedAsset],
     ) -> Result<String> {
         if !self.config.routing.use_onnx || self.config.routing.routing_mode == RoutingMode::Never {
-            return self.fast_markdown_placed(pdf, index, assets);
+            return self.fast_markdown_placed(pdf, index, work_dir, assets);
         }
 
         if self.config.routing.routing_mode == RoutingMode::Surgical {
@@ -1118,14 +1151,15 @@ impl HybridConverter {
                     ),
                     _ => {}
                 }
-                return self.fast_markdown_placed(pdf, index, assets);
+                return self.fast_markdown_placed(pdf, index, work_dir, assets);
             }
             let md = self.surgical_page_markdown(pdf, index, work_dir)?;
             return Ok(interleave_images(
                 pdf,
                 index,
-                self.config.render.min_figure_area_pts,
+                &self.config.render,
                 &md,
+                work_dir,
                 assets,
             ));
         }
@@ -1146,23 +1180,30 @@ impl HybridConverter {
             }
         }
 
-        self.fast_markdown_placed(pdf, index, assets)
+        self.fast_markdown_placed(pdf, index, work_dir, assets)
     }
 
     /// Fast-path markdown with embedded figures interleaved at their visual
-    /// positions.
+    /// positions. With `preserve_layout`, text comes from strict visual
+    /// order (no heading promotion, no column merge, no table detection).
     fn fast_markdown_placed(
         &mut self,
         pdf: &mut dyn PdfSource,
         index: usize,
+        work_dir: &Path,
         assets: &[EmbeddedAsset],
     ) -> Result<String> {
-        let md = fast_page_markdown(pdf, index)?;
+        let md = if self.config.render.preserve_layout {
+            visual_order_page_markdown(pdf, index)?
+        } else {
+            fast_page_markdown(pdf, index)?
+        };
         Ok(interleave_images(
             pdf,
             index,
-            self.config.render.min_figure_area_pts,
+            &self.config.render,
             &md,
+            work_dir,
             assets,
         ))
     }
@@ -1351,10 +1392,24 @@ impl HybridConverter {
 /// decoration-sized placements (below `min_figure_area_pts`) are dropped.
 /// Assets without a known bbox cannot be size-judged and stay candidates —
 /// they may be content the source could not localize.
-fn maybe_append_gallery(md: String, assets: &[EmbeddedAsset]) -> String {
+fn maybe_append_gallery(
+    md: String,
+    assets: &[EmbeddedAsset],
+    render: &crate::config::RenderOpts,
+    work_dir: &Path,
+) -> String {
     let mut gallery = String::new();
     for a in assets {
-        if md.contains(&format!("({})", a.rel_path)) {
+        // Inline references take two shapes: plain links carry the
+        // rel path, embed-mode spans carry the deterministic data URI
+        // (same bytes → same base64), so probe for whichever applies.
+        let src = figure_src(work_dir, &a.rel_path, render);
+        let referenced = if src == a.rel_path {
+            md.contains(&format!("({src})"))
+        } else {
+            md.contains(src.as_str())
+        };
+        if referenced {
             continue; // already referenced inline by figure branch / interleave
         }
         if let Some(b) = a.bbox_pts {
@@ -1362,7 +1417,7 @@ fn maybe_append_gallery(md: String, assets: &[EmbeddedAsset]) -> String {
                 continue; // decoration (logo/rule/bullet)
             }
         }
-        gallery.push_str(&format!("![]({})\n", a.rel_path));
+        gallery.push_str(&format!("![]({src})\n"));
     }
     if gallery.is_empty() {
         md
@@ -1739,22 +1794,14 @@ fn nearby_caption_text(
             (r.x1 - r.x0) / scale,
             (r.y1 - r.y0) / scale,
         );
-        // Horizontal overlap required (≥ 30% of the narrower box).
-        let ix0 = fig.x.max(cr.x);
-        let ix1 = (fig.x + fig.width).min(cr.x + cr.width);
-        let min_w = fig.width.min(cr.width);
-        if ix1 - ix0 < 0.3 * min_w {
-            continue;
-        }
-        let gap = if cr.y >= fig.y + fig.height {
-            cr.y - (fig.y + fig.height) // caption below figure
-        } else if fig.y >= cr.y + cr.height {
-            fig.y - (cr.y + cr.height) // caption above figure
-        } else {
-            // Vertically overlapping: accept a SIDE-BY-SIDE caption (wide
-            // two-column figures sometimes carry the caption beside them),
-            // requiring substantial vertical co-extent and small horizontal
-            // separation so we don't steal another figure's caption.
+        let vertically_overlapping =
+            cr.y < fig.y + fig.height && fig.y < cr.y + cr.height;
+        let gap = if vertically_overlapping {
+            // SIDE-BY-SIDE caption (wide two-column figures sometimes
+            // carry the caption beside them): no horizontal overlap is
+            // expected, so require substantial vertical co-extent and
+            // small horizontal separation instead — lest we steal
+            // another figure's caption.
             let hgap = if cr.x >= fig.x + fig.width {
                 cr.x - (fig.x + fig.width)
             } else if fig.x >= cr.x + cr.width {
@@ -1770,6 +1817,20 @@ fn nearby_caption_text(
             } else {
                 continue;
             }
+        } else {
+            // Below/above: horizontal overlap required (≥ 30% of the
+            // narrower box) so stacked-column text is not misread.
+            let ix0 = fig.x.max(cr.x);
+            let ix1 = (fig.x + fig.width).min(cr.x + cr.width);
+            let min_w = fig.width.min(cr.width);
+            if ix1 - ix0 < 0.3 * min_w {
+                continue;
+            }
+            if cr.y >= fig.y + fig.height {
+                cr.y - (fig.y + fig.height) // caption below figure
+            } else {
+                fig.y - (cr.y + cr.height) // caption above figure
+            }
         };
         if gap <= max_gap_pts && best.map_or(true, |(bg, _)| gap < bg) {
             best = Some((gap, j));
@@ -1784,11 +1845,13 @@ fn nearby_caption_text(
 fn interleave_images(
     pdf: &mut dyn PdfSource,
     index: usize,
-    min_area_pts: f64,
+    render: &crate::config::RenderOpts,
     md: &str,
+    work_dir: &Path,
     assets: &[EmbeddedAsset],
 ) -> String {
     // Candidates: placed, content-sized, not already referenced.
+    let min_area_pts = render.min_figure_area_pts;
     let mut candidates: Vec<&EmbeddedAsset> = assets
         .iter()
         .filter(|a| {
@@ -1862,9 +1925,10 @@ fn interleave_images(
                 alt = Some(c);
             }
         }
+        let src = figure_src(work_dir, &asset.rel_path, render);
         let link = match alt {
-            Some(a) => format!("\n\n![{}]({})\n\n", a, asset.rel_path),
-            None => format!("\n\n![]({})\n\n", asset.rel_path),
+            Some(a) => format!("\n\n![{}]({})\n\n", a, src),
+            None => format!("\n\n![]({})\n\n", src),
         };
         // Locate that line's text in the markdown after the previous anchor.
         let needle_full = normalize_with_offsets(&lines[li].2).0;
@@ -1917,6 +1981,16 @@ fn fast_page_markdown(pdf: &mut dyn PdfSource, index: usize) -> Result<String> {
             Ok(pdf.text_in_rect(index, r).unwrap_or_default())
         }
     }
+}
+
+/// Strict visual-order text for `preserve_layout`: y-banded char lines
+/// (gutter splits kept — columns stay intact, never interleaved),
+/// space-joined in line, top-to-bottom across lines. No heading
+/// promotion, no table detection, no reflow of any kind.
+fn visual_order_page_markdown(pdf: &mut dyn PdfSource, index: usize) -> Result<String> {
+    let chars = pdf.chars(index).unwrap_or_default();
+    let ids: Vec<usize> = (0..chars.len()).collect();
+    Ok(region_lines_to_text(&chars, &cluster_lines(&chars, &ids)))
 }
 
 fn render_page_image(pdf: &mut dyn PdfSource, index: usize, dpi: u32) -> Result<DynamicImage> {
@@ -3463,8 +3537,7 @@ Second paragraph text."
     }
 
     #[test]
-    fn claim_priority_mirrors_routing() {
-        assert_eq!(region_claim_priority("isolate_formula"), CLAIM_MATH);
+    fn claim_priority_mirrors_routing() {        assert_eq!(region_claim_priority("isolate_formula"), CLAIM_MATH);
         assert_eq!(region_claim_priority("formula"), CLAIM_MATH);
         assert_eq!(region_claim_priority("equation"), CLAIM_MATH);
         // Caption substring wins over the math/table substrings
@@ -3476,5 +3549,112 @@ Second paragraph text."
         assert_eq!(region_claim_priority("title"), CLAIM_TEXT);
         assert_eq!(region_claim_priority("figure"), CLAIM_NONE);
         assert_eq!(region_claim_priority("image"), CLAIM_NONE);
+    }
+
+    // ==================================================================
+    // Media trio: embed_base64, side-by-side captions, preserve_layout
+    // ==================================================================
+
+    fn render_opts_embed() -> crate::config::RenderOpts {
+        let mut r = crate::config::RenderOpts::default();
+        r.image_mode = crate::config::ImageMode::EmbedBase64;
+        r.max_embed_bytes = 1024;
+        r
+    }
+
+    #[test]
+    fn figure_src_link_mode_passes_through() {
+        let r = crate::config::RenderOpts::default();
+        assert_eq!(r.image_mode, crate::config::ImageMode::Link);
+        assert_eq!(r.max_embed_bytes, 262_144);
+        assert!(!r.preserve_layout);
+        assert_eq!(
+            figure_src(Path::new("/work"), "assets/p0/img0.png", &r),
+            "assets/p0/img0.png"
+        );
+    }
+
+    #[test]
+    fn figure_src_embeds_small_files_and_links_large_ones() {
+        use base64::Engine as _;
+        let d = temp_dir("embed");
+        let tiny = d.join("tiny.png");
+        std::fs::write(&tiny, b"\x89PNG-fake-bytes").unwrap();
+        let big = d.join("big.png");
+        std::fs::write(&big, vec![0u8; 2048]).unwrap();
+        let r = render_opts_embed();
+        let got = figure_src(&d, "tiny.png", &r);
+        assert!(got.starts_with("data:image/png;base64,"), "{got:.40}");
+        let payload = got.trim_start_matches("data:image/png;base64,");
+        let raw = base64::engine::general_purpose::STANDARD.decode(payload).unwrap();
+        assert_eq!(raw, b"\x89PNG-fake-bytes");
+        // Over the cap stays a link; missing files stay links too.
+        assert_eq!(figure_src(&d, "big.png", &r), "big.png");
+        assert_eq!(figure_src(&d, "nope.png", &r), "nope.png");
+        // MIME sniff follows the extension.
+        let jpg = d.join("p.jpg");
+        std::fs::write(&jpg, b"fake-jpg").unwrap();
+        assert!(figure_src(&d, "p.jpg", &r).starts_with("data:image/jpeg;base64,"));
+    }
+
+    fn caption_region(x0: f32, y0: f32, x1: f32, y1: f32) -> crate::rapid_layout::LayoutRegion {
+        crate::rapid_layout::LayoutRegion {
+            x0,
+            y0,
+            x1,
+            y1,
+            label: "figure_caption".to_string(),
+            confidence: 0.9,
+        }
+    }
+
+    #[test]
+    fn nearby_caption_accepts_side_by_side_placement() {
+        // Figure box (points) with a caption region directly to its
+        // right: vertically co-extensive, small horizontal gap.
+        let fig = pdf_oxide::geometry::Rect::new(50.0, 100.0, 200.0, 120.0);
+        let cap = caption_region(260.0, 105.0, 400.0, 215.0);
+        let chars = vec![
+            SourceChar::new('F', 262.0, 110.0, 7.0, 11.0, "H"),
+            SourceChar::new('i', 270.0, 110.0, 4.0, 11.0, "H"),
+            SourceChar::new('g', 275.0, 110.0, 7.0, 11.0, "H"),
+        ];
+        let lines = vec![vec![vec![0, 1, 2]]];
+        let got = nearby_caption_text(&[cap], &lines, &chars, &fig, 1.0, 33.0);
+        assert_eq!(got.as_deref(), Some("Fig"));
+    }
+
+    #[test]
+    fn nearby_caption_rejects_far_side_text() {
+        // Same geometry but the caption sits a full column away: must
+        // not steal another figure's caption.
+        let fig = pdf_oxide::geometry::Rect::new(50.0, 100.0, 200.0, 120.0);
+        let cap = caption_region(400.0, 105.0, 540.0, 215.0);
+        let chars = vec![SourceChar::new('F', 402.0, 110.0, 7.0, 11.0, "H")];
+        let lines = vec![vec![vec![0]]];
+        assert_eq!(
+            nearby_caption_text(&[cap], &lines, &chars, &fig, 1.0, 33.0),
+            None
+        );
+    }
+
+    #[test]
+    fn visual_order_keeps_columns_intact() {
+        // Two columns at the same baseline: visual order must not
+        // interleave their glyphs (the reflow path would column-merge).
+        let mut page = crate::pdf_source::fake::FakePage::default();
+        page.md = None;
+        let mut push = |ch: char, x: f32| {
+            page.chars.push(SourceChar::new(ch, x, 700.0, 7.0, 11.0, "H"));
+        };
+        for (i, ch) in "LEFT".chars().enumerate() {
+            push(ch, 50.0 + i as f32 * 8.0);
+        }
+        for (i, ch) in "RIGHT".chars().enumerate() {
+            push(ch, 350.0 + i as f32 * 8.0);
+        }
+        let mut pdf = FakePdf::new(vec![page]);
+        let md = visual_order_page_markdown(&mut pdf, 0).unwrap();
+        assert_eq!(md, "LEFT\nRIGHT");
     }
 }

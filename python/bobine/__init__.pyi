@@ -18,6 +18,12 @@ class RoutingMode(Enum):
 class FormulaBackend(Enum):
     TexTeller = "tex_teller"
 
+class ImageMode(Enum):
+    # Figure links (default — diff-friendly).
+    Link = "link"
+    # Opt-in base64 data URIs (capped by max_embed_bytes).
+    EmbedBase64 = "embed_base64"
+
 class ModelPrecision(Enum):
     Fp32 = "fp32"
     Fp16 = "fp16"
@@ -62,6 +68,9 @@ class ConverterConfig:
         convert_html_tables: bool = True,
         detect_code_blocks: bool = True,
         min_formula_math_chars: int = 5,
+        image_mode: ImageMode = ImageMode.Link,
+        max_embed_bytes: int = 262144,
+        preserve_layout: bool = False,
         formula_inline_max_width_pts: float = 220.0,
         formula_pad_pts: float = 4.0,
         formula_layout_fallback: bool = False,
@@ -91,6 +100,12 @@ class ConverterConfig:
 
     @property
     def sanitize_ocr(self) -> bool: ...
+    @property
+    def image_mode(self) -> ImageMode: ...
+    @property
+    def max_embed_bytes(self) -> int: ...
+    @property
+    def preserve_layout(self) -> bool: ...
     @property
     def extract_images(self) -> bool: ...
     @property

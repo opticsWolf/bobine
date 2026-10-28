@@ -1,5 +1,13 @@
 use serde::{Deserialize, Serialize};
 
+fn default_image_mode() -> ImageMode {
+    ImageMode::Link
+}
+
+fn default_max_embed_bytes() -> usize {
+    262_144
+}
+
 /// Controls how pages are routed between fast (pdf_oxide) and ONNX paths.
 ///
 /// Cost ladder: `Never` (no models) < `Surgical` (TexTeller only) < `Auto`
@@ -120,6 +128,17 @@ pub struct ProviderOpts {
     pub table_ort_providers: Option<Vec<String>>,
 }
 
+/// How figure images are referenced in the markdown output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageMode {
+    /// `![alt](assets/p{n}/img{k}.png)` links (default — diff-friendly).
+    Link,
+    /// `![alt](data:image/png;base64,…)` URIs for figures at or under
+    /// `max_embed_bytes`; larger figures stay links.
+    EmbedBase64,
+}
+
 /// Render / asset-staging knobs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderOpts {
@@ -144,6 +163,24 @@ pub struct RenderOpts {
     /// Directory (relative to the work dir) where extracted figure assets
     /// are written, structured as `<dir>/p{page}/img{k}.{ext}`.
     pub image_output_dir: String,
+
+    /// How figure images are referenced: links (default) or opt-in
+    /// base64 data URIs (capped by `max_embed_bytes`).
+    #[serde(default = "default_image_mode")]
+    pub image_mode: ImageMode,
+
+    /// Cap for `ImageMode::EmbedBase64`: figures whose file is larger
+    /// stay links (data URIs bloat/diff badly). Default 256 KiB.
+    #[serde(default = "default_max_embed_bytes")]
+    pub max_embed_bytes: usize,
+
+    /// Skip semantic reflow on the fast path: emit text lines in strict
+    /// visual (top-to-bottom, left-to-right) order — no heading
+    /// promotion, no column merging, no table detection. For documents
+    /// where reflow scrambles content (indexes, listings). Off by
+    /// default; ONNX paths ignore it (structural by design).
+    #[serde(default)]
+    pub preserve_layout: bool,
 }
 
 /// Model-selection knobs (weights, backends, language).
@@ -274,6 +311,9 @@ impl Default for RenderOpts {
             formula_dpi: 200,
             min_figure_area_pts: 100.0,
             image_output_dir: "assets".to_string(),
+            image_mode: ImageMode::Link,
+            max_embed_bytes: 262_144,
+            preserve_layout: false,
         }
     }
 }

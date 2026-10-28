@@ -189,12 +189,11 @@ Non-goals: pixel-perfect layout reproduction; OCR of figure interiors (kept as f
 - ALWAYS/AUTO path: `nearby_caption_text()` deterministically associates the
   nearest `caption`-labelled layout region (vertical gap ≤ 3 median line
   heights, ≥ 30% horizontal overlap).
-- Known limit: side-by-side caption placement in multi-column layouts can
-  fall outside the vertical-gap check → empty alt (safe fallback).
-
-**Still deferred:**
-- `embed_base64` image mode + `max_embed_bytes` cap (no base64 crate in deps).
-- Side-by-side caption association for multi-column layouts.
+- Known limit (fixed 0.7.1): side-by-side caption placement in
+  multi-column layouts fell outside the vertical-gap check → the
+  overlap gate ran first and the side-by-side branch was dead code.
+  The gate now only applies to below/above captions; vertical overlap
+  uses the co-extent + small-gap criteria (unit-pinned).
 - **Tests:** synthetic page with image bbox between two text bands → image lands between them in output; caption attaches.
 - **Accept:** gallery gone; images appear at their visual position in every mode.
 

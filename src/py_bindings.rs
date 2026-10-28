@@ -3,10 +3,35 @@
 use pyo3::prelude::*;
 
 use crate::config::{
-    ConverterConfig, FormulaBackend, ModelOpts, ModelPrecision, ModelQuantization, ProviderOpts,
-    RenderOpts, RoutingMode, RoutingOpts, TextOpts,
+    ConverterConfig, FormulaBackend, ImageMode, ModelOpts, ModelPrecision, ModelQuantization,
+    ProviderOpts, RenderOpts, RoutingMode, RoutingOpts, TextOpts,
 };
 use crate::converter::{HybridConverter, ProgressHooks};
+
+#[pyclass(eq, eq_int, name = "ImageMode")]
+#[derive(Clone, PartialEq)]
+pub enum PyImageMode {
+    Link,
+    EmbedBase64,
+}
+
+impl From<PyImageMode> for ImageMode {
+    fn from(py: PyImageMode) -> Self {
+        match py {
+            PyImageMode::Link => ImageMode::Link,
+            PyImageMode::EmbedBase64 => ImageMode::EmbedBase64,
+        }
+    }
+}
+
+impl From<ImageMode> for PyImageMode {
+    fn from(r: ImageMode) -> Self {
+        match r {
+            ImageMode::Link => PyImageMode::Link,
+            ImageMode::EmbedBase64 => PyImageMode::EmbedBase64,
+        }
+    }
+}
 
 #[pyclass(eq, eq_int, name = "RoutingMode")]
 #[derive(Clone, PartialEq)]
@@ -85,6 +110,9 @@ impl PyConverterConfig {
         structured_tables = true,
         min_figure_area_pts = 100.0f64,
         image_output_dir = "assets".to_string(),
+        image_mode = PyImageMode::Link,
+        max_embed_bytes = 262144usize,
+        preserve_layout = false,
         detect_code_blocks = true,
         promote_headings = true,
         promote_title = true,
@@ -118,6 +146,9 @@ impl PyConverterConfig {
         structured_tables: bool,
         min_figure_area_pts: f64,
         image_output_dir: String,
+        image_mode: PyImageMode,
+        max_embed_bytes: usize,
+        preserve_layout: bool,
         detect_code_blocks: bool,
         promote_headings: bool,
         promote_title: bool,
@@ -174,6 +205,9 @@ impl PyConverterConfig {
                     formula_dpi,
                     min_figure_area_pts,
                     image_output_dir,
+                    image_mode: image_mode.into(),
+                    max_embed_bytes,
+                    preserve_layout,
                 },
                 text: TextOpts {
                     detect_headings,
@@ -197,6 +231,18 @@ impl PyConverterConfig {
     #[getter]
     fn extract_images(&self) -> bool {
         self.inner.render.extract_images
+    }
+    #[getter]
+    fn image_mode(&self) -> PyImageMode {
+        self.inner.render.image_mode.into()
+    }
+    #[getter]
+    fn max_embed_bytes(&self) -> usize {
+        self.inner.render.max_embed_bytes
+    }
+    #[getter]
+    fn preserve_layout(&self) -> bool {
+        self.inner.render.preserve_layout
     }
     #[getter]
     fn routing_mode(&self) -> PyRoutingMode {
@@ -654,6 +700,7 @@ fn convert_directory(
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRoutingMode>()?;
+    m.add_class::<PyImageMode>()?;
     m.add_class::<PyFormulaBackend>()?;
     m.add_class::<PyModelPrecision>()?;
     m.add_class::<PyConverterConfig>()?;
