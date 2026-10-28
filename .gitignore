@@ -75,3 +75,7 @@ docs/_build/
 
 # ikat corpus staging (JATS/PDF/ground-truth fixtures) — untracked, see ikat-corpus/README.md
 /ikat-corpus/
+
+# okfgraph local graph (derived artifact, reimport via `okf import --all`)
+/kb.db
+/kb.db.lock
