@@ -55,42 +55,74 @@ jobs:
   # 2. PyPI — Python wheel matrix via maturin (trusted publishing)
   # ------------------------------------------------------------------
   pypi:
-    # ubuntu + windows x86_64, macOS arm64 (native runners — no cross builds).
-    # No Intel mac (deprecated runners), no other exotic targets.
+    # Full wheel matrix (0.7.2+): cp310-cp314 x
+    # {manylinux x86_64+aarch64, musllinux x86_64, windows x64, macos arm64}.
+    # Deliberate skips (do not re-add blindly):
+    # - macos x86_64: no Intel runners (retired); cross-built wheels can't
+    #   be execute-tested on arm64 runners, and Intel Macs are EOL hardware.
+    # - 32-bit / armv7 / s390x / ppc64le / windows-arm: no downstream demand.
+    # - cp39: requires-python floor is 3.10 (3.9 EOL Oct 2025); sdist covers
+    #   anyone truly stuck there.
     strategy:
       fail-fast: false
       matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         platform:
           - runner: ubuntu-22.04
             target: x86_64
+            manylinux: manylinux_2_28
+            pkg: yum install -y openssl-devel
+          - runner: ubuntu-22.04-arm
+            target: aarch64
+            manylinux: manylinux_2_28
+            pkg: yum install -y openssl-devel
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            manylinux: musllinux_1_2
+            pkg: apk update && apk add --no-cache openssl-dev
           - runner: windows-latest
             target: x64
+            manylinux: off
           - runner: macos-latest
             target: aarch64
+            manylinux: off
     runs-on: ${{ matrix.platform.runner }}
     permissions:
       id-token: write # PyPI trusted publishing
     steps:
       - uses: actions/checkout@v6
 
-      - name: Build wheel (sdist on linux x86_64 too)
+      # Non-Linux legs build against exactly this interpreter (maturin
+      # uses the PATH interpreter when -i matches it). Linux legs build
+      # inside the manylinux/musllinux container, which carries its own
+      # interpreters — setup-python is skipped there.
+      - uses: actions/setup-python@v5
+        if: matrix.platform.manylinux == 'off'
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --locked --features extension-module
+          # Explicit -i: maturin otherwise builds for a single discovered
+          # interpreter (0.7.1 shipped one wheel per platform that way).
+          # Bare versions resolve against the container's /opt/python on
+          # Linux and against setup-python's PATH entry on win/mac.
+          args: --release --out dist --locked --features extension-module -i ${{ matrix.python-version }}
           # 2_28, not auto: auto resolves to CentOS 7-based manylinux2014
           # (OpenSSL 1.0.2 < openssl-sys minimum 1.1.0). Ignored on win/mac.
-          manylinux: ${{ matrix.platform.manylinux || '2_28' }}
+          manylinux: ${{ matrix.platform.manylinux }}
           sccache: true
-          # Linux wheels build in a manylinux container: ort-sys build-deps
-          # on ureq/native-tls → openssl-sys needs headers there (no-op on
-          # windows/macos runners).
-          before-script-linux: yum install -y openssl-devel
+          # Linux wheels build in a manylinux/musllinux container: ort-sys
+          # build-deps on ureq/native-tls → openssl-sys needs headers there
+          # (no-op on windows/macos runners). Distro-aware per leg.
+          before-script-linux: ${{ matrix.platform.pkg }}
 
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:
-          name: wheels-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
+          name: wheels-${{ matrix.platform.runner }}-${{ matrix.platform.target }}-cp${{ matrix.python-version }}
           path: dist
 
   # ------------------------------------------------------------------

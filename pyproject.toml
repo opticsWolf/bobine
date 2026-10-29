@@ -9,7 +9,7 @@ description = "PDF / Office / text → Markdown ingestion engine (Rust core with
 license = "Apache-2.0 OR MIT"
 authors = [{ name = "opticsWolf", email = "opticswolf@protonmail.com" }]
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
 [project.urls]
 Homepage = "https://github.com/opticsWolf/bobine"
