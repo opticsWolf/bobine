@@ -28,7 +28,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      # Tag-only: on workflow_dispatch GITHUB_REF_NAME is the branch, so
+      # the comparison can't pass — skip it there instead of going red.
       - name: Tag matches Cargo.toml version
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           tag="${GITHUB_REF_NAME#v}"
           ver=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
@@ -60,6 +63,11 @@ jobs:
     # Deliberate skips (do not re-add blindly):
     # - macos x86_64: no Intel runners (retired); cross-built wheels can't
     #   be execute-tested on arm64 runners, and Intel Macs are EOL hardware.
+    # - musllinux: CUT after a proven CI failure (0.7.2 dry run 40830872409).
+    #   maturin-action runs before-script-linux on the host, so the musl
+    #   container never gets its openssl headers and openssl-sys fails.
+    #   Fixing that needs action-level surgery, disproportionate for a
+    #   packaging release; sdist remains for Alpine users. Revisit on demand.
     # - 32-bit / armv7 / s390x / ppc64le / windows-arm: no downstream demand.
     # - cp39: requires-python floor is 3.10 (3.9 EOL Oct 2025); sdist covers
     #   anyone truly stuck there.
@@ -76,10 +84,8 @@ jobs:
             target: aarch64
             manylinux: manylinux_2_28
             pkg: yum install -y openssl-devel
-          - runner: ubuntu-22.04
-            target: x86_64-unknown-linux-musl
-            manylinux: musllinux_1_2
-            pkg: apk update && apk add --no-cache openssl-dev
+          # musl Linux leg CUT (see matrix skips below) — kept out of the
+          # matrix until the before-script problem is solved upstream.
           - runner: windows-latest
             target: x64
             manylinux: off
