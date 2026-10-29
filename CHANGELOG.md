@@ -1,5 +1,16 @@
 # Changelog — bobine
 
+## 0.7.2 — 2026-10-29
+
+- Full wheel matrix (packaging only, no code changes): CPython
+  3.10–3.14 × {manylinux x86_64 + aarch64, windows x64, macOS arm64}
+  (20 wheels + sdist). 0.7.1 shipped one wheel per platform, forcing
+  sdist builds on 3.10/3.11/3.13. Deliberate skips, documented in
+  `.github/workflows/release.yml`: macOS x86_64 (no Intel runners),
+  musllinux (action runs container setup on the host — proven CI
+  failure, sdist fallback stands), cp39 and older. `requires-python`
+  floor raised 3.9 → 3.10 (3.9 EOL Oct 2025).
+
 ## 0.7.1 — 2026-10-28
 
 - Deferred media trio (proposal_media_tables): `ImageMode::{Link,

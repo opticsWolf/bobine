@@ -4,7 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/bobine)](https://crates.io/crates/bobine)
 [![docs.rs](https://img.shields.io/docsrs/bobine)](https://docs.rs/bobine)
 [![PyPI](https://img.shields.io/pypi/v/bobine)](https://pypi.org/project/bobine/)
-[![Python](https://img.shields.io/badge/python-3.9+-blue?logo=python&logoColor=white)](https://pypi.org/project/bobine/)
+[![Python](https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white)](https://pypi.org/project/bobine/)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![onnxruntime](https://img.shields.io/badge/onnxruntime-%E2%89%A51.19-blue)](https://onnxruntime.ai)
 [![CI](https://github.com/opticsWolf/bobine/actions/workflows/ci.yml/badge.svg)](https://github.com/opticsWolf/bobine/actions/workflows/ci.yml)
@@ -50,7 +50,8 @@ with native speed and no Python ML dependencies.
 ## Installation
 
 ```bash
-# Python package (wheels: linux + windows x86_64, macOS arm64)
+# Python package (wheels: CPython 3.10–3.14; manylinux x86_64 + aarch64,
+# windows x64, macOS arm64 — no Rust toolchain needed for these)
 pip install bobine
 
 # Rust library (crates.io, no Python involved)

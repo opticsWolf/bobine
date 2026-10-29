@@ -29,7 +29,10 @@ chars). Never install both `onnxruntime` and `onnxruntime-gpu` (same module
 name).
 
 Requirements: Rust toolchain (1.85+, edition 2024), maturin ≥1.7, and a
-modern onnxruntime (≥1.19) discoverable by `ort`:
+modern onnxruntime (≥1.19) discoverable by `ort`. Python 3.10+
+(prebuilt wheels for CPython 3.10–3.14 on manylinux x86_64/aarch64,
+Windows x64, macOS arm64 — other platforms fall back to the sdist,
+which needs the Rust toolchain above):
 
 ```bash
 export ORT_DYLIB_PATH=/path/to/onnxruntime.dll   # e.g.
