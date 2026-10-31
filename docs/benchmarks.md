@@ -103,6 +103,11 @@ runs: `\[\frac{x^{2}}{a^{2}}- \frac{y^{2}}{b^{2}}=1\]`.
 | fp32 merged graph + KV-cache | 2.0 s CPU / 2.4 s CUDA | 0.95 s/run | **0.42 s/run** | ≈ 2.3× on CUDA |
 | int8 quantized (split enc/dec) | 1.4 s CPU / 5.0 s CUDA | **0.50 s/run** | 1.32 s/run | int8 wins on CPU; loses on CUDA |
 
+> **Stale as of 0.7.4**: the int8 row was measured on the superseded
+> no-KV-cache onnx-community export. The shipping default is the merged
+> KV-cache dynamic int8 from the unified serving repo — re-measurement
+> (speed + int8-vs-fp32 parity) is scheduled for the next release.
+
 Takeaways:
 - On **CPU**, prefer the int8 exports (≈ 1.9× faster than fp32, identical output).
 - On **CUDA**, prefer the fp32 + KV-cache graph; the quantized model is slower

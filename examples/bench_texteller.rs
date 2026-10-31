@@ -2,12 +2,11 @@
 //!
 //! Usage: bench_texteller [--int8] <image.png> [<image2.png> ...]
 //!
-//! `--int8` loads the onnx-community quantized exports (no KV-cache;
-//! full-sequence recompute) instead of the fp32 merged graph.
+//! `--int8` loads the dynamic-int8 pair (KV-cache-capable merged graph,
+//! unified serving repo) instead of the fp32 merged graph.
 //!
 //! Prints the recognized LaTeX plus per-image timing (3 reps, min) so the
-//! full-recompute and KV-cache decoders can be compared for both speed and
-//! output parity.
+//! int8 and fp32 decoders can be compared for both speed and output parity.
 
 use std::time::Instant;
 

@@ -1,5 +1,26 @@
 # Changelog — bobine
 
+## 0.7.4 — 2026-10-31
+
+- `embroider` 0.3.3 → 0.12.0 (nine minors, all new model slots;
+  zero source changes — our six call sites are API-stable).
+- Converter weights pinned: every live weight (TexTeller fp32/int8,
+  RapidLayout, RapidOCR det/rec, SLANet-plus) carries a `*_REV` hub SHA
+  next to its repo constant; probe and download both resolve the pin.
+  Download arm delegated to `embroider::fetch_repo_file`.
+- TexTeller fp32 + int8 → first-party unified serving repo
+  `opticsWolf/texteller3-onnx` (both upstreams proven weight-identical;
+  int8 byte-verified sha256 against the former Ji-Ha blobs). The unified
+  repo also builds the `*_fp16` pair the upstreams lack, so
+  `ModelPrecision::Fp16` filenames resolve (numerics gate open — the
+  repo's own parity table has fp16 exact 3/3 on its sample; bobine-side
+  measurement deferred to the next release, as is the int8-vs-fp32
+  parity gate over the GT displays).
+- Bench harness saves `runtime.json` (machine inventory) next to
+  `report.md`/`mismatches.md`. New ignored guard test
+  `unified_repo_fp32_loads` (download + session build).
+- q8 deliberately not adopted: fails the repo's parity gate.
+
 ## 0.7.3 — 2026-10-29
 
 - `office_oxide` 0.1.10 → 0.1.16 (read-path fidelity + resource-bound
