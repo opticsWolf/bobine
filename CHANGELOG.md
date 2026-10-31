@@ -1,5 +1,16 @@
 # Changelog — bobine
 
+## 0.7.3 — 2026-10-29
+
+- `office_oxide` 0.1.10 → 0.1.16 (read-path fidelity + resource-bound
+  hardening upstream). One source-compat fix (`xlsx::Cell.formula` is a
+  method now) plus new `Option` IR fields on struct literals. Office
+  output strictly improved — blank-line structure, correct ordered-list
+  numbering, footnote/caption text populated, deck bullets recovered,
+  xlsx formulas emitted (goldens regenerated and reviewed hunk-by-hunk).
+  Also fixed en route: `chem_olive_golden_stable` normalized CRLF
+  checkouts (pre-existing autocrlf failure, blob is LF-only).
+
 ## 0.7.2 — 2026-10-29
 
 - Full wheel matrix (packaging only, no code changes): CPython

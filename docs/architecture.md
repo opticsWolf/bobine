@@ -331,7 +331,7 @@ as Python.
 Rust dependencies are locked in `Cargo.lock` (update deliberately with
 `cargo update -p <crate>`, never blindly — the pdf_oxide 0.3.77→0.3.78
 roll moved whole-corpus golden output and was reviewed file-by-file before
-landing as v0.5.6). Current oxide pins: `office_oxide 0.1.10`,
+landing as v0.5.6). Current oxide pins: `office_oxide 0.1.16`,
 `pdf_oxide 0.3.78`; the shared ONNX plumbing is pinned as `embroider >=0.3, <0.4` (same floor as okfgraph)
 (crates.io — same crate OKFgraph's embeddings use). The one external
 binary contract is **onnxruntime itself**: `ort` 2.0-rc requires ≥1.19; a
