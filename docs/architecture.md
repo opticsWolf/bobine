@@ -306,9 +306,11 @@ as Python.
 - **TexTeller**: downloaded automatically on first use into the shared
   hub cache (repo-isolated, pinned revisions). Default
   (`ModelQuantization::Int8`):
-  `https://huggingface.co/Ji-Ha/TexTeller3-ONNX-dynamic`
-  (`onnx/encoder_model_int8.onnx`, `onnx/decoder_model_merged_int8.onnx`,
-  `tokenizer.json`, ~319 MB total). Fp32 fallback: the unified first-party
+  `https://huggingface.co/opticsWolf/texteller3-onnx`
+  (`encoder_model_dynamic-int8.onnx`,
+  `decoder_model_merged_dynamic-int8.onnx`, `tokenizer.json`, ~318 MB
+  total) — byte-identical to the former Ji-Ha files (sha256-verified),
+  KV-cache interface retained. Fp32 fallback: the unified first-party
   serving repo `https://huggingface.co/opticsWolf/texteller3-onnx`
   (`encoder_model.onnx` 344 MB, `decoder_model_merged.onnx` 909 MB,
   `tokenizer.json`) — TexTeller3 files canonical plus OleehyO's merged

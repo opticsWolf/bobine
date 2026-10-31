@@ -96,19 +96,24 @@ pub struct TexTeller {
 /// This repo also builds the fp16 pair the upstreams lack, so
 /// `ModelPrecision::Fp16` filenames resolve here.
 pub(crate) const TEX_TELLER_REPO: &str = "opticsWolf/texteller3-onnx";
-/// Pinned hub revision of the unified repo (sha256 manifest in-repo).
-pub(crate) const TEX_TELLER_REV: &str = "5c12c0c944cb0574631bc9cc460cc165e8d430ae";
+/// Pinned hub revision of the unified repo (sha256 manifest in-repo;
+/// same HEAD serves fp32, fp16 and int8).
+pub(crate) const TEX_TELLER_REV: &str = "5f817336d600ae880205362e16092994aecd01e1";
 /// Shared tokenizer filename (fetched per-variant, never shared across
 /// repos — each variant reads its own repo root).
 pub(crate) const TEX_TELLER_TOKENIZER: &str = "tokenizer.json";
-/// Int8 variant repo: its own hub folder isolates it from fp32/fp16.
-pub(crate) const TEX_TELLER_INT8_REPO: &str = "Ji-Ha/TexTeller3-ONNX-dynamic";
-/// Pinned hub revision for the int8 repo (same terms).
-pub(crate) const TEX_TELLER_INT8_REV: &str = "1004f7549431b3974bcdf399cdd22e3e6d93ea78";
-/// Int8 variant files (encoder, decoder, tokenizer).
+/// Int8 variant: dynamic-int8 pair from the unified serving repo
+/// (byte-identical to the Ji-Ha files — sha256-verified against the
+/// previously cached blobs). KV-cache interface retained, same as the
+/// fp32 merged graph.
+pub(crate) const TEX_TELLER_INT8_REPO: &str = "opticsWolf/texteller3-onnx";
+/// Pinned hub revision of the unified repo (same HEAD as fp32).
+pub(crate) const TEX_TELLER_INT8_REV: &str = "5f817336d600ae880205362e16092994aecd01e1";
+/// Int8 variant files (encoder, decoder, tokenizer) — root-level
+/// dynamic-int8 pair, no `onnx/` subfolder.
 pub(crate) const TEX_TELLER_INT8_FILES: [&str; 3] = [
-    "onnx/encoder_model_int8.onnx",
-    "onnx/decoder_model_merged_int8.onnx",
+    "encoder_model_dynamic-int8.onnx",
+    "decoder_model_merged_dynamic-int8.onnx",
     "tokenizer.json",
 ];
 
@@ -195,8 +200,11 @@ impl TexTeller {
         )
     }
 
-    /// Load the int8 quantized TexTeller exports from
-    /// `Ji-Ha/TexTeller3-ONNX-dynamic` (~319 MB total). Unlike the
+    /// Load the int8 quantized TexTeller exports from the unified serving
+    /// repo (~318 MB total: 88 MB encoder + 229 MB merged decoder).
+    /// Byte-identical to the former Ji-Ha files (sha256-verified), so the
+    /// KV-cache fast path and the observed typographic-drift profile carry
+    /// over unchanged.
     /// onnx-community export, these merged-decoder weights RETAIN the full
     /// KV-cache interface (past_key_values / use_cache_branch / present),
     /// so decoding uses the fast cached path: ~10 ms/step vs ~26 ms fp32
