@@ -135,7 +135,7 @@ fn from_xlsx(doc: &office_oxide::xlsx::XlsxDocument) -> ExcelDocument {
                             placed[r][c] = CellData {
                                 text,
                                 value: xlsx_value(&cell.value, &doc.shared_strings),
-                                formula: cell.formula.as_ref().map(|f| format!("={f}")),
+                                formula: cell.formula().map(|f| format!("={f}")),
                             };
                         }
                     }

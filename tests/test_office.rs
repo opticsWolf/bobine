@@ -187,8 +187,11 @@ fn office_images_respect_extract_images_off() {
     cfg.render.extract_images = false;
     let mut conv = bobine::HybridConverter::new(cfg, &work.join("cache"));
     let md = conv.convert(&fixture("basic.docx"), &work).expect("convert");
-    // Upstream markdown untouched: rId link stays, nothing staged.
-    assert!(md.contains("(rId"), "untouched:\n{md}");
+    // extract_images=false: bobine stages nothing and rewrites nothing —
+    // no staged-asset links, no asset dir. (office_oxide<=0.1.10 left a raw
+    // `(rId…)` link here; >=0.1.11 drops the unresolvable link and keeps
+    // only the caption text. Pin the behavior, not the upstream shape.)
+    assert!(!md.contains("assets/"), "no staged links:\n{md}");
     assert!(!work.join("assets").exists(), "no asset dir");
 }
 

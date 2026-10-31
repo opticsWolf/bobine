@@ -5,7 +5,7 @@
 | Item | Count | Price | In stock |
 | Apples 🍎 | 12 | 1.5 | TRUE |
 | Oranges | 7 | 2.25 | FALSE |
-| Total |  |  |  |
+| Total | =SUM(B3:B4) |  |  |
 | 2024-01-01 | 38% |  |  |
 
 ## Summary

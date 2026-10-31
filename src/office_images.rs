@@ -270,6 +270,7 @@ mod tests {
                             }],
                             is_header: false,
                             height_twips: None,
+                            height_rule: None,
                             allow_break: true,
                             repeat_as_header: false,
                         }],
@@ -279,6 +280,7 @@ mod tests {
                         id: 1,
                         content: vec![img("note")],
                         marker: None,
+                        author: None,
                     }),
                 ],
                 ..Default::default()
