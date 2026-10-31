@@ -53,19 +53,30 @@ pub(crate) fn vision_policy() -> SessionPolicy {
 /// fallback label order).
 const LAYOUT_REPO: (&str, &str) = ("wybxc", "DocLayout-YOLO-DocStructBench-onnx");
 const LAYOUT_FILENAME: &str = "doclayout_yolo_docstructbench_imgsz1024.onnx";
+/// Pinned hub revision for the layout weights (verified present via the
+/// HF API; equals current upstream HEAD, so no re-download on update).
+const LAYOUT_REV: &str = "ee7c3d744e5c47c58e267044ac825f95abe69653";
 
 /// PP-OCRv4 mobile det + rec exports; the rec model embeds its charset in
 /// the ONNX custom metadata key "character".
 const OCR_REPO: (&str, &str) = ("SWHL", "RapidOCR");
 const OCR_DET_FILENAME: &str = "PP-OCRv4/ch_PP-OCRv4_det_infer.onnx";
 const OCR_REC_FILENAME: &str = "PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx";
+/// Pinned hub revision for the RapidOCR det + rec weights (same terms).
+const OCR_REV: &str = "1cfba2e90fc938db55889873735088de210cc173";
 
 /// Download a file from HuggingFace through the shared hub cache (see
 /// [`crate::hub_cache`]): `cache_dir` is the hub-cache root, the file
 /// resolves to its snapshot path, and an already-cached file costs zero
 /// network ("using cached").
-fn hf_fetch(cache_dir: &Path, repo: (&str, &str), filename: &str, what: &str) -> Result<PathBuf> {
-    crate::hub_cache::hub_fetch(cache_dir, repo.0, repo.1, filename, what)
+fn hf_fetch(
+    cache_dir: &Path,
+    repo: (&str, &str),
+    filename: &str,
+    what: &str,
+    revision: Option<&str>,
+) -> Result<PathBuf> {
+    crate::hub_cache::hub_fetch(cache_dir, repo.0, repo.1, filename, what, revision)
 }
 
 /// Manages the ONNX model lifecycle with lazy loading.
@@ -242,6 +253,11 @@ impl OnnxEngine {
             ),
             crate::config::ModelQuantization::Int8 => None,
         };
+        // Pinned revision follows the variant (mirrors the fetch sites).
+        let tt_rev = match &tt_owned {
+            Some(_) => crate::tex_teller::TEX_TELLER_REV,
+            None => crate::tex_teller::TEX_TELLER_INT8_REV,
+        };
         let (tt_repo, tt_files): (&str, Vec<(&str, bool)>) = match &tt_owned {
             Some(names) => (
                 crate::tex_teller::TEX_TELLER_REPO,
@@ -256,19 +272,21 @@ impl OnnxEngine {
             ),
         };
         let dir = Some(self.cache_dir.clone());
-        let probe = |repo: &str, files: &[(&str, bool)]| {
-            embroider::cache_info_files(repo, files, None, dir.clone())
+        let probe = |repo: &str, files: &[(&str, bool)], rev: Option<&str>| {
+            embroider::cache_info_files(repo, files, rev, dir.clone())
                 .map_err(|e| BobineError::Ort(e.to_string()))
         };
         let mut out = Vec::with_capacity(4);
-        out.push(probe(tt_repo, &tt_files)?);
+        out.push(probe(tt_repo, &tt_files, Some(tt_rev))?);
         out.push(probe(
             &format!("{}/{}", LAYOUT_REPO.0, LAYOUT_REPO.1),
             &[(LAYOUT_FILENAME, true)],
+            Some(LAYOUT_REV),
         )?);
         out.push(probe(
             &format!("{}/{}", OCR_REPO.0, OCR_REPO.1),
             &[(OCR_DET_FILENAME, true), (OCR_REC_FILENAME, true)],
+            Some(OCR_REV),
         )?);
         out.push(probe(
             &format!(
@@ -277,6 +295,7 @@ impl OnnxEngine {
                 crate::rapid_table::SLANET_PLUS_REPO.1
             ),
             &[(crate::rapid_table::SLANET_PLUS_FILENAME, true)],
+            Some(crate::rapid_table::SLANET_PLUS_REV),
         )?);
         Ok(out)
     }
@@ -389,7 +408,13 @@ impl OnnxEngine {
         if self.layout.is_none() {
             let path = match self.layout_model_path.clone() {
                 Some(p) => p,
-                None => hf_fetch(&self.cache_dir, LAYOUT_REPO, LAYOUT_FILENAME, "RapidLayout")?,
+                None => hf_fetch(
+                    &self.cache_dir,
+                    LAYOUT_REPO,
+                    LAYOUT_FILENAME,
+                    "RapidLayout",
+                    Some(LAYOUT_REV),
+                )?,
             };
             info!("Loading RapidLayout from {}...", path.display());
             let providers = self.resolve_auto_gpu_providers(
@@ -418,11 +443,23 @@ impl OnnxEngine {
         if self.ocr.is_none() {
             let det = match self.ocr_det_path.clone() {
                 Some(p) => p,
-                None => hf_fetch(&self.cache_dir, OCR_REPO, OCR_DET_FILENAME, "RapidOCR det")?,
+                None => hf_fetch(
+                    &self.cache_dir,
+                    OCR_REPO,
+                    OCR_DET_FILENAME,
+                    "RapidOCR det",
+                    Some(OCR_REV),
+                )?,
             };
             let rec = match self.ocr_rec_path.clone() {
                 Some(p) => p,
-                None => hf_fetch(&self.cache_dir, OCR_REPO, OCR_REC_FILENAME, "RapidOCR rec")?,
+                None => hf_fetch(
+                    &self.cache_dir,
+                    OCR_REPO,
+                    OCR_REC_FILENAME,
+                    "RapidOCR rec",
+                    Some(OCR_REV),
+                )?,
             };
             info!(
                 "Loading RapidOCR from {} and {}...",

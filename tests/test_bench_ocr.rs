@@ -9,7 +9,11 @@
 //! --release --test test_bench_ocr -- --ignored --nocapture`
 //! (`BOBINE_BENCH_PAPERS` overrides the paper set, comma-separated;
 //! `BOBINE_BENCH_CACHE` overrides the model cache dir.) Published
-//! numbers go in `docs/benchmarks.md` (release builds only). GPU (ORT
+//! numbers go in `docs/benchmarks.md` (release builds only). The run
+//! also saves `target/bench_ocr/runtime.json` — embroider's machine
+//! inventory (dylib, providers, CUDA/cuDNN layout) — next to the
+//! numbers, so a later reader knows exactly what produced them.
+//! GPU (ORT
 //! `-gpu_cuda13` build + CUDA/cuDNN on PATH) auto-enables CUDA for the
 //! layout/OCR slots.
 //!
@@ -306,6 +310,10 @@ fn texsteller_accuracy_ikat_corpus() {
         }
     }
     std::fs::write(root.join("mismatches.md"), &dump).unwrap();
+    // Machine inventory next to the numbers: dylib, providers,
+    // CUDA/cuDNN layout — a later reader reproduces the run exactly.
+    embroider::save_runtime_report(&root.join("runtime.json"))
+        .expect("bench harness: save runtime.json");
 }
 
 /// Standard HF hub cache (mirrors the Python binding default).

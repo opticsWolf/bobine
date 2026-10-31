@@ -11,10 +11,16 @@
 //! [`hub_fetch`] is offline-first: it probes through embroider's shared
 //! `cache_info_files` surface and returns the snapshot path with zero
 //! network when the file is already cached ("using cached"); otherwise
-//! the file downloads once per machine into the shared cache. Repeated
-//! opens never re-download — hf-hub consults the blob store after a
-//! cheap HEAD — so okfgraph's per-ingest temp-dir flow is fixed by
-//! construction: models land in the shared cache, not a deleted dir.
+//! the file downloads once per machine into the shared cache via
+//! embroider's [`embroider::fetch_repo_file`]. Repeated opens never
+//! re-download — hf-hub consults the blob store after a cheap HEAD — so
+//! okfgraph's per-ingest temp-dir flow is fixed by construction: models
+//! land in the shared cache, not a deleted dir.
+//!
+//! Every fetch carries a pinned hub revision (a `REV` constant next to
+//! each repo constant): the probe resolves that exact snapshot and the
+//! download lands it, so a fresh machine converges on the validated
+//! blobs instead of floating branch HEAD.
 
 use std::path::{Path, PathBuf};
 
@@ -22,27 +28,23 @@ use tracing::info;
 
 use crate::error::{BobineError, Result};
 
-/// Build an HF client rooted at `cache_dir` (hub-cache root override).
-pub(crate) fn hub_client(cache_dir: &Path) -> Result<hf_hub::HFClientSync> {
-    Ok(hf_hub::HFClientBuilder::new()
-        .cache_dir(cache_dir.to_path_buf())
-        .build()
-        .map(hf_hub::HFClientSync::from_inner)
-        .map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?
-        .map_err(|e| BobineError::Ort(format!("hf-hub init: {e}")))?)
-}
-
 /// Fetch one file into the hub cache, returning its snapshot path to load.
 ///
 /// Offline-first: an already-cached file returns its snapshot location
 /// with zero network. A miss downloads once per machine (cache-mode, so
 /// every later caller — and every okfgraph ingest — reuses the blob).
+///
+/// `revision` pins the hub revision (all live call sites pass `Some`):
+/// the probe resolves that exact snapshot and the download — delegated
+/// to embroider's shared `fetch_repo_file` — lands it. `None` keeps
+/// the old floating-HEAD behavior for tests and one-offs.
 pub(crate) fn hub_fetch(
     cache_dir: &Path,
     owner: &str,
     name: &str,
     filename: &str,
     what: &str,
+    revision: Option<&str>,
 ) -> Result<PathBuf> {
     let repo_id = format!("{owner}/{name}");
     // Offline probe through the shared surface: a hit never touches the
@@ -51,7 +53,7 @@ pub(crate) fn hub_fetch(
     match embroider::cache_info_files(
         &repo_id,
         &[(filename, true)],
-        None,
+        revision,
         Some(cache_dir.to_path_buf()),
     ) {
         Ok(rep) if rep.cached => {
@@ -70,12 +72,17 @@ pub(crate) fn hub_fetch(
         _ => {}
     }
     info!("Downloading {what} from {repo_id}...");
-    let path = hub_client(cache_dir)?
-        .model(owner, name)
-        .download_file()
-        .filename(filename.to_string())
-        .send()
-        .map_err(|e| BobineError::Ort(format!("download {what}: {e}")))?;
+    // Download arm delegated to embroider's shared fetch (same cache-dir
+    // root, same hf-hub mechanics — including HF_ENDPOINT handling, so
+    // the endpoint-guard tests below still exercise the failure path).
+    // The wrap keeps the old contract: the error names what was fetched.
+    let path = embroider::fetch_repo_file(
+        &repo_id,
+        filename,
+        revision,
+        Some(cache_dir.to_path_buf()),
+    )
+    .map_err(|e| BobineError::Ort(format!("download {what}: {e}")))?;
     Ok(path)
 }
 
@@ -124,7 +131,16 @@ mod tests {
         let snap = seed_repo(&root, "models--org--probe", "w.onnx", &[3u8; 48]);
 
         // The endpoint is unroutable: a hit must return without any request.
-        let path = hub_fetch(&root, "org", "probe", "w.onnx", "probe-file").unwrap();
+        // Pinned path: the seeded sha is passed as the revision.
+        let path = hub_fetch(
+            &root,
+            "org",
+            "probe",
+            "w.onnx",
+            "probe-file",
+            Some("abcdef0123456789abcdef0123456789abcdef01"),
+        )
+        .unwrap();
         assert_eq!(path, snap.join("w.onnx"));
 
         endpoint_restore(saved);
@@ -141,7 +157,7 @@ mod tests {
 
         // Empty cache + unroutable endpoint: the download fails fast and
         // the error names what was being fetched.
-        let err = hub_fetch(&root, "org", "probe", "w.onnx", "probe-file")
+        let err = hub_fetch(&root, "org", "probe", "w.onnx", "probe-file", None)
             .unwrap_err()
             .to_string();
         assert!(err.contains("download probe-file"), "{err}");

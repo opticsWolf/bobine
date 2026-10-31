@@ -331,7 +331,12 @@ as Python.
 Rust dependencies are locked in `Cargo.lock` (update deliberately with
 `cargo update -p <crate>`, never blindly — the pdf_oxide 0.3.77→0.3.78
 roll moved whole-corpus golden output and was reviewed file-by-file before
-landing as v0.5.6). Current oxide pins: `office_oxide 0.1.16`,
+landing as v0.5.6). Model weights float too — no longer: every
+converter weight (TexTeller fp32/int8, RapidLayout, RapidOCR det/rec,
+SLANet-plus) carries a pinned hub SHA next to its repo constant
+(`*_REV`), verified present via the HF API, probe and download both
+resolve the pin through embroider's shared surface (`cache_info_files`
++ `fetch_repo_file`). Current oxide pins: `office_oxide 0.1.16`,
 `pdf_oxide 0.3.78`; the shared ONNX plumbing is `embroider 0.12`
 (lifted from the 0.3 floor in one step — all additive upstream, zero
 source changes: new model slots only, our six call sites untouched)

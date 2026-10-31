@@ -172,6 +172,9 @@ pub fn build_html(structures: &[String], matched: &[Vec<usize>], ocr_texts: &[St
 /// Download location of the SLANet-plus ONNX model.
 pub const SLANET_PLUS_REPO: (&str, &str) = ("opendatalab", "PDF-Extract-Kit-1.0");
 pub const SLANET_PLUS_FILENAME: &str = "models/TabRec/SlanetPlus/slanet-plus.onnx";
+/// Pinned hub revision for the SLANet-plus weights (verified present via
+/// the HF API; equals current upstream HEAD, so no re-download on update).
+pub const SLANET_PLUS_REV: &str = "ed6b654c018d742e65a17671e379c5e6ecc87ec9";
 
 /// Fetch slanet-plus.onnx (~7.8 MB) through the shared hub cache (see
 /// [`crate::hub_cache`]), returning its snapshot path to load.
@@ -187,6 +190,7 @@ pub fn download_slanet_plus(cache_dir: &Path) -> Result<std::path::PathBuf> {
         SLANET_PLUS_REPO.1,
         SLANET_PLUS_FILENAME,
         "slanet-plus",
+        Some(SLANET_PLUS_REV),
     )
 }
 

@@ -90,11 +90,16 @@ pub struct TexTeller {
 
 /// Canonical TexTeller repo (fp32/fp16 single-repo layout).
 pub(crate) const TEX_TELLER_REPO: &str = "OleehyO/TexTeller";
+/// Pinned hub revision for the fp32/fp16 repo (verified present via the
+/// HF API; equals current upstream HEAD, so no re-download on update).
+pub(crate) const TEX_TELLER_REV: &str = "7b96df06b9d81cdb129c3bef68b7250bc3e2b0ea";
 /// Shared tokenizer filename (fetched per-variant, never shared across
 /// repos — each variant reads its own repo root).
 pub(crate) const TEX_TELLER_TOKENIZER: &str = "tokenizer.json";
 /// Int8 variant repo: its own hub folder isolates it from fp32/fp16.
 pub(crate) const TEX_TELLER_INT8_REPO: &str = "Ji-Ha/TexTeller3-ONNX-dynamic";
+/// Pinned hub revision for the int8 repo (same terms).
+pub(crate) const TEX_TELLER_INT8_REV: &str = "1004f7549431b3974bcdf399cdd22e3e6d93ea78";
 /// Int8 variant files (encoder, decoder, tokenizer).
 pub(crate) const TEX_TELLER_INT8_FILES: [&str; 3] = [
     "onnx/encoder_model_int8.onnx",
@@ -147,16 +152,32 @@ impl TexTeller {
         // side-copies, no destination probes): a cached file returns its
         // snapshot path with zero network ("using cached").
         let [enc_name, dec_name, tok_name] = texteller_filenames(precision);
-        let encoder_path =
-            crate::hub_cache::hub_fetch(cache_dir, &owner, &name, &enc_name, "TexTeller encoder")?;
-        let decoder_path =
-            crate::hub_cache::hub_fetch(cache_dir, &owner, &name, &dec_name, "TexTeller decoder")?;
+        // Pinned revision for the canonical repo; custom repos float
+        // (their SHAs are the caller's business, not ours).
+        let revision = (repo == TEX_TELLER_REPO).then_some(TEX_TELLER_REV);
+        let encoder_path = crate::hub_cache::hub_fetch(
+            cache_dir,
+            &owner,
+            &name,
+            &enc_name,
+            "TexTeller encoder",
+            revision,
+        )?;
+        let decoder_path = crate::hub_cache::hub_fetch(
+            cache_dir,
+            &owner,
+            &name,
+            &dec_name,
+            "TexTeller decoder",
+            revision,
+        )?;
         let tokenizer_path = crate::hub_cache::hub_fetch(
             cache_dir,
             &owner,
             &name,
             &tok_name,
             "TexTeller tokenizer",
+            revision,
         )?;
 
         Self::load_with_provider_split(
@@ -201,6 +222,7 @@ impl TexTeller {
             name,
             enc_name,
             "TexTeller int8 encoder",
+            Some(TEX_TELLER_INT8_REV),
         )?;
         let decoder_path = crate::hub_cache::hub_fetch(
             cache_dir,
@@ -208,6 +230,7 @@ impl TexTeller {
             name,
             dec_name,
             "TexTeller int8 decoder",
+            Some(TEX_TELLER_INT8_REV),
         )?;
 
         // Tokenizer comes from THIS repository root - never share tokenizer
@@ -218,6 +241,7 @@ impl TexTeller {
             name,
             tok_name,
             "TexTeller int8 tokenizer",
+            Some(TEX_TELLER_INT8_REV),
         )?;
 
         Self::load_with_provider_split(
