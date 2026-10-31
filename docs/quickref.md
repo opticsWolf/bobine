@@ -97,7 +97,9 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 needed. Embedded pictures stage into `<work_dir>/assets/office/` with content-hash
 names and links rewrite to the staged files (unreferenced ones gallery-appended,
 like PDF figures); `ingest_document` promotes them to `okf-asset://`.
-`extract_images: false` leaves the upstream markdown untouched.
+`extract_images: false` leaves the upstream markdown untouched (no staging,
+no link rewriting — since office_oxide 0.1.11 the untouched output carries
+caption text without resolvable image links rather than raw `(rId…)` refs).
 
 Excel workbooks (`.xls` / `.xlsx`) additionally export structured data:
 

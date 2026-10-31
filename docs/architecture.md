@@ -388,9 +388,10 @@ parts with deliberately different trust levels:
 - **`convert_office`** — thin delegation (`Document::open` +
   `to_markdown`). All rendering intelligence is office_oxide's; bobine
   pins *must-hold* behavior in `test_office` (GFM tables, sheet/slide
-  `##` boundaries, typed cells, alt text) and logs the rest as upstream
-  gaps (footnote bodies, hyperlink URLs, formula cached values, pptx
-  bullets/markers, pptx TSV tables). No in-tree workarounds — upstream
+  `##` boundaries, typed cells, alt text). Upstream gaps still open:
+  hyperlink URLs, pptx TSV tables. Fixed upstream in office_oxide 0.1.16
+  (was: footnote bodies, xlsx formula cached values, pptx bullets —
+  goldens prove all three). No in-tree workarounds — upstream
   fixes with minimal repros instead.
 - **`office_images`** — bobine-owned staging. Two sources, one contract:
   the IR walk (document order, alt text, decorative + link-only skipped,
