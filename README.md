@@ -217,7 +217,7 @@ with markedly better accuracy.
 By default bobine downloads the quantized export
 (~319 MB total, HF `Ji-Ha/TexTeller3-ONNX-dynamic`) into the converter's
 cache dir on first use; set `model_quantization=ModelQuantization::Fp32` to
-use full-precision weights (~1.25 GB, HF `OleehyO/TexTeller`) instead.
+use full-precision weights (~1.25 GB, HF `opticsWolf/texteller3-onnx`) instead.
 Preprocessing matches upstream TexTeller exactly, including its
 normalize-before-pad order (v0.4.4 fixed black pad fill, which measurably
 degraded recognition). Measured on a 10-formula corpus: Int8+CPU scores

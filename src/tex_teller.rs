@@ -89,10 +89,15 @@ pub struct TexTeller {
 }
 
 /// Canonical TexTeller repo (fp32/fp16 single-repo layout).
-pub(crate) const TEX_TELLER_REPO: &str = "OleehyO/TexTeller";
-/// Pinned hub revision for the fp32/fp16 repo (verified present via the
-/// HF API; equals current upstream HEAD, so no re-download on update).
-pub(crate) const TEX_TELLER_REV: &str = "7b96df06b9d81cdb129c3bef68b7250bc3e2b0ea";
+/// Canonical TexTeller repo: first-party unified serving export
+/// (`opticsWolf/texteller3-onnx`) — TexTeller3 files canonical plus
+/// OleehyO's merged decoder verbatim (both upstreams proven
+/// weight-identical: 480/480 torch tensors equal, ONNX hashes equal).
+/// This repo also builds the fp16 pair the upstreams lack, so
+/// `ModelPrecision::Fp16` filenames resolve here.
+pub(crate) const TEX_TELLER_REPO: &str = "opticsWolf/texteller3-onnx";
+/// Pinned hub revision of the unified repo (sha256 manifest in-repo).
+pub(crate) const TEX_TELLER_REV: &str = "5c12c0c944cb0574631bc9cc460cc165e8d430ae";
 /// Shared tokenizer filename (fetched per-variant, never shared across
 /// repos — each variant reads its own repo root).
 pub(crate) const TEX_TELLER_TOKENIZER: &str = "tokenizer.json";
@@ -665,5 +670,31 @@ mod tests {
         );
         let empty = ndarray::Array1::<f32>::zeros(0);
         assert_eq!(argmax_next_token(empty.view(), 7), 7);
+    }
+
+    /// Guard for repo moves: loads the fp32 serving trio from the pinned
+    /// unified repo (`TEX_TELLER_REPO` @ `TEX_TELLER_REV`) — download +
+    /// session build, no inference. Ignored by default: downloads ~1.3GB
+    /// once per machine (honors `BOBINE_TEX_TELLER_CACHE`, else the shared
+    /// hub cache) and needs the ORT dylib like every other model test.
+    /// Run: `ORT_DYLIB_PATH=<ort> cargo test --lib -- --ignored
+    /// unified_repo_fp32_loads`.
+    #[test]
+    #[ignore = "downloads ~1.3GB once; guards TexTeller repo moves"]
+    fn unified_repo_fp32_loads() {
+        let cache = std::env::var("BOBINE_TEX_TELLER_CACHE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| hf_hub::resolve_cache_dir());
+        let cpu = vec!["CPUExecutionProvider".to_string()];
+        let tt = TexTeller::from_pretrained(
+            TEX_TELLER_REPO,
+            &cache,
+            ModelPrecision::Fp32,
+            &cpu,
+        )
+        .expect("fp32 trio loads from the unified repo");
+        // Construction succeeded (sessions built, tokenizer loaded):
+        // the serving path is intact.
+        assert!(tt.max_tokens > 0);
     }
 }

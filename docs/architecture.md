@@ -173,7 +173,7 @@ Three lazy slots, each loaded on first use and cached:
 
 | Slot | Model source | Loaded by |
 |---|---|---|
-| `tex_teller` | HuggingFace via `hf-hub` (blocking): default **Int8** from `Ji-Ha/TexTeller3-ONNX-dynamic` into `<cache>/texteller_int8/`; `ModelQuantization::Fp32` uses `OleehyO/TexTeller` | `ensure_tex_teller()` |
+| `tex_teller` | HuggingFace via `hf-hub` (blocking): default **Int8** from `Ji-Ha/TexTeller3-ONNX-dynamic` (repo-isolated in the shared hub cache); `ModelQuantization::Fp32` uses the unified `opticsWolf/texteller3-onnx` serving repo (TexTeller3 canonical + OleehyO merged decoder, weight-identical) | `ensure_tex_teller()` |
 | `layout` | HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` (auto-download, probe-first) or local path (`set_layout_model()`) | `ensure_layout()` |
 | `ocr` | HF `SWHL/RapidOCR` PP-OCRv4 det+rec (auto-download, probe-first) or local paths (`set_ocr_models()`) | `ensure_ocr()` |
 | `table` | local slanet-plus path (`set_table_model()`) or auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` (~7.8 MB) into `<cache>/models/` | `ensure_table()` (lazy — only on table regions) |
@@ -303,17 +303,19 @@ as Python.
 
 ## 8. Model acquisition
 
-- **TexTeller**: downloaded automatically on first use into the cache dir
-  given at converter construction. Default (`ModelQuantization::Int8`):
+- **TexTeller**: downloaded automatically on first use into the shared
+  hub cache (repo-isolated, pinned revisions). Default
+  (`ModelQuantization::Int8`):
   `https://huggingface.co/Ji-Ha/TexTeller3-ONNX-dynamic`
-  (`onnx/encoder_model.onnx` ~90 MB int8, `onnx/decoder_model_merged.onnx`
-  ~909 MB fp32-with-cache-interface, `tokenizer.json`) into
-  `<cache>/texteller_int8/`. Fp32 fallback:
-  `https://huggingface.co/OleehyO/TexTeller` (`encoder_model.onnx` 344 MB,
-  `decoder_model_merged.onnx` 909 MB, `tokenizer.json`). Tokenizer and
-  weights are paired per variant in distinct cache namespaces. `Fp16`
-  variants would be picked up as `*_fp16.onnx` if present (generation
-  deferred).
+  (`onnx/encoder_model_int8.onnx`, `onnx/decoder_model_merged_int8.onnx`,
+  `tokenizer.json`, ~319 MB total). Fp32 fallback: the unified first-party
+  serving repo `https://huggingface.co/opticsWolf/texteller3-onnx`
+  (`encoder_model.onnx` 344 MB, `decoder_model_merged.onnx` 909 MB,
+  `tokenizer.json`) — TexTeller3 files canonical plus OleehyO's merged
+  decoder verbatim, both upstreams proven weight-identical. Tokenizer
+  and weights are paired per variant. The unified repo also builds the
+  `*_fp16.onnx` pair the upstreams lack, so `ModelPrecision::Fp16`
+  filenames resolve (numerics gate still open — unmeasured).
 - **RapidLayout / RapidOCR**: downloaded automatically on first use unless
   explicit local paths are set via `OnnxEngine::set_layout_model` /
   `set_ocr_models`. Layout: `wybxc/DocLayout-YOLO-DocStructBench-onnx`
