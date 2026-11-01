@@ -79,7 +79,7 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `RoutingMode` | `Never` / `Auto` / `Surgical` / `Always` |
 | `FormulaBackend` | `TexTeller` (only backend) |
 | `ModelPrecision` | `Fp32` / `Fp16` (`*_fp16.onnx`, models deferred) |
-| `ModelQuantization` | `Int8` (default) / `Fp32` (formula weights) |
+| `ModelQuantization` | `Fp32` (default) / `Int8` (formula weights) |
 
 ## RoutingMode
 
@@ -124,7 +124,7 @@ import json; data = json.loads(doc.json)  # typed values, formulas kept
 | `routing_mode` | `Auto` | See table above |
 | `formula_backend` | `TexTeller` | Formula recognizer |
 | `model_precision` | `Fp32` | Selects `*_fp16.onnx` when `Fp16` |
-| `model_quantization` | `Int8` | Formula weights: `Int8` (default, Ji-Ha export) = 4x smaller RAM **and** ~2.4x faster than Fp32 on CPU (KV-cached); `Fp32` = reference output |
+| `model_quantization` | `Fp32` | Formula weights: `Fp32` (default) = reference output on CPU and CUDA; `Int8` = ~4x smaller RAM and ~1.9x faster on CPU, with occasional decode drift. Do not pair `Int8` with CUDA |
 | `render_dpi` | `300` | Renders for scanned-page OCR / layout |
 | `formula_dpi` | `200` | Renders for formula crops |
 | `detect_headings` | `True` | `#` headings from fast path |
@@ -187,10 +187,12 @@ bobine.ConverterConfig(routing_mode=bobine.RoutingMode.Never, use_onnx=False)
 bobine.ConverterConfig(routing_mode=bobine.RoutingMode.Surgical,
                        formula_layout_fallback=True)
 
-# FP16 model variants (when present next to the fp32 files)
+# fp16 formula weights: the CUDA alternative to fp32 (half the size,
+# ~1.2x faster on long decodes, 29/30 exact parity). ~3x slower on CPU.
 bobine.ConverterConfig(model_precision=bobine.ModelPrecision.Fp16)
 
-# compact-memory formula recognition (~316 MB instead of ~1.25 GB):
+# int8 formula weights: the CPU alternative (~303 MB instead of ~1.19 GB,
+# ~1.9x faster, with occasional decode drift):
 bobine.ConverterConfig(model_quantization=bobine.ModelQuantization.Int8)
 
 # GPU (dynamic): point ORT_DYLIB_PATH at a GPU-enabled ONNX Runtime library
@@ -202,12 +204,17 @@ bobine.ConverterConfig(model_quantization=bobine.ModelQuantization.Int8)
 # Same build, no rebuild needed; degrades gracefully to CPU otherwise.
 bobine.ConverterConfig()   # zero-config GPU defaults
 
-# Fp32 formula decode on GPU: also route TexTeller through CUDA
-# (~2.3x faster formulas measured on an RTX 3090). Int8 is CPU-oriented
-# (quantized ops run slower on the GPU EP) - do NOT combine Int8 with CUDA;
-# bobine logs a warning when it sees that combination.
+# Formula decode on GPU: fp32 is the default; route TexTeller through CUDA
+# (~2.4x faster on the short fixture, ~1.35x on long decodes - RTX 3090).
+# Int8 is CPU-oriented (quantized ops run slower on the GPU EP) - do NOT
+# combine Int8 with CUDA; bobine logs a warning when it sees that.
 bobine.ConverterConfig(
-    model_quantization=bobine.ModelQuantization.Fp32,
+    ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+
+# CUDA speed alternative: fp16 (half the weights, ~1.2x faster on long
+# decodes, 29/30 exact parity with fp32).
+bobine.ConverterConfig(
+    model_precision=bobine.ModelPrecision.Fp16,
     ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
 
 # per-slot overrides (pin any slot, mix freely):
@@ -237,23 +244,23 @@ bobine.ingest_document("paper.pdf", "out/",
 
 ## Formula accuracy (measured)
 
-10-example corpus (matplotlib-rendered: Gaussian integral, Basel sum,
-heat equation, Euler's identity, vector norm, binomial, AM-GM product,
-limit, contour integral), greedy decode, RTX 3090 / Ryzen 9 5950X:
+30 display formulas from the ikat ground-truth set, rendered at 300 dpi,
+greedy decode, RTX 3090 / Ryzen 9 5950X. Parity is exact match against fp32
+after stripping display fences, `\left`/`\right`, `\limits`, and whitespace:
 
-| Config | Correct | Miss | Median time |
-|---|---|---|---|
-| Int8 + CPU (default) | 10/10 | — | ~0.5 s |
-| Fp32 + CUDA | 9/10 | dropped one token (`n` → `1` in a sum limit) | ~0.4 s |
+| Config | Exact GT | Similarity | Parity vs fp32 | Median |
+|---|---|---|---|---|
+| Fp32 + CPU (default) | 1/30 | 0.579 | — | 2.01 s |
+| Int8 + CPU | 2/30 | 0.553 | 10/30 (0.83) | 1.05 s |
+| Fp32 + CUDA | 1/30 | 0.579 | — | 1.49 s |
+| Fp16 + CUDA | 1/30 | 0.579 | 29/30 (1.00) | 1.21 s |
 
-The table reflects v0.4.4, after fixing the pad fill to background-white
-in normalized space (upstream normalizes *before* padding; raw-black
-padding caused e.g. `\oint` misreads on both variants).
-Before the fix each variant missed a different example; afterwards the
-misses flipped again. Conclusion: misses are single-token greedy-decode
-noise near decision boundaries, not systematic quantization or precision
-damage. **Int8 costs no measurable accuracy** - choose by hardware.
-Raw fixtures in `%TEMP%/bobine_test/bench10/`.
+Exact GT is low because TexTeller's house style differs from the
+MathML-derived ground truth (`\mathrm`, `\mbox`, `\,` placement); parity is
+the meaningful quantization metric. Int8 is ~1.9x faster on CPU but its
+output drifts (mostly stylistic, occasionally a wrong formula); fp16 differs
+from fp32 only in thin-space placement. Full matrix in
+[benchmarks.md](benchmarks.md).
 
 ## Formula routing in ALWAYS mode (v0.4.8)
 
@@ -273,12 +280,12 @@ more than ~2 s per formula crop.
 
 | Model | Source | Size |
 |---|---|---|
-| TexTeller encoder + decoder + tokenizer (fp32) | auto-download from HuggingFace `opticsWolf/texteller3-onnx` into the hub cache | ~1.25 GB |
-| TexTeller encoder + decoder fp16 | same unified repo (`*_fp16.onnx` pair, pure-fp16 compute; repo parity gate: worst\|d\| 0.01–0.02, greedy strings exact 3/3) | ~627 MB |
+| TexTeller encoder + decoder + tokenizer (fp32, default) | auto-download from HuggingFace `opticsWolf/texteller3-onnx` into the hub cache | ~1.19 GB |
+| TexTeller encoder + decoder fp16 | same unified repo (`*_fp16.onnx` pair, pure-fp16 compute; measured 28-29/30 exact parity with fp32) | ~598 MB |
 | RapidLayout (DocLayout-YOLO) | auto-download from HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` into the hub cache, or `set_layout_model` | ~72 MB |
 | RapidOCR PP-OCRv4 det + rec | auto-download from HF `SWHL/RapidOCR` into the hub cache, or `set_ocr_models` | ~16 MB |
 | RapidTable (SLANet-plus) | auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` into the hub cache, or `set_table_model` | ~7.8 MB |
-| TexTeller Int8 (default formula weights) | auto-download from HF `Ji-Ha/TexTeller3-ONNX-dynamic` into the hub cache (KV-cache-capable merged graph) | ~319 MB |
+| TexTeller Int8 (opt-in CPU speed tier) | auto-download from HF `opticsWolf/texteller3-onnx` into the hub cache (KV-cache-capable merged graph) | ~303 MB |
 
 `cache_dir` is the hub-cache root (an override of the standard HF
 cache, shared machine-wide); `model_status(cache_dir=None)` reports
@@ -306,8 +313,9 @@ Fixtures: `tests/fixtures/` — CC BY 4.0 arXiv papers (attribution in
 
 ## Benchmarks
 
-Measured CPU/CUDA numbers (RTX 3090, ORT 1.28.1), TexTeller fp32 vs int8
-timings, and the `ORT_DYLIB_PATH` / stale-System32-dll pitfall are documented in
+Measured CPU/CUDA numbers (RTX 3090, ORT 1.28.1), TexTeller
+fp32/fp16/q8/int8 timings and parity, and the `ORT_DYLIB_PATH` /
+stale-System32-dll pitfall are documented in
 [benchmarks.md](benchmarks.md).
 
 

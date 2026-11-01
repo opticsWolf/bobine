@@ -26,6 +26,12 @@ pub(crate) const MAX_TOKENS: usize = 1024;
 /// Depth of the TexTeller RoBERTa decoder (drives the 48 past/present KV IOs).
 const LAYERS: usize = 12;
 
+/// Decoder attention heads and per-head width, as declared by the merged
+/// KV-cache exports. The past/present KV tensors are
+/// `[batch, heads, seq, head_dim]`.
+const DECODER_HEADS: usize = 16;
+const HEAD_DIM: usize = 64;
+
 /// Argmax over one logit row; `fallback` (usually EOS) when the row is empty.
 /// Pure helper so the decode policy is unit-testable without a model.
 fn argmax_next_token(last: ndarray::ArrayView1<'_, f32>, fallback: i64) -> i64 {
@@ -201,16 +207,16 @@ impl TexTeller {
     }
 
     /// Load the int8 quantized TexTeller exports from the unified serving
-    /// repo (~318 MB total: 88 MB encoder + 229 MB merged decoder).
-    /// Byte-identical to the former Ji-Ha files (sha256-verified), so the
-    /// KV-cache fast path and the observed typographic-drift profile carry
-    /// over unchanged.
-    /// onnx-community export, these merged-decoder weights RETAIN the full
-    /// KV-cache interface (past_key_values / use_cache_branch / present),
-    /// so decoding uses the fast cached path: ~10 ms/step vs ~26 ms fp32
-    /// on CPU (measured), i.e. ~2.4x faster formulas at one quarter the
-    /// memory. Math content is unaffected; occasional typographic drift
-    /// near argmax ties (lost `\mathbf` bold, epsilon glyph variant).
+    /// repo (~303 MB total). Byte-identical to the former Ji-Ha files
+    /// (sha256-verified), and the merged decoder retains the full KV-cache
+    /// interface (past_key_values / use_cache_branch / present), so
+    /// decoding uses the fast cached path.
+    ///
+    /// Measured on the 30-formula eval set: ~1.9x faster than fp32 at the
+    /// CPU median, at one quarter the download/RAM. Math content survives on
+    /// most formulas, but only 10/30 match fp32 exactly; the rest carry
+    /// stylistic drift and one collapsed. Do not pair with CUDA (~1.8x
+    /// slower than fp32 there).
     pub fn from_pretrained_int8(cache_dir: &Path, providers: &[String]) -> Result<Self> {
         Self::from_pretrained_int8_split(cache_dir, None, providers)
     }
@@ -510,7 +516,9 @@ impl TexTeller {
         //
         // Step 0 (prefill): feed the whole prompt with empty past and
         // `use_cache_branch=false`; the graph computes every position from
-        // scratch AND emits `present.*` caches.
+        // scratch AND emits `present.*` caches. The empty past tensors are
+        // mandatory for the fp16 export (hoisted entry Casts), harmless
+        // for fp32/int8.
         //
         // Steps 1..: feed only the newest token plus the previous `present.*`
         // as `past_key_values.*` with `use_cache_branch=true` — O(1) per step
@@ -559,8 +567,36 @@ impl TexTeller {
             inputs.push(("encoder_hidden_states".into(), (&enc_value).into()));
             inputs.push(("use_cache_branch".into(), (&*use_cache).into()));
 
-            for (name, val) in enc_cache.iter().chain(dec_cache.iter()) {
-                inputs.push((name.clone(), val.into()));
+            if prefill {
+                // Every merged export declares all 48 past_key_values.* as
+                // inputs. The fp32 graph's false branch ignores them, but
+                // the fp16 export hoists the entry Casts OUTSIDE the If —
+                // ORT then demands the inputs even on prefill. Feed empty
+                // `[1, heads, 0, head_dim]` caches: valid for every
+                // variant, and the false branch still computes from scratch.
+                for i in 0..LAYERS {
+                    for scope in ["decoder", "encoder"] {
+                        for kv in ["key", "value"] {
+                            let empty = Tensor::from_array(ndarray::Array4::<f32>::zeros((
+                                1,
+                                DECODER_HEADS,
+                                0,
+                                HEAD_DIM,
+                            )))
+                            .map_err(|e| {
+                                BobineError::Ort(format!("build empty past cache: {e}"))
+                            })?;
+                            inputs.push((
+                                format!("past_key_values.{i}.{scope}.{kv}"),
+                                empty.into(),
+                            ));
+                        }
+                    }
+                }
+            } else {
+                for (name, val) in enc_cache.iter().chain(dec_cache.iter()) {
+                    inputs.push((name.clone(), val.into()));
+                }
             }
 
             let outputs = self

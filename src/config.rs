@@ -39,7 +39,7 @@ pub enum RoutingMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FormulaBackend {
-    /// TexTeller ONNX via ort (1.25 GB disk, ~2.5 GB RAM, ~1 s/crop).
+    /// TexTeller ONNX via ort (~1.19 GB disk, ~1 s/crop on CPU).
     TexTeller,
 }
 
@@ -56,21 +56,23 @@ pub enum ModelPrecision {
 /// Weight quantization for the formula recognizer (TexTeller) — the
 /// accuracy/memory trade-off knob.
 ///
-/// * `Int8` (default): onnx-community quantized exports
-///   (`decoder_model_int8.onnx` etc., 316 MB total — one quarter the
-///   download/RAM of fp32 at equal speed).
-/// * `Fp32`: full-precision weights + KV-cache decode. Exact output;
-///   ~1.25 GB of model files. Also carries
-///   occasional *typographic* drift in the emitted LaTeX (lost `\mathbf`
-///   bold, `\epsilon` vs `arepsilon`); math content is unaffected in
-///   tests. The int8 export has no KV-cache inputs and decodes by
-///   full-sequence recompute.
+/// * `Fp32` (default): full-precision weights + KV-cache decode
+///   (~1.19 GB). Reference output on CPU and CUDA.
+/// * `Int8`: dynamic-int8 pair from the unified serving repo
+///   (~303 MB, a quarter of the download/RAM). Fastest on CPU (≈1.9×
+///   the fp32 median) at the cost of occasional decode drift; do not
+///   pair it with CUDA (dequant/memcpy overhead makes it ~1.8× slower
+///   than fp32 there).
+///
+/// `ModelPrecision::Fp16` is the CUDA alternative to fp32: half the
+/// weights, ≈1.2× faster on long decodes, and 28–29/30 exact parity.
+/// On CPU it is ~3× slower than fp32 (cast overhead).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelQuantization {
     /// Full-precision TexTeller.
     Fp32,
-    /// onnx-community int8 exports (compact memory footprint).
+    /// Dynamic-int8 pair from the unified serving repo (compact footprint).
     Int8,
 }
 
@@ -323,7 +325,7 @@ impl Default for ModelOpts {
         Self {
             formula_backend: FormulaBackend::TexTeller,
             model_precision: ModelPrecision::Fp32,
-            model_quantization: ModelQuantization::Int8,
+            model_quantization: ModelQuantization::Fp32,
             ocr_lang: "en".to_string(),
         }
     }
@@ -371,6 +373,7 @@ mod tests {
         assert_eq!(c.routing.routing_mode, RoutingMode::Auto);
         assert_eq!(c.models.formula_backend, FormulaBackend::TexTeller);
         assert_eq!(c.models.model_precision, ModelPrecision::Fp32);
+        assert_eq!(c.models.model_quantization, ModelQuantization::Fp32);
     }
 
     #[test]

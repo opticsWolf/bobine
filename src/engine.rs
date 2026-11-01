@@ -307,24 +307,40 @@ impl OnnxEngine {
     fn ensure_tex_teller(&mut self) -> Result<()> {
         if self.tex_teller.is_none() {
             info!(
-                "Loading TexTeller ({:?}) from OleehyO/TexTeller...",
-                self.config.models.model_precision
+                "Loading TexTeller ({:?}, {:?})...",
+                self.config.models.model_precision, self.config.models.model_quantization
             );
+            let has_cuda = self
+                .config
+                .providers
+                .ort_providers
+                .iter()
+                .chain(self.config.providers.encoder_ort_providers.iter().flatten())
+                .chain(self.config.providers.decoder_ort_providers.iter().flatten())
+                .any(|p| p.to_lowercase().contains("cuda"));
             // Quantized ops have no CUDA kernels - requesting CUDA with
             // Int8 weights makes ORT split the graph across devices
-            // (171-267 Memcpy nodes) and runs ~2x SLOWER than plain CPU.
+            // (171-267 Memcpy nodes) and runs ~1.8x SLOWER than fp32.
             if self.config.models.model_quantization == crate::config::ModelQuantization::Int8
-                && self
-                    .config
-                    .providers
-                    .ort_providers
-                    .iter()
-                    .chain(self.config.providers.encoder_ort_providers.iter().flatten())
-                    .chain(self.config.providers.decoder_ort_providers.iter().flatten())
-                    .any(|p| p.to_lowercase().contains("cuda"))
+                && has_cuda
             {
                 tracing::warn!(
-                    "model_quantization=Int8 combined with CUDA providers: quantized ops                      fall back across devices (Memcpy-node overhead) and measure ~2x slower                      than CPU. Prefer model_quantization=Fp32 when running on a GPU."
+                    "model_quantization=Int8 combined with CUDA providers: quantized ops \
+                     fall back across devices (Memcpy-node overhead) and measure ~1.8x \
+                     slower than fp32. Prefer model_quantization=Fp32 on a GPU."
+                );
+            }
+            // fp16 has no fast CPU path: the f16 graph casts around every
+            // op and measures ~3x slower than fp32 on CPU. Only relevant
+            // when fp32 quantization is selected (int8 ignores precision).
+            if self.config.models.model_quantization == crate::config::ModelQuantization::Fp32
+                && self.config.models.model_precision == crate::config::ModelPrecision::Fp16
+                && !has_cuda
+            {
+                tracing::warn!(
+                    "model_precision=Fp16 without a CUDA provider: the f16 graph measures \
+                     ~3x slower than fp32 on CPU (cast overhead). Prefer Fp32 on CPU, or \
+                     model_quantization=Int8 for speed."
                 );
             }
             let enc_providers = self.config.providers.encoder_ort_providers.as_deref();
@@ -643,7 +659,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("bobine-status-empty-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        // Explicit fp32: the default config selects int8 (covered below).
+        // Explicit fp32 (also the default): int8 is covered below.
         let cfg = ConverterConfig {
             models: crate::config::ModelOpts {
                 model_quantization: crate::config::ModelQuantization::Fp32,

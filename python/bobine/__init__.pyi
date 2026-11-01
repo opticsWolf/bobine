@@ -25,14 +25,16 @@ class ImageMode(Enum):
     EmbedBase64 = "embed_base64"
 
 class ModelPrecision(Enum):
+    # Fp32 (default) on CPU and CUDA. Fp16 is the CUDA alternative:
+    # half the weights, ~1.2x faster on long decodes, 29/30 parity.
     Fp32 = "fp32"
     Fp16 = "fp16"
 
 class ModelQuantization(Enum):
     '''Formula-recognizer weight selection.
-    Fp32: exact + fastest (KV-cache decode), ~1.25 GB.
-    Int8: 4x smaller memory footprint, same speed, minor typographic
-    drift possible (lost mathbf bold, epsilon glyph variant).
+    Fp32 (default): reference output on CPU and CUDA, ~1.19 GB.
+    Int8: 4x smaller (~303 MB) and ~1.9x faster on CPU, but decodes
+    differently on some formulas; do not combine with CUDA.
     '''
     Fp32 = "fp32"
     Int8 = "int8"
@@ -61,7 +63,7 @@ class ConverterConfig:
         routing_mode: RoutingMode = RoutingMode.Auto,
         _formula_backend: FormulaBackend = FormulaBackend.TexTeller,
         model_precision: ModelPrecision = ModelPrecision.Fp32,
-        model_quantization: ModelQuantization = ModelQuantization.Int8,
+        model_quantization: ModelQuantization = ModelQuantization.Fp32,
         render_dpi: int = 300,
         formula_dpi: int = 200,
         detect_headings: bool = True,

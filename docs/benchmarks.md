@@ -20,14 +20,20 @@ models pre-cached in `%TEMP%/bobine_test/cache`.
 export ORT_DYLIB_PATH=D:/User/Documents/Rust/onnxruntime/onnxruntime-win-x64-gpu_cuda13-1.28.1/lib/onnxruntime.dll
 
 # CPU runs
-BOB_ORT_PROVIDERS="cpu" cargo run --release --example bench_rapid
+BOBINE_ORT_PROVIDERS="cpu" cargo run --release --example bench_rapid
 cargo run --release --example bench_texteller -- tests/fixtures/formula_sample.png           # fp32 + KV-cache
 cargo run --release --example bench_texteller -- --int8 tests/fixtures/formula_sample.png    # int8
 
+# Variant matrix (fp32 / fp16 / q8 / int8) on the labeled formula eval set.
+# gen_texteller_eval renders the ikat ground-truth LaTeX with pdflatex
+# (TinyTeX works) and writes target/texteller_eval/manifest.json.
+cargo run --release --example gen_texteller_eval
+cargo run --release --example bench_texteller -- --eval target/texteller_eval --all
+
 # GPU (CUDA) runs — PATH must expose cudart/cublas/cudnn first:
 export PATH="/c/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.3/bin/x64:/c/Program Files/NVIDIA/CUDNN/v9.24/bin/13.3/x64:$PATH"
-BOB_ORT_PROVIDERS="cuda"     cargo run --release --example bench_rapid
-BOBINE_ORT_PROVIDERS="cuda,cpu" cargo run --release --example bench_texteller -- tests/fixtures/formula_sample.png
+BOBINE_ORT_PROVIDERS="cuda"     cargo run --release --example bench_rapid
+BOBINE_ORT_PROVIDERS="cuda,cpu" cargo run --release --example bench_texteller -- --eval target/texteller_eval --all
 ```
 
 ## Test results (2026-08-25, bobine 0.4.9)
@@ -94,27 +100,84 @@ noise.
 
 ## TexTeller formula OCR
 
-Per-image timing over 3 reps, min reported; fixture
-`tests/fixtures/formula_sample.png`. Recognized LaTeX was identical across all
-runs: `\[\frac{x^{2}}{a^{2}}- \frac{y^{2}}{b^{2}}=1\]`.
+Two measurements on the reference machine (2026-11-01, bobine 0.7.5), both
+from release builds:
 
-| Variant | Model load | CPU | CUDA | Notes |
+- **Short fixture** — `tests/fixtures/formula_sample.png`, 3 reps, min
+  reported. Fixed cost: one encoder pass plus a short decode.
+- **Labeled eval set** — 30 display formulas from the ikat ground-truth
+  Markdown, rendered at 300 dpi with `pdflatex` by `gen_texteller_eval`
+  (manifest in `target/texteller_eval/`), one timed pass each after a warmup.
+  This exercises the long decodes that dominate real crops.
+
+All four variants reproduce the fixture exactly on both providers:
+`\[\frac{x^{2}}{a^{2}}- \frac{y^{2}}{b^{2}}=1\]`.
+
+### Short fixture (min of 3 runs)
+
+| Variant | Weights | Load CPU / CUDA | CPU | CUDA | CUDA vs CPU |
+|---|---|---|---|---|---|
+| fp32 + KV-cache | ~1.19 GB | 2.05 s / 1.72 s | 1.00 s | **0.42 s** | 2.4× |
+| fp16 | ~598 MB | 1.42 s / 1.22 s | 2.96 s | 0.53 s | 5.6× |
+| q8 (bench only) | ~219 MB | 1.18 s / 1.28 s | 0.67 s | 0.49 s | 1.4× |
+| int8 | ~303 MB | 1.46 s / 1.95 s | **0.54 s** | 1.07 s | 0.5× (slower) |
+
+### Labeled eval set (30 formulas, one pass)
+
+| Variant | CPU median | CPU total | CUDA median | CUDA total |
 |---|---|---|---|---|
-| fp32 merged graph + KV-cache | 2.0 s CPU / 2.4 s CUDA | 0.95 s/run | **0.42 s/run** | ≈ 2.3× on CUDA |
-| int8 quantized (split enc/dec) | 1.4 s CPU / 5.0 s CUDA | **0.50 s/run** | 1.32 s/run | int8 wins on CPU; loses on CUDA |
+| fp32 | 2.01 s | 69.4 s | 1.49 s | **45.7 s** |
+| fp16 | 6.10 s | 228.1 s | **1.21 s** | 47.2 s |
+| q8 (bench only) | 1.67 s | 65.3 s | 1.55 s | 69.8 s |
+| int8 | **1.05 s** | **39.5 s** | 2.70 s | 95.5 s |
 
-> **Stale as of 0.7.4**: the int8 row was measured on the superseded
-> no-KV-cache onnx-community export. The shipping default is the merged
-> KV-cache dynamic int8 from the unified serving repo — re-measurement
-> (speed + int8-vs-fp32 parity) is scheduled for the next release.
+### Accuracy
 
-Takeaways:
-- On **CPU**, prefer the int8 exports (≈ 1.9× faster than fp32, identical output).
-- On **CUDA**, prefer the fp32 + KV-cache graph; the quantized model is slower
-  under the CUDA EP (dequant overhead dominates) *and* pays a much larger
-  session-init cost.
-- The int8 export has no KV-cache (full-sequence recompute), which further
-  penalizes it despite being smaller.
+GT similarity is normalized Levenshtein against the source LaTeX (display
+fences, `\left`/`\right`, `\limits`, and whitespace stripped). Exact GT match
+is structurally low because TexTeller's house style differs from the
+MathML-derived ground truth (`\mathrm`, `\mbox`, `\,` placement), so **parity
+against fp32 within the same provider** is the meaningful quantization metric.
+
+| Variant | GT exact (CPU / CUDA) | GT similarity (CPU / CUDA) | Parity vs fp32 CPU | Parity vs fp32 CUDA |
+|---|---|---|---|---|
+| fp32 | 1/30 / 1/30 | 0.579 / 0.579 | — | — |
+| fp16 | 1/30 / 1/30 | 0.579 / 0.579 | 28/30 (0.998) | 29/30 (1.000) |
+| q8 (bench only) | 1/30 / 1/30 | 0.459 / 0.459 | 4/30 (0.644) | 4/30 (0.644) |
+| int8 | 2/30 / 1/30 | 0.553 / 0.557 | 10/30 (0.830) | 10/30 (0.843) |
+
+Findings:
+
+- **CPU: int8 is the opt-in speed tier** — 1.9× faster than fp32 at the
+  median (1.05 s vs 2.01 s) on a quarter of the weights. fp32 stays the
+  default because int8 is *not* output-identical: 10/30 exact parity, 0.83
+  mean similarity. Most drift is stylistic (`\rm` dropped, `\left(` → `(`,
+  `\tfrac`), but one formula collapses to `\[t_{0}=0,e_{0}\]` where fp32
+  decodes the full sum.
+- **q8 is rejected.** 4/30 parity, and one formula degenerates into a
+  repetition loop (2318 characters, 17–20 s) — an unbounded decode is a
+  latency hazard, not just an accuracy miss. It stays benchmark-only; the
+  library has no q8 constructor.
+- **CUDA: fp16 is the opt-in speed tier** — 1.2× faster than fp32 at the
+  median on the eval set with half the weights, and 29/30 parity at 1.000
+  similarity (the single difference is `\,` placement). fp32 still wins the
+  short fixture (0.42 s vs 0.53 s), so the fp16 gain grows with decode length.
+- **int8 on CUDA is 1.8× slower than fp32** (2.70 s vs 1.49 s median): ORT
+  inserts 171–267 memcpy nodes around the quantized ops. The engine already
+  warns when int8 meets a CUDA provider.
+- **CUDA helps long decodes far less than the fixture suggests** — 1.35× at
+  the median on the eval set vs 2.4× on the fixture — because autoregressive
+  steps are launch-latency bound, not FLOP bound.
+- **fp16 on CPU is 3× slower than fp32** (no fast f16 path; cast overhead).
+  Do not select it there.
+- **int8 output is provider-dependent**: only 15/30 formulas match between
+  CPU and CUDA, versus 30/30 for fp32 and 29/30 for fp16. int8 results are not
+  reproducible across hardware.
+
+Recommendation: keep `model_quantization=Fp32` (the default) for reference
+output on either provider. Choose `Int8` only when CPU throughput matters more
+than exact reproduction, and `ModelPrecision::Fp16` only on CUDA. The engine
+warns on int8 + CUDA and on fp16 without CUDA.
 
 ## OCR accuracy vs ikat ground truth (P-D harness — 0.7.1)
 

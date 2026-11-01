@@ -195,14 +195,20 @@ repro commands in
 | OCR 47-line page (batched) | 0.79 s | **0.32 s (6.3× vs per-line)** | CUDA + chunked rec |
 | Table (SLANet-plus, 700×400) | **28.8 ms** | 49 ms (0.6× — slower) | Pinned to CPU |
 | Table (SLANet-plus, 1024²) | **133 ms** | 893 ms (0.15× — much slower) | Pinned to CPU |
-| TexTeller fp32 + KV-cache | 0.95 s | **0.42 s (~2.3×)** | CUDA opt-in (see below) |
-| TexTeller int8 | **0.50 s** | 1.32 s (slower) | CPU default |
+| TexTeller fp32 + KV-cache | 1.00 s | **0.42 s (2.4×)** | Default (CPU + CUDA) |
+| TexTeller fp16 | 2.96 s | 0.53 s | CUDA alternative |
+| TexTeller int8 | **0.54 s** | 1.07 s (0.5× — slower) | CPU alternative |
 
 Takeaways:
 
 - **CUDA wins big on layout + OCR** (12.8× / 3.6×) — auto-enabled, zero config.
 - **Tables stay on CPU by design** — SLANet fragments across devices (2–9× slower on CUDA).
-- **Quantization is hardware-dependent**: int8 is ~1.9× faster than fp32 on CPU (identical output, ~319 MB vs ~1.25 GB) but loses on CUDA (dequant overhead, no KV-cache); Int8 + CUDA is discouraged and warned against.
+- **Quantization is hardware-dependent**: fp32 is the default on both CPU and
+  CUDA. On CPU, int8 is the speed alternative — 1.9× faster than fp32 at a
+  quarter of the weights (~303 MB vs ~1.19 GB), but it decodes differently on
+  some formulas. On CUDA, fp16 is the alternative — half the weights, 1.2×
+  faster, and 29/30 exact parity with fp32. int8 + CUDA is 1.8× slower
+  (dequant/memcpy overhead) and warned against.
 - **Batching is provider-gated**: chunked rec is 6.3× faster on CUDA but was measured 4.8× *slower* on CPU — CPU sessions keep the exact single-line path (byte-identical tensors).
 
 ## Formula OCR
@@ -214,15 +220,26 @@ with markedly better accuracy.
 
 ### Model choice
 
-By default bobine downloads the quantized export
-(~319 MB total, HF `Ji-Ha/TexTeller3-ONNX-dynamic`) into the converter's
-cache dir on first use; set `model_quantization=ModelQuantization::Fp32` to
-use full-precision weights (~1.25 GB, HF `opticsWolf/texteller3-onnx`) instead.
+By default bobine downloads the fp32 pair (~1.19 GB total, HF
+`opticsWolf/texteller3-onnx`, pinned revision) into the converter's cache dir
+on first use. Two opt-ins:
+
+- `model_quantization=ModelQuantization::Int8` — dynamic-int8 pair (~303 MB).
+  The fastest CPU option, at the cost of occasional decode drift.
+- `model_precision=ModelPrecision::Fp16` — half-precision pair (~598 MB).
+  The fastest CUDA option; numerically equivalent to fp32.
+
 Preprocessing matches upstream TexTeller exactly, including its
 normalize-before-pad order (v0.4.4 fixed black pad fill, which measurably
-degraded recognition). Measured on a 10-formula corpus: Int8+CPU scores
-10/10, Fp32+CUDA 9/10 — occasional single-token decode noise flips between
-examples on either variant, so pick by hardware, not quality.
+degraded recognition).
+
+Quantization is not free. On the 30-formula ikat eval set, int8 matches fp32
+exactly on 10/30 (mean similarity 0.83); fp16 matches on 28–29/30
+(0.998–1.000, differing only in thin-space placement). int8 drift is mostly
+stylistic, but a small number of formulas decode differently, and its output
+also varies by execution provider. Measured on that set, int8 is 1.9× faster
+than fp32 on CPU, while fp16 is 1.2× faster on CUDA. See
+[docs/benchmarks.md](docs/benchmarks.md) for the full matrix.
 
 ### GPU
 
@@ -233,9 +250,10 @@ shared embroider crate since v0.5.10).
 
 Zero config needed; explicit per-slot overrides: `layout_ort_providers`,
 `ocr_ort_providers`, `table_ort_providers`, `encoder_ort_providers`,
-`decoder_ort_providers`. To also run Fp32 formula decode on the GPU, set
-`ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"]`
-(Int8 + CUDA is discouraged and warned against).
+`decoder_ort_providers`. To also run fp32 formula decode on the GPU, set
+`ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"]` (the
+default); for the CUDA speed tier add `model_precision=ModelPrecision::Fp16`.
+Int8 + CUDA is discouraged and warned against; so is fp16 without CUDA.
 
 ### Formula regions
 
@@ -303,7 +321,7 @@ generated OOXML fixtures — see `tests/fixtures/SOURCES.md` for provenance.
 
 - [**Quick reference**](https://github.com/opticsWolf/bobine/blob/main/docs/quickref.md) — install, API, config, common tasks
 - [**Architecture**](https://github.com/opticsWolf/bobine/blob/main/docs/architecture.md) — modules, data flow, coordinate spaces, model acquisition
-- [**Benchmarks & test results**](https://github.com/opticsWolf/bobine/blob/main/docs/benchmarks.md) — full CPU vs CUDA tables, TexTeller fp32/int8, OCR batching analysis, environment setup
+- [**Benchmarks & test results**](https://github.com/opticsWolf/bobine/blob/main/docs/benchmarks.md) - full CPU vs CUDA tables, TexTeller fp32/fp16/q8/int8 speed and parity, OCR batching analysis, environment setup
 - [**Proposal: figures/tables/layout**](https://github.com/opticsWolf/bobine/blob/main/docs/proposal_media_tables.md) — plan for reading-order image placement and structured table extraction
 - [**Proposal: JATS/MathML formulas**](https://github.com/opticsWolf/bobine/blob/main/docs/proposal_jats_mml.md) — `mml_to_tex` in Rust, JATS input adapter, OCR sanitizer + benchmark, okfgraph/gossamer phases
 

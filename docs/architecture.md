@@ -173,7 +173,7 @@ Three lazy slots, each loaded on first use and cached:
 
 | Slot | Model source | Loaded by |
 |---|---|---|
-| `tex_teller` | HuggingFace via `hf-hub` (blocking): default **Int8** from `Ji-Ha/TexTeller3-ONNX-dynamic` (repo-isolated in the shared hub cache); `ModelQuantization::Fp32` uses the unified `opticsWolf/texteller3-onnx` serving repo (TexTeller3 canonical + OleehyO merged decoder, weight-identical) | `ensure_tex_teller()` |
+| `tex_teller` | HuggingFace via `hf-hub` (blocking): `ModelQuantization::Fp32` (default) and `Int8` both resolve to the unified `opticsWolf/texteller3-onnx` serving repo (TexTeller3 canonical + OleehyO merged decoder, weight-identical; int8 byte-verified against the former Ji-Ha blobs), pinned revision | `ensure_tex_teller()` |
 | `layout` | HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` (auto-download, probe-first) or local path (`set_layout_model()`) | `ensure_layout()` |
 | `ocr` | HF `SWHL/RapidOCR` PP-OCRv4 det+rec (auto-download, probe-first) or local paths (`set_ocr_models()`) | `ensure_ocr()` |
 | `table` | local slanet-plus path (`set_table_model()`) or auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` (~7.8 MB) into `<cache>/models/` | `ensure_table()` (lazy — only on table regions) |
@@ -194,7 +194,7 @@ selects the default, which encodes the measured ledger:
 |---|---|---|
 | layout, ocr | **auto-GPU** — CUDAExecutionProvider prepended when the loaded dylib exposes a usable CUDA EP (EP-availability probe) | measured 12.3x / 3.6x on CUDA |
 | table | **CPU-pinned** | SLANet measures 2-9x slower on CUDA (graph fragments across devices) |
-| tex_teller | base `ort_providers` | Int8+CUDA guarded with a warning; Fp32+CUDA opt-in via the base list |
+| tex_teller | base `ort_providers` | Fp32 is the default tier; Int8+CUDA and Fp16-without-CUDA are guarded with warnings |
 
 Session construction runs through `engine::session_builder()`: the
 `SessionPolicy::ort_defaults()` policy from the shared **embroider** crate
@@ -305,19 +305,19 @@ as Python.
 
 - **TexTeller**: downloaded automatically on first use into the shared
   hub cache (repo-isolated, pinned revisions). Default
-  (`ModelQuantization::Int8`):
+  (`ModelQuantization::Fp32`):
   `https://huggingface.co/opticsWolf/texteller3-onnx`
-  (`encoder_model_dynamic-int8.onnx`,
-  `decoder_model_merged_dynamic-int8.onnx`, `tokenizer.json`, ~318 MB
-  total) — byte-identical to the former Ji-Ha files (sha256-verified),
-  KV-cache interface retained. Fp32 fallback: the unified first-party
-  serving repo `https://huggingface.co/opticsWolf/texteller3-onnx`
   (`encoder_model.onnx` 344 MB, `decoder_model_merged.onnx` 909 MB,
-  `tokenizer.json`) — TexTeller3 files canonical plus OleehyO's merged
-  decoder verbatim, both upstreams proven weight-identical. Tokenizer
-  and weights are paired per variant. The unified repo also builds the
-  `*_fp16.onnx` pair the upstreams lack, so `ModelPrecision::Fp16`
-  filenames resolve (numerics gate still open — unmeasured).
+  `tokenizer.json`, ~1.19 GB total) — TexTeller3 files canonical plus
+  OleehyO's merged decoder verbatim, both upstreams proven weight-identical.
+  The same repo also builds the `*_fp16.onnx` pair the upstreams lack, so
+  `ModelPrecision::Fp16` filenames resolve (numerics measured: 28-29/30
+  exact parity with fp32, differences confined to `\,` placement; see
+  `docs/benchmarks.md`). Opt-in int8 (`ModelQuantization::Int8`):
+  `encoder_model_dynamic-int8.onnx`,
+  `decoder_model_merged_dynamic-int8.onnx`, `tokenizer.json`, ~303 MB —
+  byte-identical to the former Ji-Ha files (sha256-verified), KV-cache
+  interface retained.
 - **RapidLayout / RapidOCR**: downloaded automatically on first use unless
   explicit local paths are set via `OnnxEngine::set_layout_model` /
   `set_ocr_models`. Layout: `wybxc/DocLayout-YOLO-DocStructBench-onnx`

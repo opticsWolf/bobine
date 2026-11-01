@@ -1,5 +1,36 @@
 # Changelog — bobine
 
+## Unreleased
+
+- **TexTeller now defaults to fp32.** `ModelOpts::default()` and the Python
+  bindings select `ModelQuantization::Fp32` on both CPU and CUDA. int8 is now
+  the opt-in CPU speed tier (≈1.9× faster, occasional decode drift) and fp16
+  the opt-in CUDA tier (≈1.2× faster, 29/30 exact parity). A warning now
+  fires for fp16 without a CUDA provider, mirroring the existing int8+CUDA
+  warning.
+- **TexTeller fp16 decode fixed.** The fp16 merged decoder hoists its
+  entry Casts outside the `If`, so ONNX Runtime requires every
+  `past_key_values.*` input even on the prefill step. The KV loop used to
+  omit them (fp32/int8 tolerate that) and failed with `Missing Input:
+  past_key_values.0.decoder.key`. Prefill now feeds empty
+  `[1,16,0,64]` caches — valid for all three merged exports and ignored
+  by the no-past branch. fp16 reproduces the fp32 LaTeX on the reference
+  fixture.
+- **TexTeller variant benchmark.** `bench_texteller` now covers
+  fp32 / fp16 / q8 / int8 (`--all`), can run the matrix in one process,
+  and scores predictions against a labeled eval set (`--eval`). The set
+  is built by the new `gen_texteller_eval` example from the ikat
+  ground-truth displays rendered with `pdflatex` (30 formulas, exact GT).
+  q8 stays benchmark-only: the serving surface still has no q8
+  constructor, and the repo's parity gate continues to reject it.
+- **Variant matrix measured** (30 labeled formulas, CPU + CUDA). fp16
+  matches fp32 on 28/30 CPU and 29/30 CUDA, differing only in `\,`
+  placement. int8 matches on 10/30 — mostly stylistic drift, but one
+  formula collapses — and is 1.9× faster than fp32 on CPU, 1.8× slower on
+  CUDA. q8 matches on 4/30 and degenerates into a 2318-character
+  repetition loop on one formula. int8 output also varies by provider
+  (15/30 identical across CPU and CUDA).
+
 ## 0.7.4 — 2026-10-31
 
 - `embroider` 0.3.3 → 0.12.0 (nine minors, all new model slots;
