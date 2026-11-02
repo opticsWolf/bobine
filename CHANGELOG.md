@@ -1,6 +1,6 @@
 # Changelog — bobine
 
-## Unreleased
+## 0.7.5 — 2026-11-02
 
 - **TexTeller now defaults to fp32.** `ModelOpts::default()` and the Python
   bindings select `ModelQuantization::Fp32` on both CPU and CUDA. int8 is now
