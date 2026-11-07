@@ -345,6 +345,12 @@ as Python.
 
 ## 9. Version pinning philosophy
 
+Table-slot alternatives reviewed 2026-11-07: TableFormer (2022-03)
+and TATR (2022) both predate SLANet_plus (2023 PaddleOCR improvement
+for wireless/complex tables) — the slot stands. The newer generation
+(TABLET 2025, SLANet-1M 2025, POTATR 2026) has no clean ONNX serving
+artifacts; re-evaluate when it does.
+
 Rust dependencies are locked in `Cargo.lock` (update deliberately with
 `cargo update -p <crate>`, never blindly — the pdf_oxide 0.3.77→0.3.78
 roll moved whole-corpus golden output and was reviewed file-by-file before
