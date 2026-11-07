@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 
 use crate::config::{
     ConverterConfig, FormulaBackend, ImageMode, ModelOpts, ModelPrecision, ModelQuantization,
+    TableBackend,
     ProviderOpts, RenderOpts, RoutingMode, RoutingOpts, TextOpts,
 };
 use crate::converter::{HybridConverter, ProgressHooks};
@@ -86,6 +87,34 @@ pub enum PyModelQuantization {
     Int8,
 }
 
+#[pyclass(eq, eq_int, name = "TableBackend")]
+#[derive(Clone, PartialEq)]
+pub enum PyTableBackend {
+    Slanet,
+    Potatr,
+    Auto,
+}
+
+impl From<PyTableBackend> for TableBackend {
+    fn from(v: PyTableBackend) -> Self {
+        match v {
+            PyTableBackend::Slanet => TableBackend::Slanet,
+            PyTableBackend::Potatr => TableBackend::Potatr,
+            PyTableBackend::Auto => TableBackend::Auto,
+        }
+    }
+}
+
+impl From<TableBackend> for PyTableBackend {
+    fn from(v: TableBackend) -> Self {
+        match v {
+            TableBackend::Slanet => PyTableBackend::Slanet,
+            TableBackend::Potatr => PyTableBackend::Potatr,
+            TableBackend::Auto => PyTableBackend::Auto,
+        }
+    }
+}
+
 #[pyclass(name = "ConverterConfig")]
 #[derive(Clone)]
 pub struct PyConverterConfig {
@@ -124,12 +153,16 @@ impl PyConverterConfig {
         math_char_threshold = 30usize,
         scanned_text_threshold = 50usize,
         ocr_lang = "en".to_string(),
+        table_backend = PyTableBackend::Slanet,
+        potatr_node_threshold = 0.8f32,
+        potatr_edge_threshold = 0.5f32,
         ort_providers = None,
         encoder_ort_providers = None,
         decoder_ort_providers = None,
         layout_ort_providers = None,
         ocr_ort_providers = None,
         table_ort_providers = None,
+        potatr_ort_providers = None,
     ))]
     fn new(
         extract_images: bool,
@@ -160,12 +193,16 @@ impl PyConverterConfig {
         math_char_threshold: usize,
         scanned_text_threshold: usize,
         ocr_lang: String,
+        table_backend: PyTableBackend,
+        potatr_node_threshold: f32,
+        potatr_edge_threshold: f32,
         ort_providers: Option<Vec<String>>,
         encoder_ort_providers: Option<Vec<String>>,
         decoder_ort_providers: Option<Vec<String>>,
         layout_ort_providers: Option<Vec<String>>,
         ocr_ort_providers: Option<Vec<String>>,
         table_ort_providers: Option<Vec<String>>,
+        potatr_ort_providers: Option<Vec<String>>,
     ) -> Self {
         // Execution-provider selection is resolved at runtime against the
         // loaded ONNX Runtime library (ORT_DYLIB_PATH). Requesting an
@@ -189,6 +226,9 @@ impl PyConverterConfig {
                         PyModelQuantization::Int8 => ModelQuantization::Int8,
                     },
                     ocr_lang,
+                    table_backend: table_backend.into(),
+                    potatr_node_threshold,
+                    potatr_edge_threshold,
                 },
                 providers: ProviderOpts {
                     ort_providers,
@@ -197,6 +237,7 @@ impl PyConverterConfig {
                     layout_ort_providers,
                     ocr_ort_providers,
                     table_ort_providers,
+                    potatr_ort_providers,
                 },
                 render: RenderOpts {
                     extract_images,
@@ -289,6 +330,22 @@ impl PyConverterConfig {
     #[getter]
     fn table_ort_providers(&self) -> Option<Vec<String>> {
         self.inner.providers.table_ort_providers.clone()
+    }
+    #[getter]
+    fn potatr_ort_providers(&self) -> Option<Vec<String>> {
+        self.inner.providers.potatr_ort_providers.clone()
+    }
+    #[getter]
+    fn table_backend(&self) -> PyTableBackend {
+        self.inner.models.table_backend.into()
+    }
+    #[getter]
+    fn potatr_node_threshold(&self) -> f32 {
+        self.inner.models.potatr_node_threshold
+    }
+    #[getter]
+    fn potatr_edge_threshold(&self) -> f32 {
+        self.inner.models.potatr_edge_threshold
     }
     #[getter]
     fn sanitize_ocr(&self) -> bool {
@@ -702,6 +759,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRoutingMode>()?;
     m.add_class::<PyImageMode>()?;
     m.add_class::<PyFormulaBackend>()?;
+    m.add_class::<PyTableBackend>()?;
     m.add_class::<PyModelPrecision>()?;
     m.add_class::<PyConverterConfig>()?;
     m.add_class::<PyHybridConverter>()?;

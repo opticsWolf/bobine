@@ -1,5 +1,16 @@
 # Changelog — bobine
 
+## Unreleased
+
+- **POTATR P0: model slot + preprocess (opt-in).** New `src/rapid_potatr.rs`
+  (`POTATR_REPO`/`REV=e7f1ce67…` — `opticsWolf/potatr-onnx`, `download_potatr`,
+  `Potatr::load`/`forward`, exact eval-preprocess replication with
+  `PotatrGeometry`); `OnnxEngine` lazy `potatr` slot + `set_potatr_model` +
+  CPU-pinned providers; `TableBackend::{Slanet,Potatr,Auto}` (default
+  `Slanet`) + thresholds + `potatr_ort_providers` in config, Python
+  bindings, and `tests/test_potatr.rs` preprocess parity vs the reference
+  transform (max|d| 0.0175 ≤ 0.03). No routing yet — behavior unchanged.
+
 ## 0.8.0 — 2026-11-07
 
 The 0.7.5 development line (TexTeller fp32 default, variant matrix)

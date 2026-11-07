@@ -100,7 +100,9 @@ the `region_claim_priority` / `CLAIM_NONE` mechanism (`converter.rs:83-108`).
      `potatr/datasets.py` and pin the constants in comments (resample mode,
      mean, std — verify, do not assume);
   2. longest-side → 1000 with the `image` crate filter matching PIL default
-     (expected: `FilterType::Nearest`; confirm by parity test, not by docs);
+     (settled empirically 2026-11-07 on Pillow 13: default == BICUBIC;
+     nearest `image` filter is `CatmullRom`; parity gate allows 0.03,
+     measured 0.0175);
   3. RGB → CHW float32 → ImageNet normalize.
 - `Potatr::forward(&mut self, input) -> (node_logits, boxes, edge_logits)` —
   named-output lookup by substring (`pred_node_logits` etc.), following the

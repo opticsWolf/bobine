@@ -1,0 +1,10 @@
+{
+ "shape": [
+  3,
+  751,
+  1000
+ ],
+ "fixture": "potatr_preprocess.png",
+ "pillow": "13.0.0",
+ "note": "reference eval transform: PIL default resample (=BICUBIC) + ToTensor + ImageNet normalize"
+}

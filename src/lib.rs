@@ -17,6 +17,7 @@ pub mod pdf_source;
 pub mod pipeline;
 pub mod rapid_layout;
 pub mod rapid_ocr;
+pub mod rapid_potatr;
 pub mod rapid_table;
 pub mod sanitize;
 pub mod tables;

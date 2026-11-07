@@ -8,6 +8,18 @@ fn default_max_embed_bytes() -> usize {
     262_144
 }
 
+fn default_table_backend() -> TableBackend {
+    TableBackend::Slanet
+}
+
+fn default_potatr_node_threshold() -> f32 {
+    0.8
+}
+
+fn default_potatr_edge_threshold() -> f32 {
+    0.5
+}
+
 /// Controls how pages are routed between fast (pdf_oxide) and ONNX paths.
 ///
 /// Cost ladder: `Never` (no models) < `Surgical` (TexTeller only) < `Auto`
@@ -128,6 +140,13 @@ pub struct ProviderOpts {
     /// (measured 1.7x at 700x400, 6.7x at 1024x1024; see docs/benchmarks.md).
     #[serde(default)]
     pub table_ort_providers: Option<Vec<String>>,
+
+    /// Provider override for the POTATR page-table slot.
+    /// `None` (default) = **always CPU**: same attention-heavy profile
+    /// as the table slot, and no CUDA numbers exist yet (P0 gate is
+    /// CPU-only; measure before overriding).
+    #[serde(default)]
+    pub potatr_ort_providers: Option<Vec<String>>,
 }
 
 /// How figure images are referenced in the markdown output.
@@ -185,6 +204,19 @@ pub struct RenderOpts {
     pub preserve_layout: bool,
 }
 
+/// Which table-structure backend to use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TableBackend {
+    /// SLANet-plus crop-level path via `table_block` (default in v1;
+    /// POTATR ships opt-in — see `docs/proposal_potatr.md` §6 flip gate).
+    Slanet,
+    /// POTATR page-level path (once P2 routing lands; P0 wires the slot
+    /// + preprocess only).
+    Potatr,
+    /// POTATR on pages with words, SLANet fallback elsewhere (P2).
+    Auto,
+}
 /// Model-selection knobs (weights, backends, language).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelOpts {
@@ -203,6 +235,18 @@ pub struct ModelOpts {
     /// `character` metadata. Models loaded via explicit paths usually embed
     /// their charset, making this a no-op for them.
     pub ocr_lang: String,
+
+    /// Which table-structure backend to use (opt-in POTATR in v1).
+    #[serde(default = "default_table_backend")]
+    pub table_backend: TableBackend,
+
+    /// POTATR node-score threshold (reference default 0.8, `evaluate.py`).
+    #[serde(default = "default_potatr_node_threshold")]
+    pub potatr_node_threshold: f32,
+
+    /// POTATR edge threshold (reference default 0.5, `inference.py`).
+    #[serde(default = "default_potatr_edge_threshold")]
+    pub potatr_edge_threshold: f32,
 }
 
 /// Text-layer / markdown-shaping knobs.
@@ -300,6 +344,7 @@ impl Default for ProviderOpts {
             layout_ort_providers: None,
             ocr_ort_providers: None,
             table_ort_providers: None,
+            potatr_ort_providers: None,
         }
     }
 }
@@ -327,6 +372,9 @@ impl Default for ModelOpts {
             model_precision: ModelPrecision::Fp32,
             model_quantization: ModelQuantization::Fp32,
             ocr_lang: "en".to_string(),
+            table_backend: TableBackend::Slanet,
+            potatr_node_threshold: 0.8,
+            potatr_edge_threshold: 0.5,
         }
     }
 }
