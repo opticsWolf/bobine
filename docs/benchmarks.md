@@ -58,15 +58,21 @@ Synthetic 1024×1024 page, best-of-30 reps for table, avg-of-N otherwise.
 
 | Model | Load | CPU | CUDA (RTX 3090) | Speedup |
 |---|---|---|---|---|
-| Layout (DocLayout-YOLO, 1024×1024) | 0.36 s CPU / 0.48–0.56 s CUDA | 480 ms/run | **37–38 ms/run** (11 regions) | **≈ 12.8×** |
-| OCR det+rec (PP-OCRv4, 1024×1024) | 0.20 s both | 131 ms/run | **36 ms/run** | **≈ 3.6×** |
+| Layout (PP-DocLayout_plus-L, 1024×1024) | 0.60 s CPU / 0.76 s CUDA | 320 ms/run | **44.6 ms/run** (1 region) | **≈ 7.2×** |
+| OCR det+rec (PP-OCRv5, 1024×1024) | 0.20 s CPU / 0.17 s CUDA | 143 ms/run | **38.0 ms/run** | **≈ 3.8×** |
 | Table SLANet-plus 700×400 | 0.10–0.14 s both | **28.8 ms/run best** | 49 ms/run best | 0.6× (slower on CUDA) |
 | Table SLANet-plus 1024×1024 | — | **133 ms/run best** | 893 ms/run best | 0.15× (much slower on CUDA) |
 
 Confirms the documented routing policy: CUDA is auto-enabled for the layout and
-OCR slots (measured here at 12.8× / 3.6×), while table recognition stays pinned
+OCR slots (measured here at 7.2× / 3.8×), while table recognition stays pinned
 to CPU — SLANet's graph fragments across devices and measures **2–9× slower on
 CUDA** (here: 1.7× slower at 700×400, 6.7× slower at 1024×1024).
+
+Note the DETR trade on the layout slot: PP-DocLayout_plus-L is 1.5× faster
+than YOLO on CPU (320 vs 480 ms) but slightly slower on CUDA (44.6 vs
+37–38 ms) — transformer attention parallelizes less cleanly and parts of
+the graph stay on CPU. Either way CUDA wins 7× over CPU, so the routing
+policy is unchanged.
 
 ### OCR recognition batching (v0.4.28)
 
