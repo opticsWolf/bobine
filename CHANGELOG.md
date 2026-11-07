@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **POTATR P1: postprocess port + parity gate.** `src/rapid_potatr.rs` ports
+  `postprocess.py` (objects → structures → cells, rotations, NMS family),
+  `metrics.cells_to_html` (thead/th + tbody/td, ET-faithful empty elements +
+  escaping), and `inference` edge-linking/`tables_from_outputs`. Four
+  reference unit tests ported green; ignored `tests/test_potatr_parity.rs`
+  (`BOBINE_POTATR_PARITY=1`) reproduces the torch reference on chem-olive p5
+  with byte-exact HTML (21 cells), caption, and grid — box drift 0.054px.
+  No routing yet — behavior unchanged.
 - **POTATR P0: model slot + preprocess (opt-in).** New `src/rapid_potatr.rs`
   (`POTATR_REPO`/`REV=e7f1ce67…` — `opticsWolf/potatr-onnx`, `download_potatr`,
   `Potatr::load`/`forward`, exact eval-preprocess replication with

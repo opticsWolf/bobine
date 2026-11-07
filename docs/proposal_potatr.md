@@ -151,12 +151,14 @@ unit-testable; later ones consume earlier ones):
 Rotated classes (`table rotated`, …): map to the unrotated handling in v1 and
 log the label (deskew path is a later proposal if ever).
 
-**Test (this phase's gate):** `tests/test_tex_potatr_parity.rs`, `#[ignore]`,
+**Test (this phase's gate):** `tests/test_potatr_parity.rs`, `#[ignore]`,
 `BOBINE_POTATR_PARITY=1` (mirrors `test_tex_teller_parity.rs`): load
 `potatr.onnx` from the hub cache + run chem-olive p.5 fixture through
 preprocess → session → ported postprocess, assert the 21-cell table reproduces
-the Python reference byte-identical (cells + HTML). Downloads ~116 MB once;
-excluded from the default suite like the TexTeller gate.
+the Python reference with byte-exact HTML/cells/caption and table bboxes
+within 0.5px (measured drift 0.054px — the accepted P0 resampler delta).
+Downloads ~116 MB once; excluded from the default suite like the TexTeller gate.
+Landed 2026-11-07: 4 reference unit tests ported green + gate green.
 
 ## 6. Phase P2 — routing + config + goldens (medium)
 
@@ -220,7 +222,7 @@ gate already produced these numbers: 39 GT, ~43 detected).
 | Phase | Test | Suite | Gate |
 |---|---|---|---|
 | P0 | preprocess parity (Rust vs Python tensor) | default (`test_potatr.rs`) | exact / 1e-6 |
-| P1 | bbox/text-span units; ported repo cases; 21-cell chem fixture byte-parity | default + ignored (`BOBINE_POTATR_PARITY=1`, ~116 MB weights) | byte-identical |
+| P1 | ported repo cases (4 green); 21-cell chem fixture: HTML byte-exact, boxes 0.5px | default + ignored (`BOBINE_POTATR_PARITY=1`, ~116 MB weights) | HTML exact, boxes ≤ 0.5px |
 | P2 | claim/suppress unit (synthetic regions + boxes); golden pages reviewed | default + goldens | reviewer sign-off |
 | P3 | in-tree ikat rerun (torch harness already exists in `potatr-export/`) | manual | GriTS-Con ≥ 0.88 (allows render variance) |
 
