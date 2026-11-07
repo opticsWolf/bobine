@@ -114,7 +114,11 @@ note the table-slot precedent (CPU-pinned, `architecture.md` benchmarks table):
 measure before choosing, default CPU until CUDA numbers exist.
 
 **`src/config.rs`:** `TableBackend { Slanet, Potatr, Auto }` on `ModelOpts`
-(default `Slanet` in v1 — opt-in; flip to `Auto` only per §9 gate) +
+(default `Slanet` in v1 — opt-in; flip to `Auto` only when the triple gate
+in §6 holds: (i) in-tree ikat rerun reproduces GriTS-Con >= 0.88, (ii) median
+per-page wall time with POTATR <= the SLANet path it replaces (measured in
+`benchmarks.md`, not projected), (iii) page renders trustworthy — the CID
+renderer dependency in §9 resolved for the flipped paper class) +
 `potatr_node_threshold: f32` (0.8) + `potatr_edge_threshold: f32` (0.5) on
 `TextOpts`-adjacent knobs; Python bindings + `.pyi` mirror.
 
@@ -173,9 +177,25 @@ claims are visible to every arm).
    neither `table_block` nor the caption/figure arms double-emit. Unclaimed
    regions flow through the existing arms unchanged (SLANet fallback intact).
 
-**Precedence decision (needs your sign-off before code):** POTATR wins inside
-its edge-linked claim set; the figure arm keeps all other captions. IoU
-threshold 0.5 default, config-exposed.
+**Precedence decision (sign-off at P2 kickoff — see §10; options in §6.1):**
+POTATR wins inside its edge-linked claim set; the figure arm keeps all other
+captions. IoU threshold 0.5 default, config-exposed.
+
+### 6.1 Caption/footer precedence options (for the P2 sign-off)
+
+- **(A) POTATR wins in its claim set (recommended).** Any layout
+  `table_caption`/`table_footer`/caption region with IoU > 0.5 against a
+  POTATR-claimed caption/footer box is suppressed; the edge-linked text
+  ships inside the table block. Everywhere else the figure/caption arms
+  behave exactly as today. Deterministic, no double-emission, minimal
+  blast radius.
+- **(B) Figure arm wins everywhere.** POTATR emits tables only; its
+  caption/footer boxes are used solely to *suppress* (never to emit).
+  Simpler port (skip `linked_text_parts`), but table blocks lose their
+  captions and the claim set's extra value is discarded.
+- **(C) Emit both, dedupe by text.** Rejected: caption wording from words
+  vs text-layer extraction will differ in whitespace/notation and the
+  dedup will be a fuzzy-match swamp.
 
 **Goldens:** chem-olive + econ-tax pages through the new path with
 `BOBINE_UPDATE_GOLDENS=1`, hunk-reviewed (office_oxide discipline); corpus
