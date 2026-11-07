@@ -206,10 +206,14 @@ impl RapidLayout {
         let input = ort::value::Tensor::from_array(tensor)
             .map_err(|e| BobineError::Ort(format!("build input: {e}")))?;
         let im_shape = ndarray::arr2(&[[orig_h as f32, orig_w as f32]]);
-        let scale = ndarray::arr2(&[[
-            DETR_INPUT_SIZE as f32 / orig_h as f32,
-            DETR_INPUT_SIZE as f32 / orig_w as f32,
-        ]]);
+        // This export's postprocess multiplies the RT-DETR normalized boxes
+        // by im_shape (already original scale) and then divides by
+        // scale_factor, following the Paddle deploy convention that expects
+        // pre-scale boxes in resized space. Passing the textbook
+        // [[800/h, 800/w]] therefore inflates every box 3-4x (verified
+        // 2026-11-07: textbook scale puts the table in empty whitespace,
+        // ones recover it to within 7px). Ones keep the orig-scale boxes.
+        let scale = ndarray::arr2(&[[1.0_f32, 1.0_f32]]);
         let outputs = self
             .session
             .run(inputs![

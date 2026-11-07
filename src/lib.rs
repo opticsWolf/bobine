@@ -28,7 +28,7 @@ mod py_bindings;
 
 pub use config::{
     ConverterConfig, FormulaBackend, ImageMode, ModelOpts, ModelPrecision, ModelQuantization,
-    ProviderOpts, RenderOpts, RoutingMode, RoutingOpts, TextOpts,
+    ProviderOpts, RenderOpts, RoutingMode, RoutingOpts, TableBackend, TextOpts,
 };
 pub use converter::{HybridConverter, ProgressHooks};
 pub use engine::OnnxEngine;

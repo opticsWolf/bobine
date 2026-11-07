@@ -20,6 +20,14 @@ fn default_potatr_edge_threshold() -> f32 {
     0.5
 }
 
+fn default_potatr_suppress_iou() -> f32 {
+    0.5
+}
+
+fn default_potatr_min_text_fill() -> f32 {
+    0.2
+}
+
 /// Controls how pages are routed between fast (pdf_oxide) and ONNX paths.
 ///
 /// Cost ladder: `Never` (no models) < `Surgical` (TexTeller only) < `Auto`
@@ -240,13 +248,26 @@ pub struct ModelOpts {
     #[serde(default = "default_table_backend")]
     pub table_backend: TableBackend,
 
-    /// POTATR node-score threshold (reference default 0.8, `evaluate.py`).
+    /// POTATR node-score threshold for final table claims in P2 routing
+    /// (reference eval default 0.8). Internal structure refinement keeps
+    /// the reference 0.8 fixed for fidelity; this filters emitted tables.
     #[serde(default = "default_potatr_node_threshold")]
     pub potatr_node_threshold: f32,
 
     /// POTATR edge threshold (reference default 0.5, `inference.py`).
     #[serde(default = "default_potatr_edge_threshold")]
     pub potatr_edge_threshold: f32,
+
+    /// IoU at which a POTATR-claimed box suppresses an overlapping layout
+    /// region in P2 routing (option A: POTATR wins its claim set).
+    #[serde(default = "default_potatr_suppress_iou")]
+    pub potatr_suppress_iou: f32,
+
+    /// Minimum fraction of a claimed table's cells carrying text. Claims
+    /// below this (e.g. textless on CID-hole pages) fall back to the region
+    /// arms instead of suppressing them.
+    #[serde(default = "default_potatr_min_text_fill")]
+    pub potatr_min_text_fill: f32,
 }
 
 /// Text-layer / markdown-shaping knobs.
@@ -375,6 +396,8 @@ impl Default for ModelOpts {
             table_backend: TableBackend::Slanet,
             potatr_node_threshold: 0.8,
             potatr_edge_threshold: 0.5,
+            potatr_suppress_iou: 0.5,
+            potatr_min_text_fill: 0.2,
         }
     }
 }

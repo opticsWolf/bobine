@@ -93,6 +93,8 @@ class ConverterConfig:
         table_backend: TableBackend = TableBackend.Slanet,
         potatr_node_threshold: float = 0.8,
         potatr_edge_threshold: float = 0.5,
+        potatr_suppress_iou: float = 0.5,
+        potatr_min_text_fill: float = 0.2,
         ort_providers: list[str] | None = None,
         encoder_ort_providers: list[str] | None = None,
         decoder_ort_providers: list[str] | None = None,
@@ -121,6 +123,10 @@ class ConverterConfig:
     def potatr_node_threshold(self) -> float: ...
     @property
     def potatr_edge_threshold(self) -> float: ...
+    @property
+    def potatr_suppress_iou(self) -> float: ...
+    @property
+    def potatr_min_text_fill(self) -> float: ...
 
     @property
     def sanitize_ocr(self) -> bool: ...

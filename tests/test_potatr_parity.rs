@@ -75,7 +75,7 @@ fn potatr_port_matches_torch_on_chem_p5() {
         return;
     }
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
-    let cache = std::env::var("BOBINE_BENCH_CACHE")
+    let cache = std::env::var("BOBINE_CACHE_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| hub_cache_dir());
     let providers = vec!["CPUExecutionProvider".to_string()];
@@ -149,4 +149,64 @@ fn potatr_port_matches_torch_on_chem_p5() {
         tables.len(),
         tables.iter().map(|t| t.cells.len()).sum::<usize>()
     );
+}
+
+/// P2 routing end-to-end: the clean synthetic table fixture through the
+/// full converter with `table_backend = Potatr`.
+///
+/// Same gate (`BOBINE_POTATR_PARITY=1` + ORT dylib); downloads layout/OCR/
+/// table weights on first run. Compares against the checked-in golden
+/// (`tests/golden/potatr_table_potatr.golden.md` — the `_potatr` suffix
+/// distinguishes it from the Never-mode `tests/golden/potatr_table.golden.md`
+/// that `test_golden` owns for the same fixture); regenerate after an
+/// intentional routing change with `BOBINE_UPDATE_GOLDENS=1`.
+///
+/// This exercises what the port gate cannot: token building from the text
+/// layer, the claim-quality gate, suppression of the layout table region,
+/// anchored emission, and GFM conversion. (`ruled_table.pdf` is NOT used:
+/// its glyphs overlap the rules, which blinds even the torch reference —
+/// diagnosed 2026-11-07; `potatr_table.pdf` is the clean equivalent.)
+#[test]
+#[ignore = "needs ORT dylib + auto-downloaded weights: BOBINE_POTATR_PARITY=1"]
+fn potatr_routing_matches_golden_on_clean_table() {
+    if std::env::var("BOBINE_POTATR_PARITY").unwrap_or_default() != "1" {
+        eprintln!("skip: set BOBINE_POTATR_PARITY=1 to run the POTATR e2e gate");
+        return;
+    }
+    if std::env::var("ORT_DYLIB_PATH").unwrap_or_default().is_empty() {
+        eprintln!("skip: ORT_DYLIB_PATH not set");
+        return;
+    }
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cache = std::env::var("BOBINE_CACHE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| hub_cache_dir());
+    let mut config = bobine::ConverterConfig::default();
+    config.routing.routing_mode = bobine::RoutingMode::Always;
+    config.models.table_backend = bobine::TableBackend::Potatr;
+    let work = std::env::temp_dir().join("bobine_potatr_e2e");
+    let _ = std::fs::remove_dir_all(&work);
+    std::fs::create_dir_all(&work).unwrap();
+    let mut conv = bobine::HybridConverter::new(config, &cache);
+    let md = conv
+        .convert_pdf(&dir.join("tests/fixtures/potatr_table.pdf"), &work)
+        .expect("convert");
+    let normalized = md
+        .replace("\r\n", "\n")
+        .lines()
+        .map(|l| l.trim_end())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+        + "\n";
+    let golden_path = dir.join("tests/golden/potatr_table_potatr.golden.md");
+    if std::env::var("BOBINE_UPDATE_GOLDENS").is_ok() || !golden_path.exists() {
+        std::fs::write(&golden_path, &normalized).expect("write golden");
+        println!("golden written: {}", golden_path.display());
+        return;
+    }
+    let expected = std::fs::read_to_string(&golden_path).expect("read golden");
+    assert_eq!(expected, normalized, "potatr e2e golden mismatch");
+    println!("potatr e2e: golden matches ({} bytes)", normalized.len());
 }

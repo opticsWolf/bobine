@@ -206,6 +206,64 @@ captions. IoU threshold 0.5 default, config-exposed.
 census gains a table column (GT tables vs POTATR tables per paper — the ikat
 gate already produced these numbers: 39 GT, ~43 detected).
 
+### P2 status — implemented 2026-11-07 (option A, as signed off)
+
+Routing, claim/suppress, and anchored emission are in-tree behind
+`table_backend = Potatr` (default stays `Slanet`; no behavior change
+unless opted in). E2E golden: `tests/fixtures/potatr_table.pdf` →
+`tests/golden/potatr_table.golden.md` (ignored gate
+`potatr_routing_matches_golden_on_clean_table`, `BOBINE_POTATR_PARITY=1` +
+ORT dylib), plus the Never-mode `tests/golden/potatr_table.golden.md`.
+Fixture notes: `ruled_table.pdf` is NOT used — its glyphs overlap the
+rules, which blinds even the torch reference (all 250 queries "no
+object"); `potatr_table.pdf` is the clean PyMuPDF equivalent (torch:
+score 1.0, 20/20 cells). No real-paper goldens: `ikat-corpus/` is
+untracked (gitignored), so corpus pages can't be locked in-tree.
+
+Four latent bugs surfaced while validating routing (all fixed in P2
+because routing depends on them):
+
+1. **DETR `scale_factor` (layout).** This export's postprocess
+   multiplies by `im_shape` (already original scale) then divides by
+   `scale_factor`; the textbook `[[800/h, 800/w]]` inflated every box
+   3–4x (table landed in empty whitespace). Passing ones recovers
+exact boxes (verified: within 7px). econ-tax p.0 went from 1 region to
+22 tight ones; the §6-era "11 tight regions" claim never reproduced
+on the old scale.
+2. **`flip_chars_topdown` (converter).** pdf_oxide `extract_chars`
+reports PDF-native bottom-up points (verified on PyMuPDF/PLOS/arxiv
+PDFs); regions, crops, and POTATR boxes are top-down. Glyph ownership
+was all-`None`, region lines empty, crops misplaced. One flip per page
+in `full_structure_page_markdown` (+ surgical path) fixes ownership,
+line order, math crops, and P2 tokens. Fast-path body text is
+unaffected (it comes from pdf_oxide's own `to_markdown`).
+3. **`figure_title` is a caption.** The plus-L `figure_title` label was
+routed to the figure-crop arm (emitted the caption line as an image).
+It now owns glyphs (`CLAIM_CAPTION`) and emits text via
+`caption_block`; POTATR caption claims suppress it via the cover rule.
+4. **`<html>` wrapper + cover rule (POTATR emission).**
+`html_tables_to_gfm` now strips ElementTree `<html>` wrappers; thin
+caption regions suppress via region-in-part cover (measured IoU 0.490
+vs a 0.5 threshold) while table bodies stay IoU-only.
+
+Claim-quality gate (beyond score ≥ 0.8): tables with no structure, fewer
+than `POTATR_MIN_TABLE_WORDS` (= 2) words in the rect, or cell-text fill
+below `potatr_min_text_fill` (= 0.2, config-exposed alongside
+`potatr_suppress_iou`) fall back to the region arms instead of
+suppressing them — suppressing a textless claim destroys content (seen
+on CID-hole pages).
+
+Validation: port gate still green (HTML byte-exact, box drift 0.054px);
+lib 171 + goldens + `test_converter` e2e green, ext-module check clean.
+Table-region census with fixed layout (per paper: bio-medsea 5, chem-olive
+2, cs-bodvw 5, earth-ph 2, econ-tax 10, eng-disk 3, math-hilfer 4,
+med-ioannidis 4, physics-pauli 0, psych-maia 9 = 44 regions vs 39 GT).
+Real-paper spot (econ-tax, Always+Potatr): dense regression table
+claimed with correct 13-col structure but CID-garbage cell text —
+garbage-in/garbage-out at the text layer, exactly the §5 renderer
+blocker; no crash, duplication, or raw HTML. The Auto-default triple
+gate (§9: accuracy + perf + trustworthy renders) stands.
+
 ## 7. Phase P3 — docs + release (small)
 
 - `architecture.md`: table-arm section rewritten (POTATR primary-behind-flag,

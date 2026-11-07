@@ -156,6 +156,8 @@ impl PyConverterConfig {
         table_backend = PyTableBackend::Slanet,
         potatr_node_threshold = 0.8f32,
         potatr_edge_threshold = 0.5f32,
+        potatr_suppress_iou = 0.5f32,
+        potatr_min_text_fill = 0.2f32,
         ort_providers = None,
         encoder_ort_providers = None,
         decoder_ort_providers = None,
@@ -196,6 +198,8 @@ impl PyConverterConfig {
         table_backend: PyTableBackend,
         potatr_node_threshold: f32,
         potatr_edge_threshold: f32,
+        potatr_suppress_iou: f32,
+        potatr_min_text_fill: f32,
         ort_providers: Option<Vec<String>>,
         encoder_ort_providers: Option<Vec<String>>,
         decoder_ort_providers: Option<Vec<String>>,
@@ -229,6 +233,8 @@ impl PyConverterConfig {
                     table_backend: table_backend.into(),
                     potatr_node_threshold,
                     potatr_edge_threshold,
+                    potatr_suppress_iou,
+                    potatr_min_text_fill,
                 },
                 providers: ProviderOpts {
                     ort_providers,
@@ -346,6 +352,14 @@ impl PyConverterConfig {
     #[getter]
     fn potatr_edge_threshold(&self) -> f32 {
         self.inner.models.potatr_edge_threshold
+    }
+    #[getter]
+    fn potatr_suppress_iou(&self) -> f32 {
+        self.inner.models.potatr_suppress_iou
+    }
+    #[getter]
+    fn potatr_min_text_fill(&self) -> f32 {
+        self.inner.models.potatr_min_text_fill
     }
     #[getter]
     fn sanitize_ocr(&self) -> bool {

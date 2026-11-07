@@ -23,6 +23,15 @@ use crate::error::{BobineError, Result};
 
 /// Longest side of the preprocess canvas (eval transform: `RandomMaxResize(1000, 1000)`).
 pub const POTATR_LONGEST_SIDE: u32 = 1000;
+/// Minimum page words for the P2 pre-pass. Below this the page has no usable
+/// text for cell assignment (structure-without-text ships empty cells), so
+/// the current pipeline runs unchanged.
+pub const POTATR_MIN_WORDS: usize = 10;
+/// Minimum words inside a claimed table rect. The text layer can have holes
+/// on CID-corrupt papers (pdf_oxide returns no chars there); without words
+/// the cells come out empty and suppression would destroy the OCR fallback's
+/// content, so such claims fall back to the region arms.
+pub const POTATR_MIN_TABLE_WORDS: usize = 2;
 const MEAN: [f32; 3] = [0.485, 0.456, 0.406];
 const STD: [f32; 3] = [0.229, 0.224, 0.225];
 
@@ -352,6 +361,17 @@ fn bbox_intersect(a: &BBox, b: &BBox) -> BBox {
 }
 
 /// Union accumulator with `None` as identity (`_bbox_include`).
+/// Rectangle IoU on xyxy boxes (shared with P2 routing).
+pub(crate) fn rect_iou(a: &BBox, b: &BBox) -> f32 {
+    let inter = bbox_area(&bbox_intersect(a, b));
+    let union = bbox_area(a) + bbox_area(b) - inter;
+    if union > 0.0 {
+        inter / union
+    } else {
+        0.0
+    }
+}
+
 fn bbox_include(current: Option<BBox>, b: &BBox) -> BBox {
     match current {
         None => *b,
@@ -373,8 +393,8 @@ fn overlaps(a: &BBox, b: &BBox, threshold: f32) -> bool {
     overlaps_frac(a, b) >= threshold
 }
 
-/// Intersection area over the area of `a` (`iob`).
-fn iob(a: &BBox, b: &BBox) -> f32 {
+/// Intersection area over the area of `a` (`iob`). Shared with P2 routing.
+pub(crate) fn iob(a: &BBox, b: &BBox) -> f32 {
     let area = bbox_area(a);
     if area > 0.0 {
         bbox_area(&bbox_intersect(a, b)) / area
