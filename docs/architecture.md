@@ -174,8 +174,8 @@ Three lazy slots, each loaded on first use and cached:
 | Slot | Model source | Loaded by |
 |---|---|---|
 | `tex_teller` | HuggingFace via `hf-hub` (blocking): `ModelQuantization::Fp32` (default) and `Int8` both resolve to the unified `opticsWolf/texteller3-onnx` serving repo (TexTeller3 canonical + OleehyO merged decoder, weight-identical; int8 byte-verified against the former Ji-Ha blobs), pinned revision | `ensure_tex_teller()` |
-| `layout` | HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` (auto-download, probe-first) or local path (`set_layout_model()`) | `ensure_layout()` |
-| `ocr` | HF `SWHL/RapidOCR` PP-OCRv4 det+rec (auto-download, probe-first) or local paths (`set_ocr_models()`) | `ensure_ocr()` |
+| `layout` | First-party HF `opticsWolf/doclayout-yolo-onnx` (auto-download, probe-first) or local path (`set_layout_model()`) | `ensure_layout()` |
+| `ocr` | First-party HF `opticsWolf/rapidocr-onnx` PP-OCRv4 det+rec (Apache-2.0; auto-download, probe-first) or local paths (`set_ocr_models()`) | `ensure_ocr()` |
 | `table` | First-party `opticsWolf/slanet-plus-onnx` (byte-identical to RapidAI/RapidTable v2.0.0, Apache-2.0; ~7.8 MB) or local path via `set_table_model()` | `ensure_table()` (lazy — only on table regions) |
 
 Degradation contract: model-load failures propagate as `BobineError`, but
@@ -320,11 +320,12 @@ as Python.
   interface retained.
 - **RapidLayout / RapidOCR**: downloaded automatically on first use unless
   explicit local paths are set via `OnnxEngine::set_layout_model` /
-  `set_ocr_models`. Layout: `wybxc/DocLayout-YOLO-DocStructBench-onnx`
-  (`doclayout_yolo_docstructbench_imgsz1024.onnx`, 72 MB - a community ONNX
-  conversion of the official DocStructBench weights, whose repo ships .pt
-  only). OCR: `SWHL/RapidOCR` `PP-OCRv4/ch_PP-OCRv4_{det,rec}_infer.onnx`
-  (~16 MB total). Label lists / charsets are read from the ONNX models'
+  `set_ocr_models`. Layout: first-party `opticsWolf/doclayout-yolo-onnx`
+  (`doclayout_yolo_docstructbench_imgsz1024.onnx`, 72 MB — byte-identical
+  to the validated wybxc export; YOLO-lineage review ongoing). OCR:
+  first-party `opticsWolf/rapidocr-onnx`
+  (`ch_PP-OCRv4_{det,rec}_infer.onnx`, ~16 MB total, Apache-2.0 —
+  byte-identical to the SWHL files, flattened to repo root). Label lists / charsets are read from the ONNX models'
   custom metadata key `character` (falling back to DocStructBench defaults /
   ASCII); the rec charset is aligned against the model's actual class count
   at first decode, since exports vary in whether they include the leading

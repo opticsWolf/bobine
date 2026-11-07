@@ -51,19 +51,20 @@ pub(crate) fn vision_policy() -> SessionPolicy {
 /// DocLayout-YOLO ONNX conversion of the official DocStructBench weights
 /// (the author's repo ships .pt only; this export matches bobine's
 /// fallback label order).
-const LAYOUT_REPO: (&str, &str) = ("wybxc", "DocLayout-YOLO-DocStructBench-onnx");
+/// First-party serving repo: byte-identical to the validated wybxc
+/// export (YOLO-lineage review ongoing; PP-DocLayout replacement queued).
+const LAYOUT_REPO: (&str, &str) = ("opticsWolf", "doclayout-yolo-onnx");
 const LAYOUT_FILENAME: &str = "doclayout_yolo_docstructbench_imgsz1024.onnx";
-/// Pinned hub revision for the layout weights (verified present via the
-/// HF API; equals current upstream HEAD, so no re-download on update).
-const LAYOUT_REV: &str = "ee7c3d744e5c47c58e267044ac825f95abe69653";
+/// Pinned hub revision for the layout weights (first-party serving repo).
+const LAYOUT_REV: &str = "e10b9ac9c06de6e8a34595e26819fc374b695a56";
 
 /// PP-OCRv4 mobile det + rec exports; the rec model embeds its charset in
 /// the ONNX custom metadata key "character".
-const OCR_REPO: (&str, &str) = ("SWHL", "RapidOCR");
-const OCR_DET_FILENAME: &str = "PP-OCRv4/ch_PP-OCRv4_det_infer.onnx";
-const OCR_REC_FILENAME: &str = "PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx";
-/// Pinned hub revision for the RapidOCR det + rec weights (same terms).
-const OCR_REV: &str = "1cfba2e90fc938db55889873735088de210cc173";
+const OCR_REPO: (&str, &str) = ("opticsWolf", "rapidocr-onnx");
+const OCR_DET_FILENAME: &str = "ch_PP-OCRv4_det_infer.onnx";
+const OCR_REC_FILENAME: &str = "ch_PP-OCRv4_rec_infer.onnx";
+/// Pinned hub revision for the RapidOCR det + rec weights (Apache-2.0).
+const OCR_REV: &str = "e0ebced59e442c8f0dc6b831fe37d5dba2f4806c";
 
 /// Download a file from HuggingFace through the shared hub cache (see
 /// [`crate::hub_cache`]): `cache_dir` is the hub-cache root, the file
@@ -682,8 +683,8 @@ mod tests {
             repos,
             [
                 crate::tex_teller::TEX_TELLER_REPO,
-                "wybxc/DocLayout-YOLO-DocStructBench-onnx",
-                "SWHL/RapidOCR",
+                "opticsWolf/doclayout-yolo-onnx",
+                "opticsWolf/rapidocr-onnx",
                 "opticsWolf/slanet-plus-onnx",
             ]
         );

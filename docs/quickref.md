@@ -282,8 +282,8 @@ more than ~2 s per formula crop.
 |---|---|---|
 | TexTeller encoder + decoder + tokenizer (fp32, default) | auto-download from HuggingFace `opticsWolf/texteller3-onnx` into the hub cache | ~1.19 GB |
 | TexTeller encoder + decoder fp16 | same unified repo (`*_fp16.onnx` pair, pure-fp16 compute; measured 28-29/30 exact parity with fp32) | ~598 MB |
-| RapidLayout (DocLayout-YOLO) | auto-download from HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` into the hub cache, or `set_layout_model` | ~72 MB |
-| RapidOCR PP-OCRv4 det + rec | auto-download from HF `SWHL/RapidOCR` into the hub cache, or `set_ocr_models` | ~16 MB |
+| RapidLayout (DocLayout-YOLO) | auto-download from HF `opticsWolf/doclayout-yolo-onnx` into the hub cache, or `set_layout_model` | ~72 MB |
+| RapidOCR PP-OCRv4 det + rec | auto-download from HF `opticsWolf/rapidocr-onnx` (Apache-2.0) into the hub cache, or `set_ocr_models` | ~16 MB |
 | RapidTable (SLANet-plus) | auto-download from HF `opticsWolf/slanet-plus-onnx` (Apache-2.0) into the hub cache, or `set_table_model` | ~7.8 MB |
 | TexTeller Int8 (opt-in CPU speed tier) | auto-download from HF `opticsWolf/texteller3-onnx` into the hub cache (KV-cache-capable merged graph) | ~303 MB |
 
