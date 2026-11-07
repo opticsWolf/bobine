@@ -83,8 +83,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
             .unwrap_or_else(|| cache.join(file))
     }
-    let layout_path = std::env::var_os("BOB_LAYOUT_PATH").map(std::path::PathBuf::from).unwrap_or_else(|| {
-        hub_file(&cache, "models--opticsWolf--doclayout-yolo-onnx", "doclayout_yolo_docstructbench_imgsz1024.onnx")
+    fn explicit(var: &str) -> Option<std::path::PathBuf> {
+        let p = std::env::var_os(var).map(std::path::PathBuf::from)?;
+        if p.exists() {
+            Some(p)
+        } else {
+            eprintln!("warning: ${var}={} missing, falling back to hub lookup", p.display());
+            None
+        }
+    }
+    let layout_explicit = explicit("BOB_LAYOUT_PATH");
+    let layout_path = layout_explicit.clone().unwrap_or_else(|| {
+        hub_file(&cache, "models--opticsWolf--pp-doclayout-plus-l-onnx", "pp_doclayout_plus_l.onnx")
     });
     let det_path = std::env::var_os("BOB_DET_PATH").map(std::path::PathBuf::from).unwrap_or_else(|| {
         hub_file(&cache, "models--opticsWolf--rapidocr-ppocrv5-onnx", "ppocrv5_det_infer.onnx")
@@ -96,9 +106,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let p = hub_file(&cache, "models--opticsWolf--rapidocr-ppocrv5-onnx", "ppocrv5_dict.txt");
         p.exists().then_some(p)
     });
-    let labels_path = std::env::var_os("BOB_LABELS_PATH").map(std::path::PathBuf::from).or_else(|| {
-        let p = hub_file(&cache, "models--opticsWolf--pp-doclayout-plus-l-onnx", "labels.txt");
-        p.exists().then_some(p)
+    // Hub labels only pair with hub models: an explicit model path with
+    // no explicit labels falls back to the model's own metadata (a
+    // labels.txt from another serving repo must never leak across).
+    let labels_path = explicit("BOB_LABELS_PATH").or_else(|| {
+        if layout_explicit.is_some() {
+            None
+        } else {
+            let p = hub_file(&cache, "models--opticsWolf--pp-doclayout-plus-l-onnx", "labels.txt");
+            p.exists().then_some(p)
+        }
     });
     let table_path = std::env::var_os("BOB_TABLE_PATH").map(std::path::PathBuf::from).unwrap_or_else(|| {
         hub_file(&cache, "models--opticsWolf--slanet-plus-onnx", "slanet-plus.onnx")
@@ -165,7 +182,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             t0.elapsed(),
             lines.len()
         );
-        for (i, l) in lines.iter().take(12).enumerate() {
+        for (i, l) in lines.iter().enumerate() {
+            if i >= 12 && std::env::var("BOB_FULL").is_err() {
+                println!("  ... ({} more; BOB_FULL=1 to dump)", lines.len() - i);
+                break;
+            }
             println!("  [{i}] {:?} conf={:.2}", l.text, l.confidence);
         }
     } else {

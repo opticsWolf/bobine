@@ -333,7 +333,11 @@ as Python.
   Apache-2.0 — byte-identical to the official PaddlePaddle exports).
   The rec export carries no charset metadata, so the dict travels with
   the weights and seeds the decoder (18,383 lines → 18,385 classes via
-  the usual blank+space alignment). Label lists / charsets are read from the ONNX models'
+  the usual blank+space alignment). Server tier evaluated and rejected
+  2026-11-07: 88.1 + 84.5 MB (8x the mobile pair), 3.1x slower det+rec
+  on a clean dense page (6.95 vs 2.23 s CPU), quality at parity with
+  wins split both ways (mobile keeps `Schrödinger`/spacing, server
+  drops a stray `6`) — not mirrored. Label lists / charsets are read from the ONNX models'
   custom metadata key `character` (falling back to DocStructBench defaults /
   ASCII); the rec charset is aligned against the model's actual class count
   at first decode, since exports vary in whether they include the leading

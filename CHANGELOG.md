@@ -1,7 +1,25 @@
 # Changelog — bobine
 
-## Unreleased
+## 0.8.0 — 2026-11-07
 
+The 0.7.5 development line (TexTeller fp32 default, variant matrix)
+was never tagged; it ships here together with the serving-stack
+renewal (PP-OCRv5, PP-DocLayout_plus-L, first-party mirrors), then the
+0.7.5 line:
+
+- **fp16 parity gate.** New `tests/test_tex_teller_parity.rs` (ignored
+  by default, `BOBINE_TEX_PARITY=1`): loads fp32 + fp16 from the unified
+  repo and asserts raw-decode fp16==fp32 parity >= 27/30 over the labeled
+  eval set. Measured 28/30 CPU, matching the documented matrix.
+- **Bench harness precision tiers.** `tests/test_bench_ocr.rs` takes
+  `BOBINE_BENCH_QUANT=fp32|int8|fp16` (outputs namespaced to
+  `target/bench_ocr/<quant>/`); int8-vs-fp32 over the 196 ikat displays:
+  195/196 identical outcomes, both tiers starved equally by the CID
+  text-layer corruption (withheld per standing rule).
+- **PP-OCRv5 server tier evaluated and rejected.** 88.1 + 84.5 MB
+  (8x mobile), 3.1x slower (6.95 vs 2.23 s CPU on solitons p.0),
+  quality at parity (40/178 differing line-slots, wins split both
+  ways). Not mirrored; mobile pair stands.
 - **Layout upgraded to PP-DocLayout_plus-L.** New first-party serving
   repo `opticsWolf/pp-doclayout-plus-l-onnx` (RT-DETR-L, 20 classes,
   Apache-2.0, byte-identical to the official PaddlePaddle export).
@@ -23,8 +41,6 @@
   output lookup is generation-robust (`sigmoid*` else first output).
   Formula fixture: v4 `RN/y` → v5 `x2/y2` with higher confidences.
   Supersedes `opticsWolf/rapidocr-onnx` (PP-OCRv4, still on the Hub).
-
-## 0.7.5 — 2026-11-02
 
 - **TexTeller now defaults to fp32.** `ModelOpts::default()` and the Python
   bindings select `ModelQuantization::Fp32` on both CPU and CUDA. int8 is now
