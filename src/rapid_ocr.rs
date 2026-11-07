@@ -410,6 +410,7 @@ impl RapidOcr {
     pub fn load(
         det_model: &Path,
         rec_model: &Path,
+        dict_path: Option<&Path>,
         ocr_lang: &str,
         providers: &[String],
     ) -> Result<Self> {
@@ -423,12 +424,20 @@ impl RapidOcr {
             .commit_from_file(rec_model)
             .map_err(|e| BobineError::Ort(e.to_string()))?;
 
-        // Charset: model metadata first, then language fallback
-        let characters: Vec<String> = rec_session
-            .metadata()
-            .ok()
-            .and_then(|m| m.custom("character"))
+        // Charset: explicit dict file first (v5: the ONNX exports carry
+        // no charset metadata), then model metadata, then language
+        // fallback. The v5 dict (18,383 lines) aligns to 18,385 classes
+        // via the usual blank+space rule in `align_charset`.
+        let characters: Vec<String> = dict_path
+            .and_then(|p| std::fs::read_to_string(p).ok())
             .map(|c| c.lines().map(|s| s.to_string()).collect())
+            .or_else(|| {
+                rec_session
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.custom("character"))
+                    .map(|c| c.lines().map(|s| s.to_string()).collect())
+            })
             .unwrap_or_else(|| fallback_charset(ocr_lang));
 
         info!(num_chars = characters.len(), "RapidOCR ready");
@@ -518,8 +527,17 @@ impl RapidOcr {
             .run(inputs!["x" => input])
             .map_err(|e| BobineError::Ort(format!("det run: {e}")))?;
 
-        // Output: [1, 1, H, W] probability map
-        let prob = outputs["sigmoid_0.tmp_0"]
+        // Output: [1, 1, H, W] probability map. Paddle exports name the
+        // single output differently across generations (sigmoid_0.tmp_0,
+        // fetch_name_0, ...) — same robust rule as the rec side: first
+        // output whose name starts with "sigmoid", else the first output.
+        let prob_view = outputs
+            .iter()
+            .find(|(k, _)| k.starts_with("sigmoid"))
+            .or_else(|| outputs.iter().next())
+            .map(|(_, v)| v)
+            .ok_or_else(|| BobineError::Ort("det model has no outputs".into()))?;
+        let prob = prob_view
             .try_extract_array::<f32>()
             .map_err(|e| BobineError::Ort(format!("det output: {e}")))?;
 

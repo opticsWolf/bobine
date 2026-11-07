@@ -1,5 +1,17 @@
 # Changelog — bobine
 
+## Unreleased
+
+- **OCR upgraded to PP-OCRv5.** New first-party serving repo
+  `opticsWolf/rapidocr-ppocrv5-onnx` (det + rec + `ppocrv5_dict.txt`,
+  Apache-2.0, byte-identical to the official PaddlePaddle exports).
+  The rec export carries no charset metadata, so the dict travels with
+  the weights (18,383 lines → 18,385 classes via blank+space
+  alignment); `RapidOcr::load` takes an optional dict path, and the det
+  output lookup is generation-robust (`sigmoid*` else first output).
+  Formula fixture: v4 `RN/y` → v5 `x2/y2` with higher confidences.
+  Supersedes `opticsWolf/rapidocr-onnx` (PP-OCRv4, still on the Hub).
+
 ## 0.7.5 — 2026-11-02
 
 - **TexTeller now defaults to fp32.** `ModelOpts::default()` and the Python

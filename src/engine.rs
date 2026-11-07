@@ -58,13 +58,16 @@ const LAYOUT_FILENAME: &str = "doclayout_yolo_docstructbench_imgsz1024.onnx";
 /// Pinned hub revision for the layout weights (first-party serving repo).
 const LAYOUT_REV: &str = "e10b9ac9c06de6e8a34595e26819fc374b695a56";
 
-/// PP-OCRv4 mobile det + rec exports; the rec model embeds its charset in
-/// the ONNX custom metadata key "character".
-const OCR_REPO: (&str, &str) = ("opticsWolf", "rapidocr-onnx");
-const OCR_DET_FILENAME: &str = "ch_PP-OCRv4_det_infer.onnx";
-const OCR_REC_FILENAME: &str = "ch_PP-OCRv4_rec_infer.onnx";
-/// Pinned hub revision for the RapidOCR det + rec weights (Apache-2.0).
-const OCR_REV: &str = "e0ebced59e442c8f0dc6b831fe37d5dba2f4806c";
+/// PP-OCRv5 mobile det + rec exports (Apache-2.0, byte-identical to the
+/// official PaddlePaddle ONNX). The rec export carries no charset
+/// metadata — the dict below (18,383 lines → 18,385 classes via
+/// blank+space alignment) travels with the weights.
+const OCR_REPO: (&str, &str) = ("opticsWolf", "rapidocr-ppocrv5-onnx");
+const OCR_DET_FILENAME: &str = "ppocrv5_det_infer.onnx";
+const OCR_REC_FILENAME: &str = "ppocrv5_rec_infer.onnx";
+const OCR_DICT_FILENAME: &str = "ppocrv5_dict.txt";
+/// Pinned hub revision for the PP-OCRv5 det + rec + dict.
+const OCR_REV: &str = "d19f569c677b3b883276a901a2cefe1aaf0e36a6";
 
 /// Download a file from HuggingFace through the shared hub cache (see
 /// [`crate::hub_cache`]): `cache_dir` is the hub-cache root, the file
@@ -286,7 +289,7 @@ impl OnnxEngine {
         )?);
         out.push(probe(
             &format!("{}/{}", OCR_REPO.0, OCR_REPO.1),
-            &[(OCR_DET_FILENAME, true), (OCR_REC_FILENAME, true)],
+            &[(OCR_DET_FILENAME, true), (OCR_REC_FILENAME, true), (OCR_DICT_FILENAME, false)],
             Some(OCR_REV),
         )?);
         out.push(probe(
@@ -478,16 +481,27 @@ impl OnnxEngine {
                     Some(OCR_REV),
                 )?,
             };
+            let dict = match self.ocr_rec_path.clone() {
+                // Local rec override: charset from its own metadata.
+                Some(_) => None,
+                None => Some(hf_fetch(
+                    &self.cache_dir,
+                    OCR_REPO,
+                    OCR_DICT_FILENAME,
+                    "RapidOCR dict",
+                    Some(OCR_REV),
+                )?),
+            };
+            let providers = self.resolve_auto_gpu_providers(
+                self.config.providers.ocr_ort_providers.as_ref(),
+                "ocr",
+            );
             info!(
                 "Loading RapidOCR from {} and {}...",
                 det.display(),
                 rec.display()
             );
-            let providers = self.resolve_auto_gpu_providers(
-                self.config.providers.ocr_ort_providers.as_ref(),
-                "ocr",
-            );
-            let ocr = RapidOcr::load(&det, &rec, &self.config.models.ocr_lang, &providers)?;
+            let ocr = RapidOcr::load(&det, &rec, dict.as_deref(), &self.config.models.ocr_lang, &providers)?;
             self.ocr = Some(ocr);
         }
         Ok(())
@@ -684,7 +698,7 @@ mod tests {
             [
                 crate::tex_teller::TEX_TELLER_REPO,
                 "opticsWolf/doclayout-yolo-onnx",
-                "opticsWolf/rapidocr-onnx",
+                "opticsWolf/rapidocr-ppocrv5-onnx",
                 "opticsWolf/slanet-plus-onnx",
             ]
         );
