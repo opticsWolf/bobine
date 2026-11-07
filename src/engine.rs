@@ -51,12 +51,14 @@ pub(crate) fn vision_policy() -> SessionPolicy {
 /// DocLayout-YOLO ONNX conversion of the official DocStructBench weights
 /// (the author's repo ships .pt only; this export matches bobine's
 /// fallback label order).
-/// First-party serving repo: byte-identical to the validated wybxc
-/// export (YOLO-lineage review ongoing; PP-DocLayout replacement queued).
-const LAYOUT_REPO: (&str, &str) = ("opticsWolf", "doclayout-yolo-onnx");
-const LAYOUT_FILENAME: &str = "doclayout_yolo_docstructbench_imgsz1024.onnx";
-/// Pinned hub revision for the layout weights (first-party serving repo).
-const LAYOUT_REV: &str = "e10b9ac9c06de6e8a34595e26819fc374b695a56";
+const LAYOUT_REPO: (&str, &str) = ("opticsWolf", "pp-doclayout-plus-l-onnx");
+/// RT-DETR-L, 20 classes; the class names travel with the weights
+/// (the ONNX export carries no metadata).
+const LAYOUT_FILENAME: &str = "pp_doclayout_plus_l.onnx";
+const LAYOUT_LABELS_FILENAME: &str = "labels.txt";
+/// Pinned hub revision for the PP-DocLayout_plus-L weights + labels
+/// (Apache-2.0, byte-identical to the official PaddlePaddle export).
+const LAYOUT_REV: &str = "cee9ee321d3460a25b497d899aa4719b4a5800ba";
 
 /// PP-OCRv5 mobile det + rec exports (Apache-2.0, byte-identical to the
 /// official PaddlePaddle ONNX). The rec export carries no charset
@@ -284,7 +286,7 @@ impl OnnxEngine {
         out.push(probe(tt_repo, &tt_files, Some(tt_rev))?);
         out.push(probe(
             &format!("{}/{}", LAYOUT_REPO.0, LAYOUT_REPO.1),
-            &[(LAYOUT_FILENAME, true)],
+            &[(LAYOUT_FILENAME, true), (LAYOUT_LABELS_FILENAME, false)],
             Some(LAYOUT_REV),
         )?);
         out.push(probe(
@@ -436,12 +438,23 @@ impl OnnxEngine {
                     Some(LAYOUT_REV),
                 )?,
             };
+            let labels = match self.layout_model_path.clone() {
+                // Local model override: labels from its own metadata.
+                Some(_) => None,
+                None => Some(hf_fetch(
+                    &self.cache_dir,
+                    LAYOUT_REPO,
+                    LAYOUT_LABELS_FILENAME,
+                    "RapidLayout labels",
+                    Some(LAYOUT_REV),
+                )?),
+            };
             info!("Loading RapidLayout from {}...", path.display());
             let providers = self.resolve_auto_gpu_providers(
                 self.config.providers.layout_ort_providers.as_ref(),
                 "layout",
             );
-            let layout = RapidLayout::load(&path, &providers)?;
+            let layout = RapidLayout::load(&path, labels.as_deref(), &providers)?;
             self.layout = Some(layout);
         }
         Ok(())
@@ -697,7 +710,7 @@ mod tests {
             repos,
             [
                 crate::tex_teller::TEX_TELLER_REPO,
-                "opticsWolf/doclayout-yolo-onnx",
+                "opticsWolf/pp-doclayout-plus-l-onnx",
                 "opticsWolf/rapidocr-ppocrv5-onnx",
                 "opticsWolf/slanet-plus-onnx",
             ]

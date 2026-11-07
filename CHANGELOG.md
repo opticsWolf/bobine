@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Layout upgraded to PP-DocLayout_plus-L.** New first-party serving
+  repo `opticsWolf/pp-doclayout-plus-l-onnx` (RT-DETR-L, 20 classes,
+  Apache-2.0, byte-identical to the official PaddlePaddle export).
+  `RapidLayout` detects the backend from the input signature (YOLO path
+  kept for custom models; DETR path: direct 800x800 resize, /255,
+  three inputs, `[class,score,x0,y0,x1,y1]` in original coords,
+  threshold 0.5). The 20-class taxonomy maps onto the existing
+  substring routing (`doc_title`/`paragraph_title`→headings,
+  `formula`→math, `chart`/`seal`→figure crops); econ-tax p.0:
+  13 overlapping YOLO boxes → 11 tight DETR regions, 477ms → 297ms
+  CPU. Supersedes `opticsWolf/doclayout-yolo-onnx` (YOLO-lineage
+  review closed by replacement).
 - **OCR upgraded to PP-OCRv5.** New first-party serving repo
   `opticsWolf/rapidocr-ppocrv5-onnx` (det + rec + `ppocrv5_dict.txt`,
   Apache-2.0, byte-identical to the official PaddlePaddle exports).

@@ -84,7 +84,7 @@ fn region_claim_priority(label: &str) -> u8 {
         CLAIM_TABLE
     } else if MATH_LAYOUT_LABELS.iter().any(|k| l.contains(k)) {
         CLAIM_MATH
-    } else if l.contains("figure") || l.contains("image") {
+    } else if l.contains("figure") || l.contains("image") || l.contains("chart") || l.contains("seal") {
         CLAIM_NONE
     } else {
         CLAIM_TEXT

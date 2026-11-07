@@ -96,6 +96,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let p = hub_file(&cache, "models--opticsWolf--rapidocr-ppocrv5-onnx", "ppocrv5_dict.txt");
         p.exists().then_some(p)
     });
+    let labels_path = std::env::var_os("BOB_LABELS_PATH").map(std::path::PathBuf::from).or_else(|| {
+        let p = hub_file(&cache, "models--opticsWolf--pp-doclayout-plus-l-onnx", "labels.txt");
+        p.exists().then_some(p)
+    });
     let table_path = std::env::var_os("BOB_TABLE_PATH").map(std::path::PathBuf::from).unwrap_or_else(|| {
         hub_file(&cache, "models--opticsWolf--slanet-plus-onnx", "slanet-plus.onnx")
     });
@@ -117,7 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---- RapidLayout ----
     if layout_path.exists() {
         let t0 = Instant::now();
-        let mut m = RapidLayout::load(&layout_path, &providers)?;
+        let mut m = RapidLayout::load(&layout_path, labels_path.as_deref(), &providers)?;
         println!("layout load: {:?}", t0.elapsed());
         let warm = m.detect(&page)?;
         if std::env::var("BOB_DEBUG_LABELS").is_ok() {

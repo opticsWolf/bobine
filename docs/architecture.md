@@ -174,7 +174,7 @@ Three lazy slots, each loaded on first use and cached:
 | Slot | Model source | Loaded by |
 |---|---|---|
 | `tex_teller` | HuggingFace via `hf-hub` (blocking): `ModelQuantization::Fp32` (default) and `Int8` both resolve to the unified `opticsWolf/texteller3-onnx` serving repo (TexTeller3 canonical + OleehyO merged decoder, weight-identical; int8 byte-verified against the former Ji-Ha blobs), pinned revision | `ensure_tex_teller()` |
-| `layout` | First-party HF `opticsWolf/doclayout-yolo-onnx` (auto-download, probe-first) or local path (`set_layout_model()`) | `ensure_layout()` |
+| `layout` | First-party HF `opticsWolf/pp-doclayout-plus-l-onnx` PP-DocLayout_plus-L (Apache-2.0; auto-download, probe-first) or local path (`set_layout_model()`) | `ensure_layout()` |
 | `ocr` | First-party HF `opticsWolf/rapidocr-ppocrv5-onnx` PP-OCRv5 det+rec+dict (Apache-2.0; auto-download, probe-first) or local paths (`set_ocr_models()`) | `ensure_ocr()` |
 | `table` | First-party `opticsWolf/slanet-plus-onnx` (byte-identical to RapidAI/RapidTable v2.0.0, Apache-2.0; ~7.8 MB) or local path via `set_table_model()` | `ensure_table()` (lazy — only on table regions) |
 
@@ -320,9 +320,14 @@ as Python.
   interface retained.
 - **RapidLayout / RapidOCR**: downloaded automatically on first use unless
   explicit local paths are set via `OnnxEngine::set_layout_model` /
-  `set_ocr_models`. Layout: first-party `opticsWolf/doclayout-yolo-onnx`
-  (`doclayout_yolo_docstructbench_imgsz1024.onnx`, 72 MB — byte-identical
-  to the validated wybxc export; YOLO-lineage review ongoing). OCR:
+  `set_ocr_models`. Layout: first-party `opticsWolf/pp-doclayout-plus-l-onnx`
+  (RT-DETR-L, 20 classes, `pp_doclayout_plus_l.onnx` + `labels.txt`,
+  ~130 MB, Apache-2.0 — byte-identical to the official PaddlePaddle
+  export). Backend is detected from the input signature (`images` =
+  YOLO path kept for custom models; `image`+`im_shape`+`scale_factor`
+  = Paddle DETR path: direct 800x800 resize, /255, boxes already in
+  original coords, score >= 0.5). Supersedes the YOLO export (lineage
+  review closed by replacement). OCR:
   first-party `opticsWolf/rapidocr-ppocrv5-onnx`
   (`ppocrv5_{det,rec}_infer.onnx` + `ppocrv5_dict.txt`, ~22 MB total,
   Apache-2.0 — byte-identical to the official PaddlePaddle exports).
