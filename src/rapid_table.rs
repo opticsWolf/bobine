@@ -4,10 +4,10 @@
 // structure-token decoding with per-cell quad boxes, then OCR-line → cell
 // matching to emit a final HTML table (converted to GFM by `tables.rs`).
 //
-// Model: slanet-plus.onnx (~7.8 MB), auto-downloaded from HuggingFace
-// (`opendatalab/PDF-Extract-Kit-1.0`, sha256 d57a942a…, identical to
-// RapidAI's modelscope release). Structure charset is read from the ONNX
-// metadata key `character`.
+// Model: slanet-plus.onnx (~7.8 MB) from the first-party serving repo
+// `opticsWolf/slanet-plus-onnx` (byte-identical to RapidAI/RapidTable
+// v2.0.0, Apache-2.0; weights trace to official Paddle SLANet_plus).
+// Structure charset is read from the ONNX metadata key `character`.
 
 use std::path::Path;
 
@@ -170,11 +170,14 @@ pub fn build_html(structures: &[String], matched: &[Vec<usize>], ocr_texts: &[St
 }
 
 /// Download location of the SLANet-plus ONNX model.
-pub const SLANET_PLUS_REPO: (&str, &str) = ("opendatalab", "PDF-Extract-Kit-1.0");
-pub const SLANET_PLUS_FILENAME: &str = "models/TabRec/SlanetPlus/slanet-plus.onnx";
-/// Pinned hub revision for the SLANet-plus weights (verified present via
-/// the HF API; equals current upstream HEAD, so no re-download on update).
-pub const SLANET_PLUS_REV: &str = "ed6b654c018d742e65a17671e379c5e6ecc87ec9";
+pub const SLANET_PLUS_REPO: (&str, &str) = ("opticsWolf", "slanet-plus-onnx");
+/// First-party serving repo: byte-identical to RapidAI/RapidTable v2.0.0
+/// `slanet-plus.onnx` (Apache-2.0, sha256-verified; weights trace to
+/// official Paddle SLANet_plus). Replaces the unlicensed opendatalab
+/// copy of the same bytes — zero functional change, clean license.
+pub const SLANET_PLUS_FILENAME: &str = "slanet-plus.onnx";
+/// Pinned hub revision of the serving repo.
+pub const SLANET_PLUS_REV: &str = "40bbe318364ce6e3d24301745936d98b388a7524";
 
 /// Fetch slanet-plus.onnx (~7.8 MB) through the shared hub cache (see
 /// [`crate::hub_cache`]), returning its snapshot path to load.

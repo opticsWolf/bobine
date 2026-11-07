@@ -684,7 +684,7 @@ mod tests {
                 crate::tex_teller::TEX_TELLER_REPO,
                 "wybxc/DocLayout-YOLO-DocStructBench-onnx",
                 "SWHL/RapidOCR",
-                "opendatalab/PDF-Extract-Kit-1.0",
+                "opticsWolf/slanet-plus-onnx",
             ]
         );
 

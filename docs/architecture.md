@@ -176,7 +176,7 @@ Three lazy slots, each loaded on first use and cached:
 | `tex_teller` | HuggingFace via `hf-hub` (blocking): `ModelQuantization::Fp32` (default) and `Int8` both resolve to the unified `opticsWolf/texteller3-onnx` serving repo (TexTeller3 canonical + OleehyO merged decoder, weight-identical; int8 byte-verified against the former Ji-Ha blobs), pinned revision | `ensure_tex_teller()` |
 | `layout` | HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` (auto-download, probe-first) or local path (`set_layout_model()`) | `ensure_layout()` |
 | `ocr` | HF `SWHL/RapidOCR` PP-OCRv4 det+rec (auto-download, probe-first) or local paths (`set_ocr_models()`) | `ensure_ocr()` |
-| `table` | local slanet-plus path (`set_table_model()`) or auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` (~7.8 MB) into `<cache>/models/` | `ensure_table()` (lazy — only on table regions) |
+| `table` | First-party `opticsWolf/slanet-plus-onnx` (byte-identical to RapidAI/RapidTable v2.0.0, Apache-2.0; ~7.8 MB) or local path via `set_table_model()` | `ensure_table()` (lazy — only on table regions) |
 
 Degradation contract: model-load failures propagate as `BobineError`, but
 `full_structure_page_markdown` failures are caught by the router
