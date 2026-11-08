@@ -89,6 +89,10 @@ class ConverterConfig:
         sanitize_ocr: bool = True,
         math_char_threshold: int = 30,
         scanned_text_threshold: int = 50,
+        render_gate_enabled: bool = True,
+        render_gate_min_layer_words: int = 30,
+        render_gate_min_jaccard: float = 0.35,
+        render_gate_salvage_inline_math: bool = False,
         ocr_lang: str = "en",
         table_backend: TableBackend = TableBackend.Slanet,
         potatr_node_threshold: float = 0.8,
@@ -130,6 +134,14 @@ class ConverterConfig:
 
     @property
     def sanitize_ocr(self) -> bool: ...
+    @property
+    def render_gate_enabled(self) -> bool: ...
+    @property
+    def render_gate_min_layer_words(self) -> int: ...
+    @property
+    def render_gate_min_jaccard(self) -> float: ...
+    @property
+    def render_gate_salvage_inline_math(self) -> bool: ...
     @property
     def image_mode(self) -> ImageMode: ...
     @property

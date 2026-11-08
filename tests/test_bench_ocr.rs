@@ -265,6 +265,9 @@ fn texsteller_accuracy_ikat_corpus() {
         .unwrap_or_else(|_| hf_hub_cache_dir());
 
     let mut scores = Vec::new();
+    // Render-health gate counters accumulate across papers (Option C):
+    // a fire means that paper's page fell back to the text layer.
+    let mut gate_totals = bobine::RenderGateStats::default();
     for paper in papers() {
         let pdf = format!("ikat-corpus/pdf/{paper}.pdf");
         let gt_md = format!("ikat-corpus/ground-truth/{paper}.md");
@@ -290,6 +293,7 @@ fn texsteller_accuracy_ikat_corpus() {
             match conv.convert_pdf(Path::new(&pdf), &work) {
                 Ok(md) => {
                     std::fs::write(root.join(format!("{paper}.md")), &md).unwrap();
+                    gate_totals.accumulate(conv.gate_stats());
                     Some(md)
                 }
                 Err(e) => {
@@ -312,8 +316,14 @@ fn texsteller_accuracy_ikat_corpus() {
         }
     }
     scores.sort_by(|a, b| a.paper.cmp(&b.paper));
-    let table = render_table(&scores);
+    let mut table = render_table(&scores);
     println!("\n{table}");
+    // Loud gate accounting: fires contaminate accuracy numbers with
+    // fallback output, so the harness must never silently score them.
+    if let Some(line) = gate_totals.report_line() {
+        println!("{line}");
+        table.push_str(&format!("\n{line}\n"));
+    }
     std::fs::write(root.join("report.md"), &table).unwrap();
     // GT-label-anchored mismatch dump for rendered-pixel follow-up.
     let mut dump = String::new();

@@ -201,9 +201,7 @@ permanent value as a render-regression guard beyond 0.3.79.
   withheld; manufacturing numbers via fallback would be measuring the
   wrong path under the right label. Refusing that is the decision
   (logged, kept).
-- User-facing quality: Option C is a genuine improvement
-  (garbage → correct text + honestly-suppressed math), shippable and
-  reversible. Optional, not required.
+- User-facing quality: Option C **CHOSEN and BUILT 2026-11-08** (standing order while pdf_oxide is unfixed): `src/render_gate.rs` + `RenderHealthOpts` wired in `full_structure_page_markdown` (judge before the arms, fire → `Ok(None)` → fast-path fallback), suppression-first math with opt-in inline salvage, loud accounting (warn + `RenderGateStats` + bench `report.md`), version-scoped via `build.rs` (`pdf_oxide_pre_0_3_79` only below the 0.3.79 cutoff — dep bump deactivates at compile time). Shippable and reversible; goldens unchanged.
 - Default plan if nothing else is chosen: wait + pin, with the JATS
   route covering scholarly papers meanwhile.
 
@@ -283,6 +281,10 @@ gossamer §5 + okfgraph §6.1–6.4 implementation (external repos).
 9. Upstream issue #3098 filed 2026-11-08; awaiting maintainer response.
    Re-run Option A render check when 0.3.79 lands or maintainer
    requests verification; unblock P-D table + POTATR Auto leg 3 if fixed.
+10. Option C CHOSEN and BUILT 2026-11-08 (standing order while pdf_oxide
+    is unfixed): render-health gate in-tree (`src/render_gate.rs` +
+    `RenderHealthOpts`, version-scoped < 0.3.79 with automatic expiry on
+    the dep bump); all goldens unchanged.
 
 ## 5. Draft upstream report (human to rewrite + submit — agents may not file)
 

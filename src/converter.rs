@@ -14,6 +14,9 @@ use crate::engine::OnnxEngine;
 use crate::error::{BobineError, Result};
 use crate::pdf_source::{PdfSource, SourceChar};
 use crate::rapid_layout::LayoutRegion;
+use crate::render_gate::{
+    GateAction, RenderGateStats, gate_tokens, render_gate_decision, version_in_scope, word_jaccard,
+};
 
 /// Progress / cancellation hooks for long-running conversions.
 ///
@@ -1237,12 +1240,21 @@ pub struct HybridConverter {
     #[allow(dead_code)]
     pub config: ConverterConfig,
     pub engine: OnnxEngine,
+    /// Render-health gate counters (Option C). Accumulated across pages;
+    /// read after `convert_pdf` / `convert_pdf_source` (bench harness
+    /// appends them to `report.md`).
+    pub gate_stats: RenderGateStats,
 }
 
 impl HybridConverter {
     pub fn new(config: ConverterConfig, cache_dir: &Path) -> Self {
         let engine = OnnxEngine::new(&config, cache_dir);
-        Self { config, engine }
+        Self { config, engine, gate_stats: RenderGateStats::default() }
+    }
+
+    /// Render-health gate counters for the last conversion run.
+    pub fn gate_stats(&self) -> &RenderGateStats {
+        &self.gate_stats
     }
 
     // ==================================================================
@@ -2834,6 +2846,97 @@ fn splice(md: &str, replacements: &[(String, String)]) -> String {
 // ======================================================================
 
 impl HybridConverter {
+    /// Render-health gate probe (Option C). Returns `Fire` when the page
+    /// has a substantial text layer whose OCR↔layer word-Jaccard falls
+    /// below threshold — the render is corrupt (upstream #3098) and the
+    /// ONNX output must be discarded for this page.
+    ///
+    /// Fail-open everywhere except the fire itself: gate disabled, version
+    /// out of scope, thin/scanned layer, OCR failure, or empty token sets
+    /// all pass through to the normal path. Only loud on fire.
+    #[allow(clippy::too_many_arguments)]
+    fn render_gate_check(
+        &mut self,
+        pdf: &mut dyn PdfSource,
+        index: usize,
+        page_chars: &[SourceChar],
+        img: &DynamicImage,
+        math_boxes: &[Rect],
+        line_height: f32,
+    ) -> Result<GateAction> {
+        if !self.config.health.render_gate_enabled || !version_in_scope() {
+            return Ok(GateAction::Pass);
+        }
+        let layer_text: String = page_chars.iter().map(|c| c.char).collect();
+        let layer_count = layer_text
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|t| !t.is_empty())
+            .count();
+        if layer_count < self.config.health.render_gate_min_layer_words {
+            return Ok(GateAction::Pass);
+        }
+        self.gate_stats.pages_checked += 1;
+        let ocr_text = match self.engine.ocr_lines(img) {
+            Ok(lines) => lines
+                .into_iter()
+                .map(|l| l.text)
+                .collect::<Vec<_>>()
+                .join(" "),
+            Err(e) => {
+                warn!(
+                    "page {}: render-health gate skipped (page OCR failed: {})",
+                    index + 1,
+                    e
+                );
+                return Ok(GateAction::Pass);
+            }
+        };
+        let j = word_jaccard(&gate_tokens(&layer_text), &gate_tokens(&ocr_text));
+        if !render_gate_decision(
+            layer_count,
+            j,
+            self.config.health.render_gate_min_layer_words,
+            self.config.health.render_gate_min_jaccard,
+        ) {
+            return Ok(GateAction::Pass);
+        }
+        // FIRE: corrupt render. Discard ONNX output for the page; the
+        // caller falls back to the fast path (or appends salvage below).
+        self.gate_stats.pages_fired += 1;
+        warn!(
+            "page {}: render-health gate FIRED (pdf_oxide < {}): layer_words={} ocr_words={} jaccard={:.3} < {:.3} — discarding ONNX output, fast-path fallback",
+            index + 1,
+            crate::render_gate::RENDER_GATE_CUTOFF,
+            layer_count,
+            ocr_text
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|t| !t.is_empty())
+                .count(),
+            j.unwrap_or(-1.0),
+            self.config.health.render_gate_min_jaccard,
+        );
+        if !self.config.health.render_gate_salvage_inline_math {
+            self.gate_stats.math_spans_suppressed += math_boxes.len() as u64;
+            return Ok(GateAction::Fire { salvaged: Vec::new() });
+        }
+        // Opt-in salvage: inline-only boxes from the text layer as `$…$`.
+        // Best-effort — corrupt layers salvage garbage, hence off default.
+        let mut salvaged = Vec::new();
+        for b in math_boxes {
+            let inline = b.height <= 1.6 * line_height
+                && b.width <= self.config.text.formula_inline_max_width_pts as f32;
+            if !inline {
+                continue;
+            }
+            let t = region_text(pdf, index, *b);
+            if !t.trim().is_empty() {
+                salvaged.push(format!("${}$", t.trim()));
+            }
+        }
+        self.gate_stats.math_spans_salvaged += salvaged.len() as u64;
+        Ok(GateAction::Fire { salvaged })
+    }
+
     fn full_structure_page_markdown(
         &mut self,
         pdf: &mut dyn PdfSource,
@@ -2860,6 +2963,42 @@ impl HybridConverter {
         let mut page_math_boxes =
             math_boxes_from_chars(pdf, index, self.config.text.min_formula_math_chars, 2.5, 0.9);
         let line_height = estimate_line_height(pdf, index, page_h);
+
+        // One chars() pass for the whole page (glyph-exact region
+        // extraction below + the render-health gate). Chars arrive
+        // bottom-up (see `flip_chars_topdown`); regions, crops, and POTATR
+        // boxes are top-down, so flip before anything compares.
+        let mut page_chars = pdf.chars(index).unwrap_or_default();
+        flip_chars_topdown(&mut page_chars, page_h);
+
+        // Render-health gate (Option C, version-scoped to pdf_oxide <
+        // 0.3.79): judge BEFORE the expensive arms. Outcome-equivalent to
+        // checking after (a fire discards everything anyway) but skips
+        // layout/table/TexTeller cost on corrupt pages. On fire the page
+        // falls back to the fast path via `Ok(None)` (suppression-first:
+        // math spans go with it); opt-in salvage appends inline `$…$`.
+        match self.render_gate_check(
+            pdf,
+            index,
+            &page_chars,
+            &img,
+            &page_math_boxes,
+            line_height,
+        )? {
+            GateAction::Pass => {}
+            GateAction::Fire { salvaged } => {
+                if salvaged.is_empty() {
+                    return Ok(None);
+                }
+                let mut fast =
+                    self.fast_markdown_placed(pdf, index, work_dir, assets)?;
+                for s in &salvaged {
+                    fast.push_str("\n\n");
+                    fast.push_str(s);
+                }
+                return Ok(Some(fast));
+            }
+        }
 
         // Layout analysis
         let regions = self.engine.layout_regions(&img)?;
@@ -2901,11 +3040,6 @@ impl HybridConverter {
         // `assign_glyph_owners` / `assign_region_lines` above for the
         // rationale). `owners` was removed: nothing ever read it.
         let (_claim_order, rank) = claim_ranks(&sorted);
-        // One chars() pass for all glyph-exact region extraction below.
-        // Chars arrive bottom-up (see `flip_chars_topdown`); regions, crops,
-        // and POTATR boxes are top-down, so flip before anything compares.
-        let mut page_chars = pdf.chars(index).unwrap_or_default();
-        flip_chars_topdown(&mut page_chars, page_h);
         let glyph_owner = assign_glyph_owners(&page_chars, &sorted, &rank, scale);
         let mut region_lines =
             assign_region_lines(&page_chars, &glyph_owner, &rank, sorted.len());
@@ -3131,6 +3265,39 @@ mod tests {
         let lines = vec![vec![0usize, 1usize]];
         let text = caption_block(&chars, &lines, "figure_title").expect("caption");
         assert!(text.contains("Ta"), "{text}");
+    }
+
+    #[test]
+    fn render_gate_disabled_passes_without_models() {
+        // Gate disabled: probe passes without touching the engine (no
+        // models needed) and leaves stats idle.
+        let mut config = ConverterConfig::default();
+        config.health.render_gate_enabled = false;
+        let mut conv = HybridConverter::new(config, &temp_dir("gate_off_cache"));
+        let mut pdf = FakePdf::default();
+        let chars: Vec<SourceChar> = "word ".repeat(100).chars().map(|c| SourceChar::new(c, 0.0, 0.0, 7.0, 10.0, "H")).collect();
+        let img = image::DynamicImage::new_rgb8(8, 8);
+        let action = conv.render_gate_check(&mut pdf, 0, &chars, &img, &[], 12.0).unwrap();
+        assert!(matches!(action, crate::render_gate::GateAction::Pass));
+        assert_eq!(conv.gate_stats().pages_checked, 0);
+        assert_eq!(conv.gate_stats().pages_fired, 0);
+    }
+
+    #[test]
+    fn render_gate_thin_layer_passes_without_models() {
+        // Enabled gate + scanned-like thin layer: passes before any OCR
+        // read (fail-open ordering), so no models are required.
+        let mut conv = HybridConverter::new(
+            ConverterConfig::default(),
+            &temp_dir("gate_thin_cache"),
+        );
+        assert!(conv.config.health.render_gate_enabled);
+        let mut pdf = FakePdf::default();
+        let chars: Vec<SourceChar> = "a b c".chars().map(|c| SourceChar::new(c, 0.0, 0.0, 7.0, 10.0, "H")).collect();
+        let img = image::DynamicImage::new_rgb8(8, 8);
+        let action = conv.render_gate_check(&mut pdf, 0, &chars, &img, &[], 12.0).unwrap();
+        assert!(matches!(action, crate::render_gate::GateAction::Pass));
+        assert_eq!(conv.gate_stats().pages_checked, 0);
     }
 
     #[test]

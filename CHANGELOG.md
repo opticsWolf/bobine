@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Option C: version-scoped render-health gate (pdf_oxide < 0.3.79).** New
+  `src/render_gate.rs` + `RenderHealthOpts` (`render_gate_enabled=true`,
+  `render_gate_min_layer_words=30`, `render_gate_min_jaccard=0.35`,
+  `render_gate_salvage_inline_math=false`, Python mirrors + getters): per
+  page, before the expensive arms, OCR↔text-layer word-Jaccard below
+  threshold on a substantial layer means corrupt render — discard the ONNX
+  output, emit fast-path markdown, stay loud (`tracing::warn` per fire +
+  `RenderGateStats` on the converter, appended to the P-D bench
+  `report.md`). Suppression-first math (TexTeller spans on fired pages
+  dropped) with opt-in inline `$…$` salvage. `build.rs` reads the resolved
+  pdf_oxide version from `Cargo.lock` and only emits
+  `pdf_oxide_pre_0_3_79` below the 0.3.79 cutoff — the dep bump
+  deactivates the shim at compile time (registry fallback: assume old,
+  stay safe). Unit-tested pure logic (tokens/Jaccard/decision/version
+  scope) + no-model converter tests (disabled/thin-layer fail-open); all
+  goldens unchanged. Filed upstream as #3098.
+
 - **POTATR P2: option-A routing with claim/suppress + e2e golden.** Page-level
   pre-pass claims tables (`score>=0.8`, `>=2` words in rect, cell fill >=
   `potatr_min_text_fill`=0.2) and suppresses overlapping layout regions

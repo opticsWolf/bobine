@@ -150,6 +150,10 @@ import json; data = json.loads(doc.json)  # typed values, formulas kept
 | `scanned_text_threshold` | `50` | Auto: max chars for scanned-page detection |
 | `ocr_lang` | `"en"` | CTC charset fallback when the rec model lacks metadata |
 | `sanitize_ocr` | `True` | Post-OCR LaTeX repair (fence fixup, `\left`/`\right` balance, script split); set `False` to get raw OCR text |
+| `render_gate_enabled` | `True` | Render-health gate master switch (Option C; active only while built against pdf_oxide < 0.3.79, upstream #3098) |
+| `render_gate_min_layer_words` | `30` | Min text-layer words for the gate to judge a page (below = scanned/thin, gate passes) |
+| `render_gate_min_jaccard` | `0.35` | Fire when OCR↔layer word-Jaccard is strictly below this (page falls back to fast path, math suppressed) |
+| `render_gate_salvage_inline_math` | `False` | Salvage inline-only formula boxes from the text layer as `$…$` on fired pages instead of dropping all math |
 
 ## Structured sources: JATS (v0.7.0)
 

@@ -28,6 +28,14 @@ fn default_potatr_min_text_fill() -> f32 {
     0.2
 }
 
+fn default_render_gate_min_layer_words() -> usize {
+    30
+}
+
+fn default_render_gate_min_jaccard() -> f32 {
+    0.35
+}
+
 /// Controls how pages are routed between fast (pdf_oxide) and ONNX paths.
 ///
 /// Cost ladder: `Never` (no models) < `Surgical` (TexTeller only) < `Auto`
@@ -270,6 +278,44 @@ pub struct ModelOpts {
     pub potatr_min_text_fill: f32,
 }
 
+/// Render-health gate knobs (Option C, `docs/cid_render_blocker.md` §2).
+///
+/// Temporary shim for the pdf_oxide CID-renderer defect (upstream #3098):
+/// per page, on born-digital input with a substantial text layer, fire
+/// when OCR↔text-layer word-Jaccard falls below threshold — the ONNX
+/// output is discarded and the fast path is used instead. Fires only
+/// while built against pdf_oxide < 0.3.79 (compile-time scope from
+/// `build.rs`; the dep bump deactivates it automatically) **and**
+/// `render_gate_enabled`. Math handling is suppression-first: TexTeller
+/// spans on fired pages are dropped, with opt-in inline salvage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenderHealthOpts {
+    /// Master switch for the render-health gate. Default true; the
+    /// version scope (`build.rs`) can still deactivate it underneath.
+    #[serde(default = "default_true")]
+    pub render_gate_enabled: bool,
+
+    /// Minimum text-layer words for a page to count as born-digital
+    /// with a substantial layer (gate only judges such pages).
+    #[serde(default = "default_render_gate_min_layer_words")]
+    pub render_gate_min_layer_words: usize,
+
+    /// Fire when OCR↔layer word-Jaccard is strictly below this.
+    #[serde(default = "default_render_gate_min_jaccard")]
+    pub render_gate_min_jaccard: f32,
+
+    /// Salvage inline-only formula boxes from the text layer as `$…$`
+    /// on fired pages instead of dropping all math. Default false
+    /// (suppression-first: confident false equations are worse than
+    /// none; salvage is best-effort — corrupt layers salvage garbage).
+    #[serde(default)]
+    pub render_gate_salvage_inline_math: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 /// Text-layer / markdown-shaping knobs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextOpts {
@@ -339,6 +385,9 @@ pub struct ConverterConfig {
     /// Render / asset-staging knobs.
     #[serde(flatten)]
     pub render: RenderOpts,
+    /// Render-health gate knobs (Option C shim, pdf_oxide < 0.3.79).
+    #[serde(flatten)]
+    pub health: RenderHealthOpts,
     /// Model-selection knobs.
     #[serde(flatten)]
     pub models: ModelOpts,
@@ -402,6 +451,17 @@ impl Default for ModelOpts {
     }
 }
 
+impl Default for RenderHealthOpts {
+    fn default() -> Self {
+        Self {
+            render_gate_enabled: true,
+            render_gate_min_layer_words: 30,
+            render_gate_min_jaccard: 0.35,
+            render_gate_salvage_inline_math: false,
+        }
+    }
+}
+
 impl Default for TextOpts {
     fn default() -> Self {
         Self {
@@ -428,6 +488,7 @@ impl Default for ConverterConfig {
             routing: RoutingOpts::default(),
             providers: ProviderOpts::default(),
             render: RenderOpts::default(),
+            health: RenderHealthOpts::default(),
             models: ModelOpts::default(),
             text: TextOpts::default(),
         }
@@ -445,6 +506,10 @@ mod tests {
         assert_eq!(c.models.formula_backend, FormulaBackend::TexTeller);
         assert_eq!(c.models.model_precision, ModelPrecision::Fp32);
         assert_eq!(c.models.model_quantization, ModelQuantization::Fp32);
+        assert!(c.health.render_gate_enabled);
+        assert_eq!(c.health.render_gate_min_layer_words, 30);
+        assert_eq!(c.health.render_gate_min_jaccard, 0.35);
+        assert!(!c.health.render_gate_salvage_inline_math);
     }
 
     #[test]
@@ -468,6 +533,9 @@ mod tests {
         for key in [
             "routing_mode",
             "use_onnx",
+            "render_gate_enabled",
+            "render_gate_min_layer_words",
+            "render_gate_min_jaccard",
             "ort_providers",
             "encoder_ort_providers",
             "render_dpi",
@@ -480,7 +548,7 @@ mod tests {
         ] {
             assert!(v.get(key).is_some(), "missing flat key {key}");
         }
-        for group in ["routing", "providers", "render", "models", "text"] {
+        for group in ["routing", "providers", "render", "models", "text", "health"] {
             assert!(v.get(group).is_none(), "nested group {group} leaked");
         }
         let back: ConverterConfig = serde_json::from_value(v).unwrap();

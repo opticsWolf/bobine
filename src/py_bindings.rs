@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 
 use crate::config::{
     ConverterConfig, FormulaBackend, ImageMode, ModelOpts, ModelPrecision, ModelQuantization,
-    TableBackend,
+    RenderHealthOpts, TableBackend,
     ProviderOpts, RenderOpts, RoutingMode, RoutingOpts, TextOpts,
 };
 use crate::converter::{HybridConverter, ProgressHooks};
@@ -152,6 +152,10 @@ impl PyConverterConfig {
         sanitize_ocr = true,
         math_char_threshold = 30usize,
         scanned_text_threshold = 50usize,
+        render_gate_enabled = true,
+        render_gate_min_layer_words = 30usize,
+        render_gate_min_jaccard = 0.35f32,
+        render_gate_salvage_inline_math = false,
         ocr_lang = "en".to_string(),
         table_backend = PyTableBackend::Slanet,
         potatr_node_threshold = 0.8f32,
@@ -194,6 +198,10 @@ impl PyConverterConfig {
         sanitize_ocr: bool,
         math_char_threshold: usize,
         scanned_text_threshold: usize,
+        render_gate_enabled: bool,
+        render_gate_min_layer_words: usize,
+        render_gate_min_jaccard: f32,
+        render_gate_salvage_inline_math: bool,
         ocr_lang: String,
         table_backend: PyTableBackend,
         potatr_node_threshold: f32,
@@ -270,6 +278,12 @@ impl PyConverterConfig {
                     sanitize_ocr,
                     math_char_threshold,
                     scanned_text_threshold,
+                },
+                health: RenderHealthOpts {
+                    render_gate_enabled,
+                    render_gate_min_layer_words,
+                    render_gate_min_jaccard,
+                    render_gate_salvage_inline_math,
                 },
             },
         }
@@ -364,6 +378,22 @@ impl PyConverterConfig {
     #[getter]
     fn sanitize_ocr(&self) -> bool {
         self.inner.text.sanitize_ocr
+    }
+    #[getter]
+    fn render_gate_enabled(&self) -> bool {
+        self.inner.health.render_gate_enabled
+    }
+    #[getter]
+    fn render_gate_min_layer_words(&self) -> usize {
+        self.inner.health.render_gate_min_layer_words
+    }
+    #[getter]
+    fn render_gate_min_jaccard(&self) -> f32 {
+        self.inner.health.render_gate_min_jaccard
+    }
+    #[getter]
+    fn render_gate_salvage_inline_math(&self) -> bool {
+        self.inner.health.render_gate_salvage_inline_math
     }
     fn __repr__(&self) -> String {
         format!(
