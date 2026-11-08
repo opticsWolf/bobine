@@ -1,8 +1,10 @@
 # CID-renderer blocker: findings, options, status
 
-**Date:** 2026-10-28. **bobine:** 0.7.1 (`dev`, pushed). **pdf_oxide:**
-0.3.78 (latest release, verified via `cargo search` today; v0.3.79
-unreleased). **Owner of next actions:** see §6.
+**Date:** 2026-10-28; re-verified 2026-11-08. **bobine:** 0.7.1 (`dev`,
+pushed) at original write; P2 POTATR routing since landed (`05dff78`,
+still `dev`). **pdf_oxide:** 0.3.78 (still latest release, re-verified
+via `cargo search` 2026-11-08; v0.3.79 still unreleased).
+**Owner of next actions:** see §6.
 
 This is the consolidated record of the pdf_oxide CID-font render
 corruption episode: what was found, what was ruled out, what is blocked,
@@ -42,6 +44,14 @@ recall 31/196 displays, exact-match 0/31.
    `CIDToGIDMap[code]` (identity fallback, no map) while ignoring the
    Encoding CMap, i.e. code-as-CID on subset fonts whose GIDs are
    arbitrary.
+4. **2026-11-07: text layer corrupt too on PLOS-subset files.**
+   Always+Potatr spot on `econ-tax-2019.pdf` (POTATR P2 validation)
+   shows extraction-level mojibake independent of bobine code:
+   pdf_oxide's own `to_markdown` emits `Tazatkon and economkc
+   sorjkstkcatkon` and POTATR cell tokens read `Effectkve labor taz`.
+   The §1.2(3) render-only finding was cs-bodvw-specific; on PLOS
+   subset-font files the corruption reaches the char identities, so no
+   text-backed path (fast, OCR-gated, or POTATR) can recover them.
 4. **A second, unrelated engine bug found en route and fixed.**
    `RapidOCR::rec_input` computed `x/255 - 0.5`, missing the `/ 0.5`
    (PP-OCRv4 spec, the code comment, and the det path all say
@@ -203,6 +213,16 @@ permanent value as a render-regression guard beyond 0.3.79.
   formula concepts unaffected).
 - Upstream issue → synthetic reproducer + `main` verification + human
   authorship (§1.5).
+- POTATR default-on (Auto triple-gate leg 3, "trustworthy renders") →
+  same renderer fix; P2 opt-in validated on clean renders only
+  (`05dff78`; econ-tax spot: correct 13-col structure, CID-garbage
+  text — garbage-in/garbage-out at the text layer).
+
+**Corpus note (2026-11-07):** `ikat-corpus/` is untracked (gitignored),
+so corpus pages can't be locked in-tree. `chem-olive-2024.pdf` changed
+since the parity fixtures (now 33 pages; the `potatr_gate_chem_p5`
+fixture shows PLOS ONE 6/11) — page-index references to corpus PDFs
+rot; cite content, not indices.
 
 **Open (no owner yet):** Option A execution; Option C build decision;
 gossamer §5 + okfgraph §6.1–6.4 implementation (external repos).
@@ -219,3 +239,9 @@ gossamer §5 + okfgraph §6.1–6.4 implementation (external repos).
    disproportionate to a temporary shim).
 4. JATS-first as the strategic answer for scholarly PDFs (already
    specified to gossamer; unaffected by this blocker).
+5. P2 POTATR routing validated on clean renders only; CID-corrupt text
+   layers fail the claim-quality gate or yield garbage-in cells — no
+   new fallback built, triple-gate leg 3 holds (2026-11-07).
+6. Docs refreshed 2026-11-08 ahead of Option A execution (0.3.78 still
+   latest, 0.3.79 unreleased; text-layer corruption finding; corpus
+   drift note).
