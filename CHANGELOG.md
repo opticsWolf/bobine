@@ -1,6 +1,100 @@
 # Changelog — bobine
 
-## 0.7.5 — 2026-11-02
+## 0.8.0 — 2026-11-08
+
+- **embroider 0.12 → 0.14.1.** Requirement bump (`Cargo.toml`) + lockfile;
+  zero code changes (used surface — `apply_providers`/`report`/
+  `cache_info_files`/`fetch_repo_file`/`parse_owner_name`/
+  `save_runtime_report`/`SessionPolicy`/`CacheReport` — intact), 181
+  lib + office/golden/rapid-table/bench suites green, ext-module clean.
+  Resolver confirms Rust 1.85 MSRV still holds.
+
+- **Option C: version-scoped render-health gate (pdf_oxide < 0.3.79).** New
+  `src/render_gate.rs` + `RenderHealthOpts` (`render_gate_enabled=true`,
+  `render_gate_min_layer_words=30`, `render_gate_min_jaccard=0.35`,
+  `render_gate_salvage_inline_math=false`, Python mirrors + getters): per
+  page, before the expensive arms, OCR↔text-layer word-Jaccard below
+  threshold on a substantial layer means corrupt render — discard the ONNX
+  output, emit fast-path markdown, stay loud (`tracing::warn` per fire +
+  `RenderGateStats` on the converter, appended to the P-D bench
+  `report.md`). Suppression-first math (TexTeller spans on fired pages
+  dropped) with opt-in inline `$…$` salvage. `build.rs` reads the resolved
+  pdf_oxide version from `Cargo.lock` and only emits
+  `pdf_oxide_pre_0_3_79` below the 0.3.79 cutoff — the dep bump
+  deactivates the shim at compile time (registry fallback: assume old,
+  stay safe). Unit-tested pure logic (tokens/Jaccard/decision/version
+  scope) + no-model converter tests (disabled/thin-layer fail-open); all
+  goldens unchanged. Filed upstream as #3098.
+
+- **POTATR P2: option-A routing with claim/suppress + e2e golden.** Page-level
+  pre-pass claims tables (`score>=0.8`, `>=2` words in rect, cell fill >=
+  `potatr_min_text_fill`=0.2) and suppresses overlapping layout regions
+  (IoU>0.5 plus caption/footer cover rule); each table emits anchored
+  markdown, unclaimed regions use the existing arms (SLANet fallback
+  intact). New `tests/fixtures/potatr_table.pdf` →
+  `tests/golden/potatr_table_potatr.golden.md` (ignored
+  `BOBINE_POTATR_PARITY=1` gate, full 20-cell GFM table) plus the
+  Never-mode `tests/golden/potatr_table.golden.md`. Incidental fixes
+  routing depended on: DETR `scale_factor` ones (3-4x box inflation),
+  `flip_chars_topdown` (bottom-up chars vs top-down boxes), `figure_title`
+  as caption, `<html>` wrapper strip + self-closing td/th, cover rule.
+  Default stays `Slanet` — no behavior change unless opted in.
+- **POTATR P1: postprocess port + parity gate.** `src/rapid_potatr.rs` ports
+  `postprocess.py` (objects → structures → cells, rotations, NMS family),
+  `metrics.cells_to_html` (thead/th + tbody/td, ET-faithful empty elements +
+  escaping), and `inference` edge-linking/`tables_from_outputs`. Four
+  reference unit tests ported green; ignored `tests/test_potatr_parity.rs`
+  (`BOBINE_POTATR_PARITY=1`) reproduces the torch reference on chem-olive p5
+  with byte-exact HTML (21 cells), caption, and grid — box drift 0.054px.
+  No routing yet — behavior unchanged.
+- **POTATR P0: model slot + preprocess (opt-in).** New `src/rapid_potatr.rs`
+  (`POTATR_REPO`/`REV=e7f1ce67…` — `opticsWolf/potatr-onnx`, `download_potatr`,
+  `Potatr::load`/`forward`, exact eval-preprocess replication with
+  `PotatrGeometry`); `OnnxEngine` lazy `potatr` slot + `set_potatr_model` +
+  CPU-pinned providers; `TableBackend::{Slanet,Potatr,Auto}` (default
+  `Slanet`) + thresholds + `potatr_ort_providers` in config, Python
+  bindings, and `tests/test_potatr.rs` preprocess parity vs the reference
+  transform (max|d| 0.0175 ≤ 0.03). No routing yet — behavior unchanged.
+
+The 0.7.5 development line (TexTeller fp32 default, variant matrix)
+was never tagged; it ships here together with the serving-stack
+renewal (PP-OCRv5, PP-DocLayout_plus-L, first-party mirrors), then the
+0.7.5 line:
+
+- **fp16 parity gate.** New `tests/test_tex_teller_parity.rs` (ignored
+  by default, `BOBINE_TEX_PARITY=1`): loads fp32 + fp16 from the unified
+  repo and asserts raw-decode fp16==fp32 parity >= 27/30 over the labeled
+  eval set. Measured 28/30 CPU, matching the documented matrix.
+- **Bench harness precision tiers.** `tests/test_bench_ocr.rs` takes
+  `BOBINE_BENCH_QUANT=fp32|int8|fp16` (outputs namespaced to
+  `target/bench_ocr/<quant>/`); int8-vs-fp32 over the 196 ikat displays:
+  195/196 identical outcomes, both tiers starved equally by the CID
+  text-layer corruption (withheld per standing rule).
+- **PP-OCRv5 server tier evaluated and rejected.** 88.1 + 84.5 MB
+  (8x mobile), 3.1x slower (6.95 vs 2.23 s CPU on solitons p.0),
+  quality at parity (40/178 differing line-slots, wins split both
+  ways). Not mirrored; mobile pair stands.
+- **Layout upgraded to PP-DocLayout_plus-L.** New first-party serving
+  repo `opticsWolf/pp-doclayout-plus-l-onnx` (RT-DETR-L, 20 classes,
+  Apache-2.0, byte-identical to the official PaddlePaddle export).
+  `RapidLayout` detects the backend from the input signature (YOLO path
+  kept for custom models; DETR path: direct 800x800 resize, /255,
+  three inputs, `[class,score,x0,y0,x1,y1]` in original coords,
+  threshold 0.5). The 20-class taxonomy maps onto the existing
+  substring routing (`doc_title`/`paragraph_title`→headings,
+  `formula`→math, `chart`/`seal`→figure crops); econ-tax p.0:
+  13 overlapping YOLO boxes → 11 tight DETR regions, 477ms → 297ms
+  CPU. Supersedes `opticsWolf/doclayout-yolo-onnx` (YOLO-lineage
+  review closed by replacement).
+- **OCR upgraded to PP-OCRv5.** New first-party serving repo
+  `opticsWolf/rapidocr-ppocrv5-onnx` (det + rec + `ppocrv5_dict.txt`,
+  Apache-2.0, byte-identical to the official PaddlePaddle exports).
+  The rec export carries no charset metadata, so the dict travels with
+  the weights (18,383 lines → 18,385 classes via blank+space
+  alignment); `RapidOcr::load` takes an optional dict path, and the det
+  output lookup is generation-robust (`sigmoid*` else first output).
+  Formula fixture: v4 `RN/y` → v5 `x2/y2` with higher confidences.
+  Supersedes `opticsWolf/rapidocr-onnx` (PP-OCRv4, still on the Hub).
 
 - **TexTeller now defaults to fp32.** `ModelOpts::default()` and the Python
   bindings select `ModelQuantization::Fp32` on both CPU and CUDA. int8 is now

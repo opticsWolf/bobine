@@ -1,7 +1,12 @@
-// RapidLayout — DocLayout-YOLO ONNX layout analysis engine.
+// RapidLayout — document layout analysis engine (dual backend).
 //
 // Detects document regions: title, paragraph, table, figure, equation, etc.
-// Model: doclayout_yolo_docstructbench_imgsz1024.onnx (YOLO-style detector)
+// Two serving generations, selected by the model's input signature:
+// - YOLO (`images` input): DocLayout-YOLO export, [1,N,6] xywh output,
+//   letterbox + BGR/114-pad preprocess, DocStructBench labels.
+// - Paddle DETR (`image` + `im_shape` + `scale_factor` inputs):
+//   PP-DocLayout_plus-L, [300,6] [class,score,x0,y0,x1,y1] output in
+//   original-image coords, direct-resize + /255 preprocess, 20 labels.
 
 use std::path::Path;
 
@@ -18,6 +23,9 @@ use crate::error::{BobineError, Result};
 
 const INPUT_SIZE: u32 = 1024;
 const CONF_THRESHOLD: f32 = 0.25;
+/// Paddle DETR operating point (upstream `draw_threshold`).
+const DETR_INPUT_SIZE: u32 = 800;
+const DETR_CONF_THRESHOLD: f32 = 0.5;
 const IOU_THRESHOLD: f32 = 0.45;
 const PAD_COLOR: [u8; 3] = [114, 114, 114]; // YOLO gray padding
 
@@ -35,6 +43,7 @@ pub struct LayoutRegion {
 /// DocLayout-YOLO layout analysis engine.
 pub struct RapidLayout {
     session: Session,
+    backend: Backend,
     labels: Vec<String>,
     /// Letterbox target for the longest side. 0 = native resolution
     /// (pad-only, upstream behaviour). Defaults to INPUT_SIZE; override
@@ -42,7 +51,26 @@ pub struct RapidLayout {
     max_side: u32,
 }
 
-/// Letterbox geometry shared by preprocess and detect.
+/// Serving generation, detected from the model's input signature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Backend {
+    /// Ultralytics-style YOLO export (`images` input).
+    Yolo,
+    /// Paddle detection deploy format (`image` + `im_shape` +
+    /// `scale_factor` inputs, RT-DETR-style [class,score,x0,y0,x1,y1]).
+    PaddleDetr,
+}
+
+/// PP-DocLayout_plus-L 20-class list (upstream `inference.yml`
+/// `label_list`, index = class id). Fallback when neither a labels file
+/// nor model metadata provides names.
+const PLUS_L_LABELS: &[&str] = &[
+    "paragraph_title", "image", "text", "number", "abstract",
+    "content", "figure_title", "formula", "table", "reference",
+    "doc_title", "footnote", "header", "algorithm", "footer",
+    "seal", "chart", "formula_number", "aside_text", "reference_content",
+];
+
 /// Returns (scale, pad_w, pad_h, canvas_w, canvas_h).
 fn letterbox_geometry(orig_w: u32, orig_h: u32, max_side: u32) -> (f32, f32, f32, u32, u32) {
     if max_side == 0 {
@@ -63,23 +91,37 @@ fn letterbox_geometry(orig_w: u32, orig_h: u32, max_side: u32) -> (f32, f32, f32
 }
 
 impl RapidLayout {
-    /// Load the DocLayout-YOLO ONNX model from a file path.
-    pub fn load(model_path: &Path, providers: &[String]) -> Result<Self> {
+    /// Load a layout ONNX model. `labels_path` (a labels.txt with one
+    /// label per line, index = class id) wins; then model metadata;
+    /// then the backend default list. Backend (YOLO vs Paddle DETR) is
+    /// detected from the model's input signature.
+    pub fn load(model_path: &Path, labels_path: Option<&Path>, providers: &[String]) -> Result<Self> {
         info!("Loading RapidLayout from {}", model_path.display());
         let session = crate::engine::session_builder(providers)?
             .commit_from_file(model_path)
             .map_err(|e| BobineError::Ort(e.to_string()))?;
+        let backend = if session.inputs().iter().any(|i| i.name() == "image") {
+            Backend::PaddleDetr
+        } else {
+            Backend::Yolo
+        };
 
         let max_side = std::env::var("BOB_LAYOUT_MAXSIDE")
             .ok()
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(INPUT_SIZE);
 
-        // Read label list from ONNX model metadata
-        let labels = Self::read_labels(&session)
+        // Read label list: explicit file, then ONNX metadata, then the
+        // backend default list.
+        let labels = labels_path
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .map(|c| c.lines().map(|s| s.trim().to_string()).collect::<Vec<_>>())
             .filter(|l| !l.is_empty())
-            .unwrap_or_else(|| {
-                vec![
+            .or_else(|| Self::read_labels(&session))
+            .filter(|l| !l.is_empty())
+            .unwrap_or_else(|| match backend {
+                Backend::PaddleDetr => PLUS_L_LABELS.iter().map(|s| s.to_string()).collect(),
+                Backend::Yolo => vec![
                     "title".into(),
                     "plain text".into(),
                     "abandon".into(),
@@ -90,7 +132,7 @@ impl RapidLayout {
                     "table_footnote".into(),
                     "isolate_formula".into(),
                     "formula_caption".into(),
-                ]
+                ],
             });
 
         info!(
@@ -101,6 +143,7 @@ impl RapidLayout {
 
         Ok(Self {
             session,
+            backend,
             labels,
             max_side,
         })
@@ -144,8 +187,102 @@ impl RapidLayout {
         None
     }
 
-    /// Analyze a page image → layout regions.
+    /// Analyze a page image → layout regions. Dispatches on the serving
+    /// backend detected at load: YOLO letterbox path or Paddle DETR path.
     pub fn detect(&mut self, img: &DynamicImage) -> Result<Vec<LayoutRegion>> {
+        match self.backend {
+            Backend::Yolo => self.detect_yolo(img),
+            Backend::PaddleDetr => self.detect_detr(img),
+        }
+    }
+
+    /// Paddle DETR path (PP-DocLayout_plus-L): direct 800x800 resize +
+    /// /255, three inputs, [N,6] [class,score,x0,y0,x1,y1] in original
+    /// coords. Threshold 0.5 (upstream draw_threshold), then the shared
+    /// per-class NMS.
+    fn detect_detr(&mut self, img: &DynamicImage) -> Result<Vec<LayoutRegion>> {
+        let (orig_w, orig_h) = (img.width(), img.height());
+        let tensor = preprocess_detr(img)?; // [1, 3, 800, 800]
+        let input = ort::value::Tensor::from_array(tensor)
+            .map_err(|e| BobineError::Ort(format!("build input: {e}")))?;
+        let im_shape = ndarray::arr2(&[[orig_h as f32, orig_w as f32]]);
+        // This export's postprocess multiplies the RT-DETR normalized boxes
+        // by im_shape (already original scale) and then divides by
+        // scale_factor, following the Paddle deploy convention that expects
+        // pre-scale boxes in resized space. Passing the textbook
+        // [[800/h, 800/w]] therefore inflates every box 3-4x (verified
+        // 2026-11-07: textbook scale puts the table in empty whitespace,
+        // ones recover it to within 7px). Ones keep the orig-scale boxes.
+        let scale = ndarray::arr2(&[[1.0_f32, 1.0_f32]]);
+        let outputs = self
+            .session
+            .run(inputs![
+                "image" => input,
+                "im_shape" => ort::value::Tensor::from_array(im_shape)
+                    .map_err(|e| BobineError::Ort(format!("build im_shape: {e}")))?,
+                "scale_factor" => ort::value::Tensor::from_array(scale)
+                    .map_err(|e| BobineError::Ort(format!("build scale_factor: {e}")))?
+            ])
+            .map_err(|e| BobineError::Ort(format!("run: {e}")))?;
+        // Single [N, 6] output (fetch_name_0); fall back to the first
+        // output for forward-compatibility, mirroring the OCR side.
+        let preds_view = outputs
+            .iter()
+            .find(|(k, _)| k.starts_with("fetch"))
+            .or_else(|| outputs.iter().next())
+            .map(|(_, v)| v)
+            .ok_or_else(|| BobineError::Ort("layout model has no outputs".into()))?;
+        // [N, 6] (Paddle deploy format has no batch dim; normalize to 3D).
+        let arr = preds_view
+            .try_extract_array::<f32>()
+            .map_err(|e| BobineError::Ort(format!("extract output: {e}")))?
+            .to_owned();
+        let arr = if arr.ndim() == 2 {
+            arr.insert_axis(ndarray::Axis(0))
+        } else {
+            arr
+        };
+        let preds = arr.slice(s![0, .., ..]);
+        let n = preds.shape()[0];
+        let mut detections: Vec<(f32, f32, f32, f32, f32, usize)> = vec![];
+        for i in 0..n {
+            let score = preds[[i, 1]];
+            if score < DETR_CONF_THRESHOLD {
+                continue;
+            }
+            let cls = preds[[i, 0]] as usize;
+            // Clip to image bounds (model coords are already original-scale).
+            let x0 = preds[[i, 2]].max(0.0).min(orig_w as f32);
+            let y0 = preds[[i, 3]].max(0.0).min(orig_h as f32);
+            let x1 = preds[[i, 4]].max(0.0).min(orig_w as f32);
+            let y1 = preds[[i, 5]].max(0.0).min(orig_h as f32);
+            if x1 <= x0 || y1 <= y0 {
+                continue;
+            }
+            detections.push((x0, y0, x1, y1, score, cls));
+        }
+        detections.sort_by(|a, b| b.4.partial_cmp(&a.4).unwrap_or(std::cmp::Ordering::Equal));
+        let keep = multiclass_nms(&detections, IOU_THRESHOLD);
+        let regions: Vec<LayoutRegion> = keep
+            .iter()
+            .map(|&idx| {
+                let (x0, y0, x1, y1, conf, cls) = &detections[idx];
+                LayoutRegion {
+                    x0: *x0,
+                    y0: *y0,
+                    x1: *x1,
+                    y1: *y1,
+                    label: self.labels.get(*cls).cloned().unwrap_or_default(),
+                    confidence: *conf,
+                }
+            })
+            .collect();
+        Ok(regions)
+    }
+
+    /// YOLO path (DocLayout-YOLO export): letterbox + BGR/114-pad,
+    /// single `images` input, [1,N,6] xywh output, unscaled to original.
+    fn detect_yolo(&mut self, img: &DynamicImage) -> Result<Vec<LayoutRegion>> {
         let orig_h = img.height() as f32;
         let orig_w = img.width() as f32;
 
@@ -293,6 +430,29 @@ fn preprocess(img: &DynamicImage, max_side: u32) -> Result<Array4<f32>> {
 
         Ok(arr)
     }
+}
+
+/// Paddle DETR preprocess: direct 800x800 resize (no aspect preserve,
+/// no pad), /255, RGB CHW. Mirrors the upstream `inference.yml`
+/// (Resize keep_ratio=false, NormalizeImage mean 0/std 1).
+fn preprocess_detr(img: &DynamicImage) -> Result<Array4<f32>> {
+    use image::GenericImageView;
+    let resized = image::imageops::resize(
+        img,
+        DETR_INPUT_SIZE,
+        DETR_INPUT_SIZE,
+        image::imageops::FilterType::Triangle,
+    );
+    let mut arr = Array4::<f32>::zeros((1, 3, DETR_INPUT_SIZE as usize, DETR_INPUT_SIZE as usize));
+    for y in 0..DETR_INPUT_SIZE as usize {
+        for x in 0..DETR_INPUT_SIZE as usize {
+            let p = resized.get_pixel(x as u32, y as u32);
+            arr[[0, 0, y, x]] = p.0[0] as f32 / 255.0;
+            arr[[0, 1, y, x]] = p.0[1] as f32 / 255.0;
+            arr[[0, 2, y, x]] = p.0[2] as f32 / 255.0;
+        }
+    }
+    Ok(arr)
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,8 @@
 // TexTeller ONNX formula recognition engine.
 //
 // Architecture: ViT encoder → RoBERTa decoder (autoregressive).
-// Models from OleehyO/TexTeller on HuggingFace, downloaded via hf-hub.
+// Models from the first-party unified serving repo
+// `opticsWolf/texteller3-onnx` on HuggingFace, downloaded via hf-hub.
 
 use std::path::Path;
 

@@ -51,19 +51,25 @@ pub(crate) fn vision_policy() -> SessionPolicy {
 /// DocLayout-YOLO ONNX conversion of the official DocStructBench weights
 /// (the author's repo ships .pt only; this export matches bobine's
 /// fallback label order).
-const LAYOUT_REPO: (&str, &str) = ("wybxc", "DocLayout-YOLO-DocStructBench-onnx");
-const LAYOUT_FILENAME: &str = "doclayout_yolo_docstructbench_imgsz1024.onnx";
-/// Pinned hub revision for the layout weights (verified present via the
-/// HF API; equals current upstream HEAD, so no re-download on update).
-const LAYOUT_REV: &str = "ee7c3d744e5c47c58e267044ac825f95abe69653";
+const LAYOUT_REPO: (&str, &str) = ("opticsWolf", "pp-doclayout-plus-l-onnx");
+/// RT-DETR-L, 20 classes; the class names travel with the weights
+/// (the ONNX export carries no metadata).
+const LAYOUT_FILENAME: &str = "pp_doclayout_plus_l.onnx";
+const LAYOUT_LABELS_FILENAME: &str = "labels.txt";
+/// Pinned hub revision for the PP-DocLayout_plus-L weights + labels
+/// (Apache-2.0, byte-identical to the official PaddlePaddle export).
+const LAYOUT_REV: &str = "cee9ee321d3460a25b497d899aa4719b4a5800ba";
 
-/// PP-OCRv4 mobile det + rec exports; the rec model embeds its charset in
-/// the ONNX custom metadata key "character".
-const OCR_REPO: (&str, &str) = ("SWHL", "RapidOCR");
-const OCR_DET_FILENAME: &str = "PP-OCRv4/ch_PP-OCRv4_det_infer.onnx";
-const OCR_REC_FILENAME: &str = "PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx";
-/// Pinned hub revision for the RapidOCR det + rec weights (same terms).
-const OCR_REV: &str = "1cfba2e90fc938db55889873735088de210cc173";
+/// PP-OCRv5 mobile det + rec exports (Apache-2.0, byte-identical to the
+/// official PaddlePaddle ONNX). The rec export carries no charset
+/// metadata — the dict below (18,383 lines → 18,385 classes via
+/// blank+space alignment) travels with the weights.
+const OCR_REPO: (&str, &str) = ("opticsWolf", "rapidocr-ppocrv5-onnx");
+const OCR_DET_FILENAME: &str = "ppocrv5_det_infer.onnx";
+const OCR_REC_FILENAME: &str = "ppocrv5_rec_infer.onnx";
+const OCR_DICT_FILENAME: &str = "ppocrv5_dict.txt";
+/// Pinned hub revision for the PP-OCRv5 det + rec + dict.
+const OCR_REV: &str = "d19f569c677b3b883276a901a2cefe1aaf0e36a6";
 
 /// Download a file from HuggingFace through the shared hub cache (see
 /// [`crate::hub_cache`]): `cache_dir` is the hub-cache root, the file
@@ -96,6 +102,11 @@ pub struct OnnxEngine {
     /// only when a scanned table region is actually encountered).
     table: Option<crate::rapid_table::RapidTable>,
 
+    /// POTATR page-level table extraction (loaded on demand, lazily —
+    /// only when `table_backend` selects it and a page has words).
+    /// Opt-in in v1 (`TableBackend::Slanet` default); see proposal_potatr.
+    potatr: Option<crate::rapid_potatr::Potatr>,
+
     /// Cache directory for downloaded models: the hub-cache root (an
     /// override of the standard HuggingFace cache, not a flat model dir).
     cache_dir: PathBuf,
@@ -111,6 +122,9 @@ pub struct OnnxEngine {
 
     /// Path to a SLANet-plus table-structure model.
     table_model_path: Option<PathBuf>,
+
+    /// Path to a POTATR page-level table model.
+    potatr_model_path: Option<PathBuf>,
 }
 
 impl OnnxEngine {
@@ -156,6 +170,24 @@ impl OnnxEngine {
         }
     }
 
+    /// Resolve providers for the POTATR slot: explicit override, else
+    /// always CPU — same attention-heavy profile as the SLANet slot, and
+    /// no CUDA numbers exist yet (measure before overriding; the P0 gate
+    /// is CPU-only).
+    fn resolve_potatr_providers(&self) -> Vec<String> {
+        match self.config.providers.potatr_ort_providers.clone() {
+            Some(p) => p,
+            None => {
+                if cuda_available() {
+                    tracing::info!(
+                        "potatr slot pinned to CPUExecutionProvider (no CUDA numbers yet; set potatr_ort_providers to override)"
+                    );
+                }
+                vec!["CPUExecutionProvider".to_string()]
+            }
+        }
+    }
+
     pub fn new(config: &ConverterConfig, cache_dir: &Path) -> Self {
         // `cache_dir` is the hub-cache root (0.6.0): converter models
         // resolve into its standard `models--*` layout, shared with
@@ -166,11 +198,13 @@ impl OnnxEngine {
             layout: None,
             ocr: None,
             table: None,
+            potatr: None,
             cache_dir: cache_dir.to_path_buf(),
             layout_model_path: None,
             ocr_det_path: None,
             ocr_rec_path: None,
             table_model_path: None,
+            potatr_model_path: None,
         }
     }
 
@@ -189,6 +223,12 @@ impl OnnxEngine {
     /// When unset, the model auto-downloads from HuggingFace on first use.
     pub fn set_table_model(&mut self, path: &Path) {
         self.table_model_path = Some(path.to_path_buf());
+    }
+
+    /// Set an explicit POTATR page-level table ONNX model path.
+    /// When unset, the model auto-downloads from HuggingFace on first use.
+    pub fn set_potatr_model(&mut self, path: &Path) {
+        self.potatr_model_path = Some(path.to_path_buf());
     }
 
     /// Load models required by the current routing mode.
@@ -280,12 +320,12 @@ impl OnnxEngine {
         out.push(probe(tt_repo, &tt_files, Some(tt_rev))?);
         out.push(probe(
             &format!("{}/{}", LAYOUT_REPO.0, LAYOUT_REPO.1),
-            &[(LAYOUT_FILENAME, true)],
+            &[(LAYOUT_FILENAME, true), (LAYOUT_LABELS_FILENAME, false)],
             Some(LAYOUT_REV),
         )?);
         out.push(probe(
             &format!("{}/{}", OCR_REPO.0, OCR_REPO.1),
-            &[(OCR_DET_FILENAME, true), (OCR_REC_FILENAME, true)],
+            &[(OCR_DET_FILENAME, true), (OCR_REC_FILENAME, true), (OCR_DICT_FILENAME, false)],
             Some(OCR_REV),
         )?);
         out.push(probe(
@@ -385,6 +425,37 @@ impl OnnxEngine {
         Ok(())
     }
 
+    // ------------------------------------------------------------------
+    // POTATR (lazy: downloads on first qualifying page)
+    // ------------------------------------------------------------------
+
+    fn ensure_potatr(&mut self) -> Result<()> {
+        if self.potatr.is_none() {
+            let path = match self.potatr_model_path.clone() {
+                Some(p) => p,
+                None => crate::rapid_potatr::download_potatr(&self.cache_dir)?,
+            };
+            let providers = self.resolve_potatr_providers();
+            self.potatr = Some(crate::rapid_potatr::Potatr::load(&path, &providers)?);
+        }
+        Ok(())
+    }
+
+    /// Run POTATR on a full page render; returns raw network outputs (P1
+    /// post-processes them into tables). Public so P2 routing can call it;
+    /// unused until then (P0 wires the slot + preprocess only).
+    #[allow(dead_code)]
+    pub fn recognize_page_tables(
+        &mut self,
+        img: &image::DynamicImage,
+    ) -> Result<crate::rapid_potatr::PotatrOutputs> {
+        self.ensure_potatr()?;
+        self.potatr
+            .as_mut()
+            .expect("ensured")
+            .forward(img)
+    }
+
     /// Recognize a table crop using OCR lines; returns full HTML or None.
     pub fn recognize_table(
         &mut self,
@@ -432,12 +503,23 @@ impl OnnxEngine {
                     Some(LAYOUT_REV),
                 )?,
             };
+            let labels = match self.layout_model_path.clone() {
+                // Local model override: labels from its own metadata.
+                Some(_) => None,
+                None => Some(hf_fetch(
+                    &self.cache_dir,
+                    LAYOUT_REPO,
+                    LAYOUT_LABELS_FILENAME,
+                    "RapidLayout labels",
+                    Some(LAYOUT_REV),
+                )?),
+            };
             info!("Loading RapidLayout from {}...", path.display());
             let providers = self.resolve_auto_gpu_providers(
                 self.config.providers.layout_ort_providers.as_ref(),
                 "layout",
             );
-            let layout = RapidLayout::load(&path, &providers)?;
+            let layout = RapidLayout::load(&path, labels.as_deref(), &providers)?;
             self.layout = Some(layout);
         }
         Ok(())
@@ -477,16 +559,27 @@ impl OnnxEngine {
                     Some(OCR_REV),
                 )?,
             };
+            let dict = match self.ocr_rec_path.clone() {
+                // Local rec override: charset from its own metadata.
+                Some(_) => None,
+                None => Some(hf_fetch(
+                    &self.cache_dir,
+                    OCR_REPO,
+                    OCR_DICT_FILENAME,
+                    "RapidOCR dict",
+                    Some(OCR_REV),
+                )?),
+            };
+            let providers = self.resolve_auto_gpu_providers(
+                self.config.providers.ocr_ort_providers.as_ref(),
+                "ocr",
+            );
             info!(
                 "Loading RapidOCR from {} and {}...",
                 det.display(),
                 rec.display()
             );
-            let providers = self.resolve_auto_gpu_providers(
-                self.config.providers.ocr_ort_providers.as_ref(),
-                "ocr",
-            );
-            let ocr = RapidOcr::load(&det, &rec, &self.config.models.ocr_lang, &providers)?;
+            let ocr = RapidOcr::load(&det, &rec, dict.as_deref(), &self.config.models.ocr_lang, &providers)?;
             self.ocr = Some(ocr);
         }
         Ok(())
@@ -682,9 +775,9 @@ mod tests {
             repos,
             [
                 crate::tex_teller::TEX_TELLER_REPO,
-                "wybxc/DocLayout-YOLO-DocStructBench-onnx",
-                "SWHL/RapidOCR",
-                "opendatalab/PDF-Extract-Kit-1.0",
+                "opticsWolf/pp-doclayout-plus-l-onnx",
+                "opticsWolf/rapidocr-ppocrv5-onnx",
+                "opticsWolf/slanet-plus-onnx",
             ]
         );
 

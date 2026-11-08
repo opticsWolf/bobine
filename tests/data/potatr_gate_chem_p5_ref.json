@@ -1,0 +1,421 @@
+[
+ {
+  "html": "<html><table><thead><tr><th>Carbon</th><th>13C chemical shift for Cd-nano complex</th><th>Assigned to</th></tr></thead><tbody><tr><td>1</td><td>153.6</td><td>C of benzene ring</td></tr><tr><td>2</td><td>168.02</td><td>C of the carbonyl group</td></tr><tr><td>3</td><td>24.26</td><td>C of the methyl group</td></tr><tr><td>4</td><td>115.5</td><td>C of benzene ring</td></tr><tr><td>5</td><td>121.9</td><td>C of benzene ring</td></tr><tr><td>6</td><td>131.5</td><td>C of benzene ring attached to the NH group</td></tr></tbody></table></html>",
+  "cells": [
+   {
+    "bbox": [
+     420.21063232421875,
+     1221.865966796875,
+     470.8340148925781,
+     1241.14599609375
+    ],
+    "column_nums": [
+     0
+    ],
+    "row_nums": [
+     0
+    ],
+    "header": true,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "Carbon"
+   },
+   {
+    "bbox": [
+     420.21063232421875,
+     1250.2034912109375,
+     470.8340148925781,
+     1266.2032470703125
+    ],
+    "column_nums": [
+     0
+    ],
+    "row_nums": [
+     1
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "1"
+   },
+   {
+    "bbox": [
+     420.21063232421875,
+     1275.1488037109375,
+     470.8340148925781,
+     1291.1485595703125
+    ],
+    "column_nums": [
+     0
+    ],
+    "row_nums": [
+     2
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "2"
+   },
+   {
+    "bbox": [
+     420.21063232421875,
+     1300.2060546875,
+     470.8340148925781,
+     1316.205810546875
+    ],
+    "column_nums": [
+     0
+    ],
+    "row_nums": [
+     3
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "3"
+   },
+   {
+    "bbox": [
+     420.21063232421875,
+     1325.1513671875,
+     470.8340148925781,
+     1341.151123046875
+    ],
+    "column_nums": [
+     0
+    ],
+    "row_nums": [
+     4
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "4"
+   },
+   {
+    "bbox": [
+     420.21063232421875,
+     1350.208740234375,
+     470.8340148925781,
+     1366.20849609375
+    ],
+    "column_nums": [
+     0
+    ],
+    "row_nums": [
+     5
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "5"
+   },
+   {
+    "bbox": [
+     420.21063232421875,
+     1375.1539306640625,
+     470.8340148925781,
+     1391.1536865234375
+    ],
+    "column_nums": [
+     0
+    ],
+    "row_nums": [
+     6
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "6"
+   },
+   {
+    "bbox": [
+     501.84600830078125,
+     1221.865966796875,
+     768.4576416015625,
+     1241.14599609375
+    ],
+    "column_nums": [
+     1
+    ],
+    "row_nums": [
+     0
+    ],
+    "header": true,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "13C chemical shift for Cd-nano complex"
+   },
+   {
+    "bbox": [
+     501.84600830078125,
+     1250.2034912109375,
+     768.4576416015625,
+     1266.2032470703125
+    ],
+    "column_nums": [
+     1
+    ],
+    "row_nums": [
+     1
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "153.6"
+   },
+   {
+    "bbox": [
+     501.84600830078125,
+     1275.1488037109375,
+     768.4576416015625,
+     1291.1485595703125
+    ],
+    "column_nums": [
+     1
+    ],
+    "row_nums": [
+     2
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "168.02"
+   },
+   {
+    "bbox": [
+     501.84600830078125,
+     1300.2060546875,
+     768.4576416015625,
+     1316.205810546875
+    ],
+    "column_nums": [
+     1
+    ],
+    "row_nums": [
+     3
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "24.26"
+   },
+   {
+    "bbox": [
+     501.84600830078125,
+     1325.1513671875,
+     768.4576416015625,
+     1341.151123046875
+    ],
+    "column_nums": [
+     1
+    ],
+    "row_nums": [
+     4
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "115.5"
+   },
+   {
+    "bbox": [
+     501.84600830078125,
+     1350.208740234375,
+     768.4576416015625,
+     1366.20849609375
+    ],
+    "column_nums": [
+     1
+    ],
+    "row_nums": [
+     5
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "121.9"
+   },
+   {
+    "bbox": [
+     501.84600830078125,
+     1375.1539306640625,
+     768.4576416015625,
+     1391.1536865234375
+    ],
+    "column_nums": [
+     1
+    ],
+    "row_nums": [
+     6
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "131.5"
+   },
+   {
+    "bbox": [
+     823.6312255859375,
+     1221.865966796875,
+     1125.9425048828125,
+     1241.14599609375
+    ],
+    "column_nums": [
+     2
+    ],
+    "row_nums": [
+     0
+    ],
+    "header": true,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "Assigned to"
+   },
+   {
+    "bbox": [
+     823.6312255859375,
+     1250.2034912109375,
+     1125.9425048828125,
+     1266.2032470703125
+    ],
+    "column_nums": [
+     2
+    ],
+    "row_nums": [
+     1
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "C of benzene ring"
+   },
+   {
+    "bbox": [
+     823.6312255859375,
+     1275.1488037109375,
+     1125.9425048828125,
+     1291.1485595703125
+    ],
+    "column_nums": [
+     2
+    ],
+    "row_nums": [
+     2
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "C of the carbonyl group"
+   },
+   {
+    "bbox": [
+     823.6312255859375,
+     1300.2060546875,
+     1125.9425048828125,
+     1316.205810546875
+    ],
+    "column_nums": [
+     2
+    ],
+    "row_nums": [
+     3
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "C of the methyl group"
+   },
+   {
+    "bbox": [
+     823.6312255859375,
+     1325.1513671875,
+     1125.9425048828125,
+     1341.151123046875
+    ],
+    "column_nums": [
+     2
+    ],
+    "row_nums": [
+     4
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "C of benzene ring"
+   },
+   {
+    "bbox": [
+     823.6312255859375,
+     1350.208740234375,
+     1125.9425048828125,
+     1366.20849609375
+    ],
+    "column_nums": [
+     2
+    ],
+    "row_nums": [
+     5
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "C of benzene ring"
+   },
+   {
+    "bbox": [
+     823.6312255859375,
+     1375.1539306640625,
+     1125.9425048828125,
+     1391.1536865234375
+    ],
+    "column_nums": [
+     2
+    ],
+    "row_nums": [
+     6
+    ],
+    "header": false,
+    "subcell": false,
+    "subheader": false,
+    "cell_text": "C of benzene ring attached to the NH group"
+   }
+  ],
+  "caption": "Table 1. 13C chemical shifts (in ppm) for the free ligand H2L and Cd nano complex.",
+  "footer": "https://doi.org/10.1371/journal.pone.0306040.t001",
+  "caption_parts": [
+   {
+    "text": "Table 1. 13C chemical shifts (in ppm) for the free ligand H2L and Cd nano complex.",
+    "bbox": [
+     396.33856201171875,
+     1196.124267578125,
+     953.9830932617188,
+     1213.540771484375
+    ],
+    "score": 0.9997007846832275,
+    "edge_score": 0.9999999403953552
+   }
+  ],
+  "footer_parts": [
+   {
+    "text": "https://doi.org/10.1371/journal.pone.0306040.t001",
+    "bbox": [
+     401.306396484375,
+     1406.4835205078125,
+     701.166259765625,
+     1422.6746826171875
+    ],
+    "score": 0.9995939135551453,
+    "edge_score": 0.9999998807907104
+   }
+  ],
+  "label": "table",
+  "bbox": [
+   420.4744567871094,
+   1225.16064453125,
+   1126.0028076171875,
+   1392.345703125
+  ],
+  "score": 0.9999600648880005
+ }
+]

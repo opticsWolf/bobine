@@ -25,8 +25,10 @@
 //! fixed. See `docs/benchmarks.md` for the full analysis.
 //!
 //! Re-scoring without re-running OCR: set `BOBINE_BENCH_RESCORE=1` to
-//! score the saved `target/bench_ocr/<paper>.md` files (cheap — picks
-//! up extractor/scoring fixes).
+//! score the saved `target/bench_ocr/<quant>/<paper>.md` files (cheap —
+//! picks up extractor/scoring fixes). Precision tier for parity runs:
+//! `BOBINE_BENCH_QUANT=fp32|int8|fp16` (default fp32); output lands in
+//! `target/bench_ocr/<quant>/` so tiers never overwrite each other.
 //!
 //! Scoring is normalized exact-match: whitespace is squeezed and
 //! `\left`/`\right` are identity (equivalence classes from the
@@ -248,12 +250,24 @@ fn texsteller_accuracy_ikat_corpus() {
         return;
     }
     let root = bench_root();
+    // Precision tier (parity runs): fp32 (default) | int8 | fp16.
+    let quant_name = std::env::var("BOBINE_BENCH_QUANT").unwrap_or_else(|_| "fp32".into());
+    let (quant, precision) = match quant_name.as_str() {
+        "int8" => (bobine::ModelQuantization::Int8, bobine::ModelPrecision::Fp32),
+        "fp16" => (bobine::ModelQuantization::Fp32, bobine::ModelPrecision::Fp16),
+        _ => (bobine::ModelQuantization::Fp32, bobine::ModelPrecision::Fp32),
+    };
+    let root = root.join(&quant_name);
+    println!("bench tier: {quant_name}");
     std::fs::create_dir_all(&root).unwrap();
     let cache = std::env::var("BOBINE_BENCH_CACHE")
         .map(PathBuf::from)
         .unwrap_or_else(|_| hf_hub_cache_dir());
 
     let mut scores = Vec::new();
+    // Render-health gate counters accumulate across papers (Option C):
+    // a fire means that paper's page fell back to the text layer.
+    let mut gate_totals = bobine::RenderGateStats::default();
     for paper in papers() {
         let pdf = format!("ikat-corpus/pdf/{paper}.pdf");
         let gt_md = format!("ikat-corpus/ground-truth/{paper}.md");
@@ -267,6 +281,8 @@ fn texsteller_accuracy_ikat_corpus() {
         // Full OCR pipeline on every page (see module docs).
         let mut config = bobine::ConverterConfig::default();
         config.routing.routing_mode = bobine::RoutingMode::Always;
+        config.models.model_quantization = quant;
+        config.models.model_precision = precision;
         let mut conv = bobine::HybridConverter::new(config, &cache);
         let work = root.join(&paper);
         std::fs::create_dir_all(&work).unwrap();
@@ -277,6 +293,7 @@ fn texsteller_accuracy_ikat_corpus() {
             match conv.convert_pdf(Path::new(&pdf), &work) {
                 Ok(md) => {
                     std::fs::write(root.join(format!("{paper}.md")), &md).unwrap();
+                    gate_totals.accumulate(conv.gate_stats());
                     Some(md)
                 }
                 Err(e) => {
@@ -299,8 +316,14 @@ fn texsteller_accuracy_ikat_corpus() {
         }
     }
     scores.sort_by(|a, b| a.paper.cmp(&b.paper));
-    let table = render_table(&scores);
+    let mut table = render_table(&scores);
     println!("\n{table}");
+    // Loud gate accounting: fires contaminate accuracy numbers with
+    // fallback output, so the harness must never silently score them.
+    if let Some(line) = gate_totals.report_line() {
+        println!("{line}");
+        table.push_str(&format!("\n{line}\n"));
+    }
     std::fs::write(root.join("report.md"), &table).unwrap();
     // GT-label-anchored mismatch dump for rendered-pixel follow-up.
     let mut dump = String::new();

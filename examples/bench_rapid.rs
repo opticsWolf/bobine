@@ -56,13 +56,70 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Persistent model cache: set BOBINE_CACHE_DIR (e.g. ~/.cache/bobine)
     // so downloads survive reboots; temp-dir cache is wiped by the OS.
+    // Explicit paths win: BOB_DET_PATH / BOB_REC_PATH / BOB_DICT_PATH /
+    // BOB_LAYOUT_PATH. Otherwise the first hub snapshot holding the
+    // current default filename is used.
     let cache = std::env::var_os("BOBINE_CACHE_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::env::temp_dir().join("bobine_test").join("cache"));
-    let layout_path = cache.join("doclayout_yolo_docstructbench_imgsz1024.onnx");
-    let det_path = cache.join("PP-OCRv4/ch_PP-OCRv4_det_infer.onnx");
-    let rec_path = cache.join("PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx");
-    let table_path = cache.join("models/TabRec/SlanetPlus/slanet-plus.onnx");
+    fn hub_file(cache: &Path, want_repo: &str, file: &str) -> std::path::PathBuf {
+        let repo_dir = std::fs::read_dir(cache)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n == want_repo)
+            });
+        repo_dir
+            .and_then(|r| {
+                std::fs::read_dir(r.join("snapshots"))
+                    .ok()?
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.path().join(file))
+                    .find(|p| p.exists())
+            })
+            .unwrap_or_else(|| cache.join(file))
+    }
+    fn explicit(var: &str) -> Option<std::path::PathBuf> {
+        let p = std::env::var_os(var).map(std::path::PathBuf::from)?;
+        if p.exists() {
+            Some(p)
+        } else {
+            eprintln!("warning: ${var}={} missing, falling back to hub lookup", p.display());
+            None
+        }
+    }
+    let layout_explicit = explicit("BOB_LAYOUT_PATH");
+    let layout_path = layout_explicit.clone().unwrap_or_else(|| {
+        hub_file(&cache, "models--opticsWolf--pp-doclayout-plus-l-onnx", "pp_doclayout_plus_l.onnx")
+    });
+    let det_path = std::env::var_os("BOB_DET_PATH").map(std::path::PathBuf::from).unwrap_or_else(|| {
+        hub_file(&cache, "models--opticsWolf--rapidocr-ppocrv5-onnx", "ppocrv5_det_infer.onnx")
+    });
+    let rec_path = std::env::var_os("BOB_REC_PATH").map(std::path::PathBuf::from).unwrap_or_else(|| {
+        hub_file(&cache, "models--opticsWolf--rapidocr-ppocrv5-onnx", "ppocrv5_rec_infer.onnx")
+    });
+    let dict_path = std::env::var_os("BOB_DICT_PATH").map(std::path::PathBuf::from).or_else(|| {
+        let p = hub_file(&cache, "models--opticsWolf--rapidocr-ppocrv5-onnx", "ppocrv5_dict.txt");
+        p.exists().then_some(p)
+    });
+    // Hub labels only pair with hub models: an explicit model path with
+    // no explicit labels falls back to the model's own metadata (a
+    // labels.txt from another serving repo must never leak across).
+    let labels_path = explicit("BOB_LABELS_PATH").or_else(|| {
+        if layout_explicit.is_some() {
+            None
+        } else {
+            let p = hub_file(&cache, "models--opticsWolf--pp-doclayout-plus-l-onnx", "labels.txt");
+            p.exists().then_some(p)
+        }
+    });
+    let table_path = std::env::var_os("BOB_TABLE_PATH").map(std::path::PathBuf::from).unwrap_or_else(|| {
+        hub_file(&cache, "models--opticsWolf--slanet-plus-onnx", "slanet-plus.onnx")
+    });
 
     let providers: Vec<String> = std::env::var("BOB_ORT_PROVIDERS")
         .unwrap_or_else(|_| "cpu".into())
@@ -81,7 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---- RapidLayout ----
     if layout_path.exists() {
         let t0 = Instant::now();
-        let mut m = RapidLayout::load(&layout_path, &providers)?;
+        let mut m = RapidLayout::load(&layout_path, labels_path.as_deref(), &providers)?;
         println!("layout load: {:?}", t0.elapsed());
         let warm = m.detect(&page)?;
         if std::env::var("BOB_DEBUG_LABELS").is_ok() {
@@ -115,20 +172,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---- RapidOCR ----
     if det_path.exists() && rec_path.exists() {
         let t0 = Instant::now();
-        let mut m = RapidOcr::load(&det_path, &rec_path, "en", &providers)?;
-        println!("ocr load: {:?}", t0.elapsed());
+        let mut m = RapidOcr::load(&det_path, &rec_path, dict_path.as_deref(), "en", &providers)?;
+        println!("ocr load: {:?} (dict: {})", t0.elapsed(), dict_path.is_some());
         let _ = m.detect_and_recognize(&page)?; // warmup
-        let n = {
-            let t0 = Instant::now();
-            let lines = m.detect_and_recognize(&page)?;
-            println!(
-                "ocr 1024x1024 det+rec: {:?}/run ({} lines)",
-                t0.elapsed(),
-                lines.len()
-            );
+        let t0 = Instant::now();
+        let lines = m.detect_and_recognize(&page)?;
+        println!(
+            "ocr det+rec: {:?}/run ({} lines)",
+            t0.elapsed(),
             lines.len()
-        };
-        let _ = n;
+        );
+        for (i, l) in lines.iter().enumerate() {
+            if i >= 12 && std::env::var("BOB_FULL").is_err() {
+                println!("  ... ({} more; BOB_FULL=1 to dump)", lines.len() - i);
+                break;
+            }
+            println!("  [{i}] {:?} conf={:.2}", l.text, l.confidence);
+        }
     } else {
         println!("ocr models missing, skipped");
     }

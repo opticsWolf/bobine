@@ -15,8 +15,8 @@ flows, and the non-obvious invariants.
 - Convert PDF (fast native text + optional ONNX heavy passes), Office
   (docx/xlsx/pptx/doc/xls/ppt), and text documents (txt/md) to markdown.
 - Formula recognition via **TexTeller** ONNX (ViT encoder → RoBERTa decoder).
-- Page layout analysis via **DocLayout-YOLO**; text OCR via **PaddleOCR**
-  det+rec ONNX.
+- Page layout analysis via **PP-DocLayout_plus-L** (RT-DETR); text OCR
+  via **PP-OCRv5** det+rec ONNX.
 - Expose everything to Python with **zero Python ML dependencies** — no
   torch, no optimum, no opencv. The heavy lifting is pure Rust.
 
@@ -40,8 +40,10 @@ src/
 │                     ModelQuantization, ImageMode (Link/EmbedBase64) +
 │                     RenderOpts.image_mode/max_embed_bytes/preserve_layout
 ├── error.rs          BobineError enum
-├── engine.rs         OnnxEngine — lazy model manager (TexTeller/RapidLayout/RapidOCR)
-├── converter.rs      HybridConverter — core PDF/Office pipeline (~3.4 kLOC,
+├── engine.rs         OnnxEngine — lazy model manager
+│                     (TexTeller/Layout/OCR/Table/POTATR slots + provider
+│                     resolution + model_status)
+├── converter.rs      HybridConverter — core PDF/Office pipeline (~4.1 kLOC,
 │                     split into claim_ranks / assign_glyph_owners /
 │                     assign_region_lines / repair_seams / caption_block /
 │                     figure_block / text_block / table_block / math_blocks)
@@ -49,10 +51,17 @@ src/
 ├── pdf_source.rs     PdfSource trait: converter ↔ PDF backend seam;
 │                     pdf_oxide adapter + in-memory FakePdf test fakes
 ├── tex_teller.rs     TexTeller ONNX: preprocess → encoder → autoregressive decode
-├── rapid_layout.rs   DocLayout-YOLO: LetterBox(1024) → NMS → LayoutRegion
+├── rapid_layout.rs   PP-DocLayout_plus-L (RT-DETR) → LayoutRegion
 ├── rapid_ocr.rs      PaddleOCR DBNet + CRNN: DB unclip (min-area rect +
 │                     polygon offset), rotation-aware crops, CTC decode
 ├── rapid_table.rs    RapidTable (SLANet-plus): scanned-table → HTML
+│                     (default table backend)
+├── rapid_potatr.rs   POTATR page tables + captions → cells; P2 option-A
+│                     routing claims them over layout regions (opt-in)
+├── render_gate.rs    Render-health gate (Option C): OCR↔layer Jaccard
+│                     probe + RenderGateStats, version-scoped < 0.3.79
+├── build.rs          Emits `pdf_oxide_pre_0_3_79` cfg from Cargo.lock
+│                     (gate expiry on the dep bump)
 ├── sanitize.rs       Post-OCR LaTeX repair (fences, split_cmds, script split)
 ├── mml.rs            MathML → LaTeX verbatim port (GREEK/OPS/FUNC_NAMES…
 │                     tables, mml_to_tex + mathify + merge_math; 692-fixture
@@ -75,7 +84,7 @@ legacy/               frozen pure-Python bobine v0.2.0 (reference implementation
 ```
 
 Dependency direction: `pipeline → converter → engine → (tex_teller |
-rapid_layout | rapid_ocr | rapid_table)`; `converter → tables`,
+rapid_layout | rapid_ocr | rapid_table | rapid_potatr)`; `converter → tables`,
 `converter → pdf_source`, `converter → excel | office_images`;
 `pipeline → excel` (workbook siblings); `documents/assets` sit beside the
 pipeline layer. No cycles.
@@ -169,20 +178,22 @@ interior empty rows are preserved (row alignment matters for formulas).
 
 ## 4. OnnxEngine — lazy loading & degradation
 
-Three lazy slots, each loaded on first use and cached:
+Five lazy slots, each loaded on first use and cached:
 
 | Slot | Model source | Loaded by |
 |---|---|---|
 | `tex_teller` | HuggingFace via `hf-hub` (blocking): `ModelQuantization::Fp32` (default) and `Int8` both resolve to the unified `opticsWolf/texteller3-onnx` serving repo (TexTeller3 canonical + OleehyO merged decoder, weight-identical; int8 byte-verified against the former Ji-Ha blobs), pinned revision | `ensure_tex_teller()` |
-| `layout` | HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` (auto-download, probe-first) or local path (`set_layout_model()`) | `ensure_layout()` |
-| `ocr` | HF `SWHL/RapidOCR` PP-OCRv4 det+rec (auto-download, probe-first) or local paths (`set_ocr_models()`) | `ensure_ocr()` |
-| `table` | local slanet-plus path (`set_table_model()`) or auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` (~7.8 MB) into `<cache>/models/` | `ensure_table()` (lazy — only on table regions) |
+| `layout` | First-party HF `opticsWolf/pp-doclayout-plus-l-onnx` PP-DocLayout_plus-L (Apache-2.0; auto-download, probe-first) or local path (`set_layout_model()`) | `ensure_layout()` |
+| `ocr` | First-party HF `opticsWolf/rapidocr-ppocrv5-onnx` PP-OCRv5 det+rec+dict (Apache-2.0; auto-download, probe-first) or local paths (`set_ocr_models()`) | `ensure_ocr()` |
+| `table` | First-party `opticsWolf/slanet-plus-onnx` (byte-identical to RapidAI/RapidTable v2.0.0, Apache-2.0; ~7.8 MB) or local path via `set_table_model()` | `ensure_table()` (lazy — only on table regions) |
+| `potatr` | First-party `opticsWolf/potatr-onnx` (kensho/POTATR-v1.1-Pub, MIT; ~116 MB) or local path via `set_potatr_model()` | `ensure_potatr()` (lazy — only on qualifying pages when `table_backend` selects Potatr) |
 
 Degradation contract: model-load failures propagate as `BobineError`, but
 `full_structure_page_markdown` failures are caught by the router
 (`if let Ok(Some(md))`) and the page **falls back to the fast path** — a
 missing layout.onnx never kills a conversion. `ModelPrecision::Fp16`
-selects `*_fp16.onnx` filenames (models deferred).
+selects `*_fp16.onnx` filenames (shipped in the unified repo, 28-29/30
+parity — see §8).
 
 Provider resolution (v0.4.9+): `ConverterConfig.ort_providers` is the base
 list for TexTeller sessions. Every heavy session has a per-slot override —
@@ -194,6 +205,7 @@ selects the default, which encodes the measured ledger:
 |---|---|---|
 | layout, ocr | **auto-GPU** — CUDAExecutionProvider prepended when the loaded dylib exposes a usable CUDA EP (EP-availability probe) | measured 12.3x / 3.6x on CUDA |
 | table | **CPU-pinned** | SLANet measures 2-9x slower on CUDA (graph fragments across devices) |
+| potatr | **CPU-pinned** | Same policy as the table slot (page-level DETR forward; no CUDA measurement yet) |
 | tex_teller | base `ort_providers` | Fp32 is the default tier; Int8+CUDA and Fp16-without-CUDA are guarded with warnings |
 
 Session construction runs through `engine::session_builder()`: the
@@ -278,7 +290,14 @@ as Python.
 
 `full_structure_page_markdown`:
 1. Render page at `render_dpi`.
-2. `layout_regions` → regions in render pixels → converted to points,
+2. **Render-health gate (Option C, version-scoped to pdf_oxide <
+   0.3.79).** OCR↔text-layer word-Jaccard below threshold on a
+   substantial layer means a corrupt render: discard the ONNX output,
+   return `None` so the router falls back to the fast path
+   (suppression-first math; opt-in inline `$…$` salvage). Judged before
+   the expensive arms — outcome-equivalent to checking after, cheaper.
+   Fires are loud (`warn!` + `RenderGateStats` + bench `report.md`).
+3. `layout_regions` → regions in render pixels → converted to points,
    sorted reading order (y then x).
 3. Per region:
    - `table` → **text layer first** (lossless on born-digital pages);
@@ -286,7 +305,9 @@ as Python.
      **RapidTable** (SLANet-plus): the crop is OCR'd, lines are matched
      into decoded cell quads, and the resulting HTML also goes through
      `html_tables_to_gfm`. Placeholder `[table: <label>]` remains as the
-     last resort.
+     last resort. With `table_backend = Potatr`, a page-level POTATR
+     pre-pass runs first and claimed tables emit anchored markdown
+     while suppressing their layout regions (P2 option A).
    - math labels → crop → TexTeller → `$$…$$`.
    - `figure`/`image` → crop saved to work_dir, `![](name.png)` link.
    - else → text layer first, `ocr_lines` fallback; `title` → `## heading`.
@@ -303,6 +324,17 @@ as Python.
 
 ## 8. Model acquisition
 
+- **RapidTable (SLANet-plus)**: first-party
+  `opticsWolf/slanet-plus-onnx` (byte-identical to RapidAI/RapidTable
+  v2.0.0, Apache-2.0, ~7.8 MB). Default table backend (crop-level
+  `table_block`); scanned tables only, born-digital pages use the text
+  layer first.
+- **POTATR page tables** (opt-in): first-party `opticsWolf/potatr-onnx`
+  (kensho/POTATR-v1.1-Pub, MIT, ~116 MB, pinned `POTATR_REV`). Selected
+  via `table_backend = Potatr|Auto`; P2 option-A routing claims tables
+  over layout regions (see `docs/proposal_potatr.md`). Stays opt-in
+  until the triple gate (accuracy + perf + trustworthy renders) flips
+  it to `Auto`.
 - **TexTeller**: downloaded automatically on first use into the shared
   hub cache (repo-isolated, pinned revisions). Default
   (`ModelQuantization::Fp32`):
@@ -320,11 +352,24 @@ as Python.
   interface retained.
 - **RapidLayout / RapidOCR**: downloaded automatically on first use unless
   explicit local paths are set via `OnnxEngine::set_layout_model` /
-  `set_ocr_models`. Layout: `wybxc/DocLayout-YOLO-DocStructBench-onnx`
-  (`doclayout_yolo_docstructbench_imgsz1024.onnx`, 72 MB - a community ONNX
-  conversion of the official DocStructBench weights, whose repo ships .pt
-  only). OCR: `SWHL/RapidOCR` `PP-OCRv4/ch_PP-OCRv4_{det,rec}_infer.onnx`
-  (~16 MB total). Label lists / charsets are read from the ONNX models'
+  `set_ocr_models`. Layout: first-party `opticsWolf/pp-doclayout-plus-l-onnx`
+  (RT-DETR-L, 20 classes, `pp_doclayout_plus_l.onnx` + `labels.txt`,
+  ~130 MB, Apache-2.0 — byte-identical to the official PaddlePaddle
+  export). Backend is detected from the input signature (`images` =
+  YOLO path kept for custom models; `image`+`im_shape`+`scale_factor`
+  = Paddle DETR path: direct 800x800 resize, /255, boxes already in
+  original coords, score >= 0.5). Supersedes the YOLO export (lineage
+  review closed by replacement). OCR:
+  first-party `opticsWolf/rapidocr-ppocrv5-onnx`
+  (`ppocrv5_{det,rec}_infer.onnx` + `ppocrv5_dict.txt`, ~22 MB total,
+  Apache-2.0 — byte-identical to the official PaddlePaddle exports).
+  The rec export carries no charset metadata, so the dict travels with
+  the weights and seeds the decoder (18,383 lines → 18,385 classes via
+  the usual blank+space alignment). Server tier evaluated and rejected
+  2026-11-07: 88.1 + 84.5 MB (8x the mobile pair), 3.1x slower det+rec
+  on a clean dense page (6.95 vs 2.23 s CPU), quality at parity with
+  wins split both ways (mobile keeps `Schrödinger`/spacing, server
+  drops a stray `6`) — not mirrored. Label lists / charsets are read from the ONNX models'
   custom metadata key `character` (falling back to DocStructBench defaults /
   ASCII); the rec charset is aligned against the model's actual class count
   at first decode, since exports vary in whether they include the leading
@@ -332,18 +377,26 @@ as Python.
 
 ## 9. Version pinning philosophy
 
+Table-slot alternatives reviewed 2026-11-07: TableFormer (2022-03)
+and TATR (2022) both predate SLANet_plus (2023 PaddleOCR improvement
+for wireless/complex tables) — the SLANet slot stands. POTATR (2026) has
+since been mirrored first-party (`opticsWolf/potatr-onnx`, MIT) and
+integrated behind the opt-in `table_backend` flag (P2,
+`docs/proposal_potatr.md`); TABLET 2025 and SLANet-1M 2025 still have no
+clean ONNX serving artifacts; re-evaluate when they do.
+
 Rust dependencies are locked in `Cargo.lock` (update deliberately with
 `cargo update -p <crate>`, never blindly — the pdf_oxide 0.3.77→0.3.78
 roll moved whole-corpus golden output and was reviewed file-by-file before
 landing as v0.5.6). Model weights float too — no longer: every
 converter weight (TexTeller fp32/int8, RapidLayout, RapidOCR det/rec,
-SLANet-plus) carries a pinned hub SHA next to its repo constant
+SLANet-plus, POTATR) carries a pinned hub SHA next to its repo constant
 (`*_REV`), verified present via the HF API, probe and download both
 resolve the pin through embroider's shared surface (`cache_info_files`
 + `fetch_repo_file`). Current oxide pins: `office_oxide 0.1.16`,
-`pdf_oxide 0.3.78`; the shared ONNX plumbing is `embroider 0.12`
-(lifted from the 0.3 floor in one step — all additive upstream, zero
-source changes: new model slots only, our six call sites untouched)
+`pdf_oxide 0.3.78`; the shared ONNX plumbing is `embroider 0.14`
+(0.3 → 0.12 → 0.14.1 in additive-only bumps, zero source changes:
+new model slots and APIs only, our call sites untouched)
 (crates.io — same crate OKFgraph's embeddings use). The one external
 binary contract is **onnxruntime itself**: `ort` 2.0-rc requires ≥1.19; a
 stale system DLL fails at session creation with a clear `BadVersion`
@@ -354,7 +407,7 @@ error. Set `ORT_DYLIB_PATH` explicitly in CI/dev (e.g. the venv's
 
 Three layers:
 
-1. **Unit tests** (`#[cfg(test)]` modules, 160 lib tests): pure logic —
+1. **Unit tests** (`#[cfg(test)]` modules, 181 lib tests): pure logic —
    tables parsing, splice/ws_replace, math-font/unicode classifiers,
    TexTeller preprocessing shape/range, white-border trim, LetterBox,
    IoU/NMS, config serde round-trip, Excel renderers (GFM/CSV/JSON schema),
@@ -428,7 +481,7 @@ zero code changes.
   as strings (`OfficeOxide(String)`, `PdfOxide(String)`) — coarse but
   uniform, and never panics on user files (empty-docx test pins this).
 - **Degradation beats failure**: per-page fast-path fallback (missing
-  models), per-sheet CSV skips (empty sheets), per-sibling warn-and-
+  models *or* render-health-gate fire on corrupt renders), per-sheet CSV skips (empty sheets), per-sibling warn-and-
   continue (Excel siblings never abort an ingest), provider
   auto-degradation (CUDA requested, CPU dylib loaded → CPU; the
   embroider EP-availability probe catches most of these up front — only

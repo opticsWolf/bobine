@@ -9,11 +9,14 @@ use image::DynamicImage;
 use pdf_oxide::{api::Pdf, geometry::Rect};
 use tracing::{info, warn};
 
-use crate::config::{ConverterConfig, ImageMode, RoutingMode};
+use crate::config::{ConverterConfig, ImageMode, RoutingMode, TableBackend};
 use crate::engine::OnnxEngine;
 use crate::error::{BobineError, Result};
 use crate::pdf_source::{PdfSource, SourceChar};
 use crate::rapid_layout::LayoutRegion;
+use crate::render_gate::{
+    GateAction, RenderGateStats, gate_tokens, render_gate_decision, version_in_scope, word_jaccard,
+};
 
 /// Progress / cancellation hooks for long-running conversions.
 ///
@@ -80,11 +83,15 @@ fn region_claim_priority(label: &str) -> u8 {
     let l = label.to_lowercase();
     if l.contains("caption") || l.contains("footnote") {
         CLAIM_CAPTION
+    } else if l.contains("figure_title") || l.contains("table_title") {
+        // Caption line of a figure/table (PP-DocLayout_plus-L taxonomy),
+        // not a figure: owns glyphs, emits text, suppressible by claims.
+        CLAIM_CAPTION
     } else if l.contains("table") {
         CLAIM_TABLE
     } else if MATH_LAYOUT_LABELS.iter().any(|k| l.contains(k)) {
         CLAIM_MATH
-    } else if l.contains("figure") || l.contains("image") {
+    } else if l.contains("figure") || l.contains("image") || l.contains("chart") || l.contains("seal") {
         CLAIM_NONE
     } else {
         CLAIM_TEXT
@@ -140,6 +147,23 @@ fn claim_ranks(sorted: &[crate::rapid_layout::LayoutRegion]) -> (Vec<usize>, Vec
 /// Each char belongs to its argmax-overlap non-figure region; ties break
 /// toward the earlier claim_order position (`rank`). Layout coords are
 /// render pixels; char boxes are scaled up by `scale` (dpi / 72).
+/// pdf_oxide reports char boxes in PDF-native bottom-up points, but the
+/// render, layout regions, crop bounds, and POTATR boxes are all top-down.
+/// Flip once per page so every render-space comparison below agrees.
+/// (Verified 2026-11-07 on PyMuPDF/PLOS/arxiv PDFs: a top-of-page title
+/// glyph reports y=692 on a 792pt page. pdf_oxide-writer files report the
+/// same bottom-up convention.)
+fn flip_chars_topdown(chars: &mut [SourceChar], page_h: f32) {
+    for c in chars.iter_mut() {
+        c.bbox = Rect::new(
+            c.bbox.x,
+            page_h - c.bbox.y - c.bbox.height,
+            c.bbox.width,
+            c.bbox.height,
+        );
+    }
+}
+
 fn assign_glyph_owners(
     page_chars: &[SourceChar],
     sorted: &[crate::rapid_layout::LayoutRegion],
@@ -214,7 +238,13 @@ struct RegionCtx<'a> {
 /// table arm below. The check must precede the math/table/figure routes
 /// because e.g. "formula" substring-matches "formula_caption".
 fn caption_block(page_chars: &[SourceChar], lines: &[Vec<usize>], lab: &str) -> Option<String> {
-    if !(lab.contains("caption") || lab.contains("footnote")) {
+    // `figure_title` is the caption line of a figure (PP-DocLayout_plus-L
+    // taxonomy), not a figure: it owns glyphs and emits text.
+    if !(lab.contains("caption")
+        || lab.contains("footnote")
+        || lab.contains("figure_title")
+        || lab.contains("table_title"))
+    {
         return None;
     }
     let text = region_lines_to_text(page_chars, lines);
@@ -383,6 +413,261 @@ fn text_block(
 /// Table arm (extracted from the dispatch loop). Always returns exactly one
 /// block: structured text-layer extraction → unstructured line dump →
 /// scanned OCR + SLANet-plus → `[table: …]` placeholder.
+/// One anchored POTATR table: markdown emitted in place of a suppressed region.
+#[derive(Debug, Default)]
+struct PotatrPrepass {
+    /// Claimed tables (score ≥ `potatr_node_threshold`), top-to-bottom.
+    tables: Vec<crate::rapid_potatr::PotatrTable>,
+    /// Regions skipped in dispatch (IoU > `potatr_suppress_iou` vs a claim).
+    suppressed: Vec<bool>,
+    /// Per region: table indices emitted in its place (top-to-bottom).
+    anchors: Vec<Vec<usize>>,
+    /// Tables with no overlapping region: appended after seam repair.
+    trailing: Vec<usize>,
+}
+
+/// POTATR page pre-pass (P2). Returns claims, or an empty pre-pass when the
+/// backend, the word gate, or the forward pass says not to.
+fn potatr_prepass(
+    config: &ConverterConfig,
+    engine: &mut OnnxEngine,
+    img: &DynamicImage,
+    page_chars: &[SourceChar],
+    sorted: &[LayoutRegion],
+    glyph_owner: &[Option<usize>],
+    scale: f32,
+    page_index: usize,
+) -> PotatrPrepass {
+    let empty = || PotatrPrepass {
+        suppressed: vec![false; sorted.len()],
+        anchors: vec![Vec::new(); sorted.len()],
+        ..Default::default()
+    };
+    if !config.routing.use_onnx {
+        return empty();
+    }
+    if !matches!(
+        config.models.table_backend,
+        TableBackend::Potatr | TableBackend::Auto
+    ) {
+        return empty();
+    }
+    let tokens = potatr_page_tokens(page_chars, sorted, glyph_owner, scale);
+    if tokens.len() < crate::rapid_potatr::POTATR_MIN_WORDS {
+        return empty();
+    }
+    let outputs = match engine.recognize_page_tables(img) {
+        Ok(o) => o,
+        Err(e) => {
+            warn!(
+                "page {}: potatr forward failed ({e}); falling back to region arms",
+                page_index + 1
+            );
+            return empty();
+        }
+    };
+    let mut tables = crate::rapid_potatr::tables_from_outputs(
+        &outputs.node_logits,
+        &outputs.boxes,
+        &outputs.edge_logits,
+        &tokens,
+        outputs.geometry.orig_w as f32,
+        outputs.geometry.orig_h as f32,
+        config.models.potatr_edge_threshold,
+    );
+    // Final claim filter (internal refinement keeps the reference 0.8
+    // fixed for fidelity; see `class_threshold`).
+    tables.retain(|t| t.score >= config.models.potatr_node_threshold);
+    // Claim-quality gate: a table is only as good as its words. Tables with
+    // no structure, too few words in the rect (text-layer holes on
+    // CID-corrupt papers), or too little cell text fall back to the region
+    // arms (OCR dump / SLANet) instead of suppressing them — suppressing a
+    // textless claim destroys content (P2 chem-olive diagnosis).
+    tables.retain(|t| {
+        if t.cells.is_empty() {
+            return false;
+        }
+        let in_rect = tokens
+            .iter()
+            .filter(|tok| crate::rapid_potatr::iob(&tok.bbox, &t.bbox) >= 0.5)
+            .count();
+        if in_rect < crate::rapid_potatr::POTATR_MIN_TABLE_WORDS {
+            return false;
+        }
+        let filled = t
+            .cells
+            .iter()
+            .filter(|c| !c.cell_text.trim().is_empty())
+            .count();
+        filled as f32 / t.cells.len() as f32 >= config.models.potatr_min_text_fill
+    });
+    if tables.is_empty() {
+        return empty();
+    }
+    // Top-to-bottom claim order for deterministic emission.
+    tables.sort_by(|a, b| {
+        a.bbox[1]
+            .partial_cmp(&b.bbox[1])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    info!(
+        "page {}: potatr claims {} table(s) ({} words)",
+        page_index + 1,
+        tables.len(),
+        tokens.len()
+    );
+    let iou_t = config.models.potatr_suppress_iou;
+    let mut out = empty();
+    let (suppressed, anchors, trailing) = potatr_route_claims(&tables, sorted, iou_t);
+    out.suppressed = suppressed;
+    out.anchors = anchors;
+    out.trailing = trailing;
+    out.tables = tables;
+    out
+}
+
+/// Pure claim routing (option A): regions with IoU > threshold against any
+/// claim box (table + linked caption/footer) are suppressed; each table
+/// anchors to the suppressed region with the best table-box IoU.
+/// Unit-testable without models.
+fn potatr_route_claims(
+    tables: &[crate::rapid_potatr::PotatrTable],
+    sorted: &[LayoutRegion],
+    iou_t: f32,
+) -> (Vec<bool>, Vec<Vec<usize>>, Vec<usize>) {
+    let region_boxes: Vec<[f32; 4]> =
+        sorted.iter().map(|r| [r.x0, r.y0, r.x1, r.y1]).collect();
+    let mut suppressed = vec![false; sorted.len()];
+    let mut anchors: Vec<Vec<usize>> = vec![Vec::new(); sorted.len()];
+    let mut trailing = Vec::new();
+    for (ti, table) in tables.iter().enumerate() {
+        let mut claim: Vec<[f32; 4]> = vec![table.bbox];
+        claim.extend(table.caption_parts.iter().map(|p| p.bbox));
+        claim.extend(table.footer_parts.iter().map(|p| p.bbox));
+        // Caption/footer parts are thin lines inside loose object boxes, so
+        // box-vs-region IoU systematically under-reads (measured 0.490 on
+        // the e2e fixture vs a 0.5 threshold). A region covered by a part
+        // is claimed too. Table bodies stay IoU-only: a loose body must
+        // not swallow neighboring prose via one-sided cover.
+        let part_boxes: Vec<[f32; 4]> = table
+            .caption_parts
+            .iter()
+            .chain(table.footer_parts.iter())
+            .map(|p| p.bbox)
+            .collect();
+        let mut best: Option<(f32, usize)> = None;
+        for (ri, rb) in region_boxes.iter().enumerate() {
+            let iou = claim
+                .iter()
+                .map(|b| crate::rapid_potatr::rect_iou(b, rb))
+                .fold(0.0f32, f32::max);
+            let cover = part_boxes
+                .iter()
+                .map(|b| crate::rapid_potatr::iob(rb, b))
+                .fold(0.0f32, f32::max);
+            if iou > iou_t || cover > iou_t {
+                suppressed[ri] = true;
+                let anchor_iou = crate::rapid_potatr::rect_iou(&table.bbox, rb);
+                if best.map_or(true, |(bi, _)| anchor_iou > bi) {
+                    best = Some((anchor_iou, ri));
+                }
+            }
+        }
+        match best {
+            Some((_, ri)) => anchors[ri].push(ti),
+            None => trailing.push(ti),
+        }
+    }
+    (suppressed, anchors, trailing)
+}
+
+/// Build page word tokens for the post-processor from the text layer:
+/// page-wide line clusters (`cluster_lines`, which already splits column
+/// gutters), word-split on the `line_string` 0.25-advance gap rule,
+/// block = owning region (else `sorted.len()`), all boxes in render pixels.
+fn potatr_page_tokens(
+    page_chars: &[SourceChar],
+    sorted: &[LayoutRegion],
+    glyph_owner: &[Option<usize>],
+    scale: f32,
+) -> Vec<crate::rapid_potatr::PotatrObject> {
+    let all: Vec<usize> = (0..page_chars.len()).collect();
+    let mut tokens = Vec::new();
+    for (line_num, line) in cluster_lines(page_chars, &all).iter().enumerate() {
+        let mut idxs = line.clone();
+        idxs.sort_by(|&a, &b| {
+            page_chars[a]
+                .bbox
+                .x
+                .partial_cmp(&page_chars[b].bbox.x)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut words: Vec<Vec<usize>> = vec![Vec::new()];
+        let mut prev_end = f32::NAN;
+        for &i in &idxs {
+            let g = &page_chars[i].bbox;
+            if page_chars[i].char.is_whitespace() {
+                continue;
+            }
+            if !prev_end.is_nan() && g.x - prev_end > g.width * 0.25 {
+                words.push(Vec::new());
+            }
+            words.last_mut().expect("word").push(i);
+            prev_end = g.x + g.width;
+        }
+        for (span_num, word) in words.iter().enumerate() {
+            if word.is_empty() {
+                continue;
+            }
+            let (mut x0, mut y0) = (f32::INFINITY, f32::INFINITY);
+            let (mut x1, mut y1) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
+            let mut text = String::new();
+            for &i in word {
+                let b = &page_chars[i].bbox;
+                x0 = x0.min(b.x);
+                y0 = y0.min(b.y);
+                x1 = x1.max(b.x + b.width);
+                y1 = y1.max(b.y + b.height);
+                text.push(page_chars[i].char);
+            }
+            let block = word
+                .iter()
+                .filter_map(|&i| glyph_owner[i])
+                .next()
+                .unwrap_or(sorted.len()) as i64;
+            tokens.push(crate::rapid_potatr::PotatrObject::token(
+                &text,
+                [x0 * scale, y0 * scale, x1 * scale, y1 * scale],
+                block,
+                line_num as i64,
+                span_num as i64,
+            ));
+        }
+    }
+    tokens
+}
+
+/// One claimed table as markdown: caption, table (GFM when enabled),
+/// footer — edge-linked text ships with the table, never as free prose.
+fn potatr_table_markdown(
+    config: &ConverterConfig,
+    table: &crate::rapid_potatr::PotatrTable,
+) -> String {
+    let mut parts = Vec::new();
+    if !table.caption.trim().is_empty() {
+        parts.push(table.caption.clone());
+    }
+    parts.push(if config.text.convert_html_tables {
+        crate::tables::html_tables_to_gfm(&table.html)
+    } else {
+        table.html.clone()
+    });
+    if !table.footer.trim().is_empty() {
+        parts.push(table.footer.clone());
+    }
+    parts.join("\n\n")
+}
+
 fn table_block(
     ctx: &RegionCtx<'_>,
     pdf: &mut dyn PdfSource,
@@ -955,12 +1240,21 @@ pub struct HybridConverter {
     #[allow(dead_code)]
     pub config: ConverterConfig,
     pub engine: OnnxEngine,
+    /// Render-health gate counters (Option C). Accumulated across pages;
+    /// read after `convert_pdf` / `convert_pdf_source` (bench harness
+    /// appends them to `report.md`).
+    pub gate_stats: RenderGateStats,
 }
 
 impl HybridConverter {
     pub fn new(config: ConverterConfig, cache_dir: &Path) -> Self {
         let engine = OnnxEngine::new(&config, cache_dir);
-        Self { config, engine }
+        Self { config, engine, gate_stats: RenderGateStats::default() }
+    }
+
+    /// Render-health gate counters for the last conversion run.
+    pub fn gate_stats(&self) -> &RenderGateStats {
+        &self.gate_stats
     }
 
     // ==================================================================
@@ -1264,6 +1558,8 @@ impl HybridConverter {
         // fragments (see `cluster_math_boxes`) — each cluster costs one
         // decode, positioned at its first member's needle.
         let chars = pdf.chars(index).unwrap_or_default();
+        let mut chars = chars;
+        flip_chars_topdown(&mut chars, page_h);
         let clusters = cluster_math_boxes(&boxes, &chars, line_height);
 
         // Crop + OCR each cluster
@@ -2550,6 +2846,97 @@ fn splice(md: &str, replacements: &[(String, String)]) -> String {
 // ======================================================================
 
 impl HybridConverter {
+    /// Render-health gate probe (Option C). Returns `Fire` when the page
+    /// has a substantial text layer whose OCR↔layer word-Jaccard falls
+    /// below threshold — the render is corrupt (upstream #3098) and the
+    /// ONNX output must be discarded for this page.
+    ///
+    /// Fail-open everywhere except the fire itself: gate disabled, version
+    /// out of scope, thin/scanned layer, OCR failure, or empty token sets
+    /// all pass through to the normal path. Only loud on fire.
+    #[allow(clippy::too_many_arguments)]
+    fn render_gate_check(
+        &mut self,
+        pdf: &mut dyn PdfSource,
+        index: usize,
+        page_chars: &[SourceChar],
+        img: &DynamicImage,
+        math_boxes: &[Rect],
+        line_height: f32,
+    ) -> Result<GateAction> {
+        if !self.config.health.render_gate_enabled || !version_in_scope() {
+            return Ok(GateAction::Pass);
+        }
+        let layer_text: String = page_chars.iter().map(|c| c.char).collect();
+        let layer_count = layer_text
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|t| !t.is_empty())
+            .count();
+        if layer_count < self.config.health.render_gate_min_layer_words {
+            return Ok(GateAction::Pass);
+        }
+        self.gate_stats.pages_checked += 1;
+        let ocr_text = match self.engine.ocr_lines(img) {
+            Ok(lines) => lines
+                .into_iter()
+                .map(|l| l.text)
+                .collect::<Vec<_>>()
+                .join(" "),
+            Err(e) => {
+                warn!(
+                    "page {}: render-health gate skipped (page OCR failed: {})",
+                    index + 1,
+                    e
+                );
+                return Ok(GateAction::Pass);
+            }
+        };
+        let j = word_jaccard(&gate_tokens(&layer_text), &gate_tokens(&ocr_text));
+        if !render_gate_decision(
+            layer_count,
+            j,
+            self.config.health.render_gate_min_layer_words,
+            self.config.health.render_gate_min_jaccard,
+        ) {
+            return Ok(GateAction::Pass);
+        }
+        // FIRE: corrupt render. Discard ONNX output for the page; the
+        // caller falls back to the fast path (or appends salvage below).
+        self.gate_stats.pages_fired += 1;
+        warn!(
+            "page {}: render-health gate FIRED (pdf_oxide < {}): layer_words={} ocr_words={} jaccard={:.3} < {:.3} — discarding ONNX output, fast-path fallback",
+            index + 1,
+            crate::render_gate::RENDER_GATE_CUTOFF,
+            layer_count,
+            ocr_text
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|t| !t.is_empty())
+                .count(),
+            j.unwrap_or(-1.0),
+            self.config.health.render_gate_min_jaccard,
+        );
+        if !self.config.health.render_gate_salvage_inline_math {
+            self.gate_stats.math_spans_suppressed += math_boxes.len() as u64;
+            return Ok(GateAction::Fire { salvaged: Vec::new() });
+        }
+        // Opt-in salvage: inline-only boxes from the text layer as `$…$`.
+        // Best-effort — corrupt layers salvage garbage, hence off default.
+        let mut salvaged = Vec::new();
+        for b in math_boxes {
+            let inline = b.height <= 1.6 * line_height
+                && b.width <= self.config.text.formula_inline_max_width_pts as f32;
+            if !inline {
+                continue;
+            }
+            let t = region_text(pdf, index, *b);
+            if !t.trim().is_empty() {
+                salvaged.push(format!("${}$", t.trim()));
+            }
+        }
+        self.gate_stats.math_spans_salvaged += salvaged.len() as u64;
+        Ok(GateAction::Fire { salvaged })
+    }
+
     fn full_structure_page_markdown(
         &mut self,
         pdf: &mut dyn PdfSource,
@@ -2576,6 +2963,42 @@ impl HybridConverter {
         let mut page_math_boxes =
             math_boxes_from_chars(pdf, index, self.config.text.min_formula_math_chars, 2.5, 0.9);
         let line_height = estimate_line_height(pdf, index, page_h);
+
+        // One chars() pass for the whole page (glyph-exact region
+        // extraction below + the render-health gate). Chars arrive
+        // bottom-up (see `flip_chars_topdown`); regions, crops, and POTATR
+        // boxes are top-down, so flip before anything compares.
+        let mut page_chars = pdf.chars(index).unwrap_or_default();
+        flip_chars_topdown(&mut page_chars, page_h);
+
+        // Render-health gate (Option C, version-scoped to pdf_oxide <
+        // 0.3.79): judge BEFORE the expensive arms. Outcome-equivalent to
+        // checking after (a fire discards everything anyway) but skips
+        // layout/table/TexTeller cost on corrupt pages. On fire the page
+        // falls back to the fast path via `Ok(None)` (suppression-first:
+        // math spans go with it); opt-in salvage appends inline `$…$`.
+        match self.render_gate_check(
+            pdf,
+            index,
+            &page_chars,
+            &img,
+            &page_math_boxes,
+            line_height,
+        )? {
+            GateAction::Pass => {}
+            GateAction::Fire { salvaged } => {
+                if salvaged.is_empty() {
+                    return Ok(None);
+                }
+                let mut fast =
+                    self.fast_markdown_placed(pdf, index, work_dir, assets)?;
+                for s in &salvaged {
+                    fast.push_str("\n\n");
+                    fast.push_str(s);
+                }
+                return Ok(Some(fast));
+            }
+        }
 
         // Layout analysis
         let regions = self.engine.layout_regions(&img)?;
@@ -2617,11 +3040,26 @@ impl HybridConverter {
         // `assign_glyph_owners` / `assign_region_lines` above for the
         // rationale). `owners` was removed: nothing ever read it.
         let (_claim_order, rank) = claim_ranks(&sorted);
-        // One chars() pass for all glyph-exact region extraction below.
-        let page_chars = pdf.chars(index).unwrap_or_default();
         let glyph_owner = assign_glyph_owners(&page_chars, &sorted, &rank, scale);
         let mut region_lines =
             assign_region_lines(&page_chars, &glyph_owner, &rank, sorted.len());
+
+        // POTATR page-level table pre-pass (P2, option A precedence).
+        // Claims table (+caption/footer) boxes up front when the backend
+        // selects POTATR and the page has words; suppressed layout regions
+        // are skipped in the dispatch loop below, each table's markdown
+        // emitted in place of its best-matching region. Unclaimed regions
+        // flow through the existing arms (SLANet fallback intact).
+        let potatr = potatr_prepass(
+            &self.config,
+            &mut self.engine,
+            &img,
+            &page_chars,
+            &sorted,
+            &glyph_owner,
+            scale,
+            index,
+        );
 
         // Median glyph height ≈ line height — used as the caption-association
         // distance budget.
@@ -2661,6 +3099,14 @@ impl HybridConverter {
                     region_claim_priority(&region.label),
                     region_lines[ri].len()
                 );
+            }
+            // POTATR-suppressed regions: emit anchored table markdown
+            // instead (option A — POTATR wins its claim set), else skip.
+            if potatr.suppressed[ri] {
+                for &ti in &potatr.anchors[ri] {
+                    blocks.push(potatr_table_markdown(&self.config, &potatr.tables[ti]));
+                }
+                continue;
             }
             // Convert layout coords (render pixels) → PDF points
             let bbox = Rect::new(
@@ -2707,6 +3153,13 @@ impl HybridConverter {
             scale,
             index,
         );
+
+        // POTATR tables with no overlapping region (no anchor): appended
+        // after seam repair. Should not happen when layout finds the table;
+        // the fallback keeps tables lossless, not silent.
+        for &ti in &potatr.trailing {
+            blocks.push(potatr_table_markdown(&self.config, &potatr.tables[ti]));
+        }
 
         let md = blocks.join("\n\n");
         if dbg_blocks {
@@ -2788,6 +3241,63 @@ mod tests {
             }
             other => panic!("expected UnsupportedFormat, got {other}"),
         }
+    }
+
+    #[test]
+    fn flip_chars_topdown_maps_bottom_up_to_render_space() {
+        // pdf_oxide reports PDF-native bottom-up points; the render and
+        // all region/POTATR boxes are top-down. A glyph box at PDF y=692
+        // h=16 on a 792pt page renders at y=84 from the top.
+        let mut chars = vec![SourceChar::new('S', 72.0, 692.0, 11.0, 16.0, "H")];
+        flip_chars_topdown(&mut chars, 792.0);
+        assert!((chars[0].bbox.y - 84.0).abs() < 1e-3, "{:?}", chars[0].bbox);
+    }
+
+    #[test]
+    fn figure_title_routes_as_caption() {
+        // PP-DocLayout_plus-L `figure_title` is a caption line, not a
+        // figure: it owns glyphs and emits text (never a crop).
+        assert_eq!(region_claim_priority("figure_title"), CLAIM_CAPTION);
+        let chars = vec![
+            SourceChar::new('T', 0.0, 0.0, 7.0, 10.0, "H"),
+            SourceChar::new('a', 7.0, 0.0, 7.0, 10.0, "H"),
+        ];
+        let lines = vec![vec![0usize, 1usize]];
+        let text = caption_block(&chars, &lines, "figure_title").expect("caption");
+        assert!(text.contains("Ta"), "{text}");
+    }
+
+    #[test]
+    fn render_gate_disabled_passes_without_models() {
+        // Gate disabled: probe passes without touching the engine (no
+        // models needed) and leaves stats idle.
+        let mut config = ConverterConfig::default();
+        config.health.render_gate_enabled = false;
+        let mut conv = HybridConverter::new(config, &temp_dir("gate_off_cache"));
+        let mut pdf = FakePdf::default();
+        let chars: Vec<SourceChar> = "word ".repeat(100).chars().map(|c| SourceChar::new(c, 0.0, 0.0, 7.0, 10.0, "H")).collect();
+        let img = image::DynamicImage::new_rgb8(8, 8);
+        let action = conv.render_gate_check(&mut pdf, 0, &chars, &img, &[], 12.0).unwrap();
+        assert!(matches!(action, crate::render_gate::GateAction::Pass));
+        assert_eq!(conv.gate_stats().pages_checked, 0);
+        assert_eq!(conv.gate_stats().pages_fired, 0);
+    }
+
+    #[test]
+    fn render_gate_thin_layer_passes_without_models() {
+        // Enabled gate + scanned-like thin layer: passes before any OCR
+        // read (fail-open ordering), so no models are required.
+        let mut conv = HybridConverter::new(
+            ConverterConfig::default(),
+            &temp_dir("gate_thin_cache"),
+        );
+        assert!(conv.config.health.render_gate_enabled);
+        let mut pdf = FakePdf::default();
+        let chars: Vec<SourceChar> = "a b c".chars().map(|c| SourceChar::new(c, 0.0, 0.0, 7.0, 10.0, "H")).collect();
+        let img = image::DynamicImage::new_rgb8(8, 8);
+        let action = conv.render_gate_check(&mut pdf, 0, &chars, &img, &[], 12.0).unwrap();
+        assert!(matches!(action, crate::render_gate::GateAction::Pass));
+        assert_eq!(conv.gate_stats().pages_checked, 0);
     }
 
     #[test]
@@ -3606,6 +4116,110 @@ Second paragraph text."
             label: "figure_caption".to_string(),
             confidence: 0.9,
         }
+    }
+
+    // ==================================================================
+    // POTATR P2 routing (option A)
+    // ==================================================================
+
+    fn potatr_region(x0: f32, y0: f32, x1: f32, y1: f32, label: &str) -> LayoutRegion {
+        LayoutRegion {
+            x0,
+            y0,
+            x1,
+            y1,
+            label: label.into(),
+            confidence: 0.9,
+        }
+    }
+
+    fn potatr_table(bbox: [f32; 4], caption_box: [f32; 4]) -> crate::rapid_potatr::PotatrTable {
+        crate::rapid_potatr::PotatrTable {
+            html: "<html><table><thead><tr><th>H</th></tr></thead>\
+                     <tbody><tr><td>x</td></tr></tbody></table></html>"
+                .to_string(),
+            caption: "Table 1. Demo".to_string(),
+            footer: String::new(),
+            caption_parts: vec![crate::rapid_potatr::LinkedText {
+                text: "Table 1. Demo".to_string(),
+                bbox: caption_box,
+                score: 0.99,
+                edge_score: 0.99,
+            }],
+            footer_parts: Vec::new(),
+            label: "table".to_string(),
+            bbox,
+            score: 0.99,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn potatr_route_claims_suppresses_and_anchors() {
+        // Table + caption regions claimed; a text region elsewhere untouched.
+        let sorted = vec![
+            potatr_region(100.0, 100.0, 400.0, 300.0, "table"),
+            potatr_region(100.0, 60.0, 400.0, 90.0, "table_caption"),
+            potatr_region(100.0, 400.0, 400.0, 500.0, "plain text"),
+        ];
+        let tables = vec![potatr_table(
+            [105.0, 105.0, 395.0, 295.0],
+            [105.0, 62.0, 395.0, 88.0],
+        )];
+        let (suppressed, anchors, trailing) = potatr_route_claims(&tables, &sorted, 0.5);
+        assert_eq!(suppressed, vec![true, true, false]);
+        assert_eq!(anchors[0], vec![0]);
+        assert!(anchors[1].is_empty() && anchors[2].is_empty());
+        assert!(trailing.is_empty());
+    }
+
+    #[test]
+    fn potatr_route_claims_trailing_when_no_overlap() {
+        // A claim far from every region suppresses nothing and trails.
+        let sorted = vec![potatr_region(100.0, 100.0, 400.0, 300.0, "plain text")];
+        let tables = vec![potatr_table(
+            [600.0, 600.0, 900.0, 800.0],
+            [600.0, 560.0, 900.0, 590.0],
+        )];
+        let (suppressed, anchors, trailing) = potatr_route_claims(&tables, &sorted, 0.5);
+        assert_eq!(suppressed, vec![false]);
+        assert!(anchors[0].is_empty());
+        assert_eq!(trailing, vec![0]);
+    }
+
+    #[test]
+    fn potatr_table_markdown_joins_caption_table_footer() {
+        let config = ConverterConfig::default();
+        let mut table = potatr_table([0.0, 0.0, 10.0, 10.0], [0.0, 0.0, 10.0, 5.0]);
+        table.footer = "Totals below.".to_string();
+        let md = potatr_table_markdown(&config, &table);
+        let ci = md.find("Table 1. Demo").expect("caption");
+        let fi = md.find("Totals below.").expect("footer");
+        assert!(ci < fi, "caption before footer");
+        assert!(md.contains('x'), "cell text survives GFM conversion");
+    }
+
+    #[test]
+    fn potatr_page_tokens_groups_words() {
+        // "Hi yo": one line, two words on the gap rule; boxes in render px.
+        let chars = vec![
+            SourceChar::new('H', 0.0, 0.0, 7.0, 10.0, "H"),
+            SourceChar::new('i', 7.5, 0.0, 3.0, 10.0, "H"),
+            SourceChar::new('y', 30.0, 0.0, 7.0, 10.0, "H"),
+            SourceChar::new('o', 38.0, 0.0, 7.0, 10.0, "H"),
+        ];
+        let sorted = vec![potatr_region(0.0, 0.0, 100.0, 50.0, "plain text")];
+        let owner = vec![Some(0), Some(0), Some(0), Some(0)];
+        let tokens = potatr_page_tokens(&chars, &sorted, &owner, 2.0);
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].text, "Hi");
+        assert_eq!(tokens[1].text, "yo");
+        assert_eq!((tokens[0].block_num, tokens[0].line_num), (0, 0));
+        // The 19.5pt gap trips cluster_lines' column-gutter split, so "yo"
+        // is its own line (same as the text arm sees it).
+        assert_eq!((tokens[1].line_num, tokens[1].span_num), (1, 0));
+        // Render pixels (scale 2.0): "Hi" spans x 0..10.5pt → 0..21px.
+        assert_eq!(tokens[0].bbox, [0.0, 0.0, 21.0, 20.0]);
     }
 
     #[test]

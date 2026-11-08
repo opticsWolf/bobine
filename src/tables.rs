@@ -6,16 +6,21 @@
 use regex::Regex;
 
 /// Replace simple HTML tables in a markdown string with GFM pipe tables.
+/// ElementTree-produced fragments (`<html><table>...</table></html>`, what
+/// `potatr_cells_to_html` emits) have their wrapper stripped too — a bare
+/// `<html>` tag is never document content.
 pub fn html_tables_to_gfm(md: &str) -> String {
     let re = Regex::new(r"(?is)<table\b.*?</table>").unwrap();
-    re.replace_all(md, |caps: &regex::Captures| {
+    let converted = re.replace_all(md, |caps: &regex::Captures| {
         let html = &caps[0];
         match one_table_to_gfm(html) {
             Some(gfm) => format!("\n\n{gfm}\n\n"),
             None => html.to_string(),
         }
-    })
-    .to_string()
+    });
+    let open = Regex::new(r"(?is)<html\b[^>]*>").unwrap();
+    let close = Regex::new(r"(?is)</html\s*>").unwrap();
+    close.replace_all(&open.replace_all(&converted, ""), "").to_string()
 }
 
 fn one_table_to_gfm(html: &str) -> Option<String> {
@@ -162,6 +167,12 @@ fn parse_simple_table(html: &str) -> Option<Vec<TableRow>> {
                             current_text = String::new();
                             in_cell = false;
                         }
+                    } else if attrs.trim_end().ends_with('/') {
+                        // Self-closing (`<td />`, what ElementTree emits for
+                        // empty cells): an empty cell, never an opener.
+                        current_cells.push(String::new());
+                        current_text = String::new();
+                        in_cell = false;
                     } else {
                         in_cell = true;
                         current_text = String::new();
@@ -170,8 +181,15 @@ fn parse_simple_table(html: &str) -> Option<Vec<TableRow>> {
                 "th" | "/th" => {
                     if tag_lower == "th" {
                         row_has_th = true;
-                        in_cell = true;
-                        current_text = String::new();
+                        if attrs.trim_end().ends_with('/') {
+                            // Self-closing header (`<th />`): empty header cell.
+                            current_cells.push(String::new());
+                            current_text = String::new();
+                            in_cell = false;
+                        } else {
+                            in_cell = true;
+                            current_text = String::new();
+                        }
                     } else {
                         if in_cell {
                             let text = current_text
@@ -420,6 +438,27 @@ mod tests {
     #[test]
     fn no_table_unchanged() {
         assert_eq!(html_tables_to_gfm("plain text"), "plain text");
+    }
+
+    #[test]
+    fn html_wrapper_stripped() {
+        // ElementTree fragments carry an `<html>` wrapper that is never
+        // document content: only the converted table survives.
+        let md = html_tables_to_gfm("<html><table><tr><td>x</td></tr></table></html>");
+        assert!(!md.contains("<html"), "wrapper stripped: {md}");
+        assert!(md.contains("| x |"), "table kept: {md}");
+    }
+
+    #[test]
+    fn self_closing_cells_parse_as_empty() {
+        // ElementTree emits `<th />` / `<td />` for empty cells (what
+        // `potatr_cells_to_html` produces for genuinely empty cells).
+        let md = html_tables_to_gfm(
+            "<html><table><thead><tr><th>H</th><th /></tr></thead>\
+             <tbody><tr><td>x</td><td /></tr></tbody></table></html>",
+        );
+        assert!(md.contains("| H |"), "header kept: {md}");
+        assert!(md.contains("| x |"), "body kept: {md}");
     }
 
     // ==================================================================

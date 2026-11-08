@@ -18,6 +18,14 @@ class RoutingMode(Enum):
 class FormulaBackend(Enum):
     TexTeller = "tex_teller"
 
+class TableBackend(Enum):
+    # SLANet-plus crop-level path (default in v1; POTATR is opt-in).
+    Slanet = "slanet"
+    # POTATR page-level path.
+    Potatr = "potatr"
+    # POTATR on pages with words, SLANet fallback elsewhere.
+    Auto = "auto"
+
 class ImageMode(Enum):
     # Figure links (default — diff-friendly).
     Link = "link"
@@ -53,7 +61,9 @@ class ConverterConfig:
       it (measured 12.3x / 3.6x speedups); set to e.g.
       ["CPUExecutionProvider"] to pin.
     - table_ort_providers: defaults to CPU unconditionally (SLANet measures
-      2-9x slower on CUDA - the graph fragments across devices).'''
+      2-9x slower on CUDA - the graph fragments across devices).
+    - potatr_ort_providers: defaults to CPU unconditionally (no CUDA numbers
+      yet for the POTATR slot).'''
 
     def __init__(
         self,
@@ -79,13 +89,23 @@ class ConverterConfig:
         sanitize_ocr: bool = True,
         math_char_threshold: int = 30,
         scanned_text_threshold: int = 50,
+        render_gate_enabled: bool = True,
+        render_gate_min_layer_words: int = 30,
+        render_gate_min_jaccard: float = 0.35,
+        render_gate_salvage_inline_math: bool = False,
         ocr_lang: str = "en",
+        table_backend: TableBackend = TableBackend.Slanet,
+        potatr_node_threshold: float = 0.8,
+        potatr_edge_threshold: float = 0.5,
+        potatr_suppress_iou: float = 0.5,
+        potatr_min_text_fill: float = 0.2,
         ort_providers: list[str] | None = None,
         encoder_ort_providers: list[str] | None = None,
         decoder_ort_providers: list[str] | None = None,
         layout_ort_providers: list[str] | None = None,
         ocr_ort_providers: list[str] | None = None,
         table_ort_providers: list[str] | None = None,
+        potatr_ort_providers: list[str] | None = None,
     ) -> None: ...
     @property
     def ort_providers(self) -> list[str]: ...
@@ -99,9 +119,29 @@ class ConverterConfig:
     def ocr_ort_providers(self) -> list[str] | None: ...
     @property
     def table_ort_providers(self) -> list[str] | None: ...
+    @property
+    def potatr_ort_providers(self) -> list[str] | None: ...
+    @property
+    def table_backend(self) -> TableBackend: ...
+    @property
+    def potatr_node_threshold(self) -> float: ...
+    @property
+    def potatr_edge_threshold(self) -> float: ...
+    @property
+    def potatr_suppress_iou(self) -> float: ...
+    @property
+    def potatr_min_text_fill(self) -> float: ...
 
     @property
     def sanitize_ocr(self) -> bool: ...
+    @property
+    def render_gate_enabled(self) -> bool: ...
+    @property
+    def render_gate_min_layer_words(self) -> int: ...
+    @property
+    def render_gate_min_jaccard(self) -> float: ...
+    @property
+    def render_gate_salvage_inline_math(self) -> bool: ...
     @property
     def image_mode(self) -> ImageMode: ...
     @property

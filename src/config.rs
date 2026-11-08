@@ -8,6 +8,34 @@ fn default_max_embed_bytes() -> usize {
     262_144
 }
 
+fn default_table_backend() -> TableBackend {
+    TableBackend::Slanet
+}
+
+fn default_potatr_node_threshold() -> f32 {
+    0.8
+}
+
+fn default_potatr_edge_threshold() -> f32 {
+    0.5
+}
+
+fn default_potatr_suppress_iou() -> f32 {
+    0.5
+}
+
+fn default_potatr_min_text_fill() -> f32 {
+    0.2
+}
+
+fn default_render_gate_min_layer_words() -> usize {
+    30
+}
+
+fn default_render_gate_min_jaccard() -> f32 {
+    0.35
+}
+
 /// Controls how pages are routed between fast (pdf_oxide) and ONNX paths.
 ///
 /// Cost ladder: `Never` (no models) < `Surgical` (TexTeller only) < `Auto`
@@ -128,6 +156,13 @@ pub struct ProviderOpts {
     /// (measured 1.7x at 700x400, 6.7x at 1024x1024; see docs/benchmarks.md).
     #[serde(default)]
     pub table_ort_providers: Option<Vec<String>>,
+
+    /// Provider override for the POTATR page-table slot.
+    /// `None` (default) = **always CPU**: same attention-heavy profile
+    /// as the table slot, and no CUDA numbers exist yet (P0 gate is
+    /// CPU-only; measure before overriding).
+    #[serde(default)]
+    pub potatr_ort_providers: Option<Vec<String>>,
 }
 
 /// How figure images are referenced in the markdown output.
@@ -185,6 +220,19 @@ pub struct RenderOpts {
     pub preserve_layout: bool,
 }
 
+/// Which table-structure backend to use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TableBackend {
+    /// SLANet-plus crop-level path via `table_block` (default in v1;
+    /// POTATR ships opt-in — see `docs/proposal_potatr.md` §6 flip gate).
+    Slanet,
+    /// POTATR page-level path (once P2 routing lands; P0 wires the slot
+    /// + preprocess only).
+    Potatr,
+    /// POTATR on pages with words, SLANet fallback elsewhere (P2).
+    Auto,
+}
 /// Model-selection knobs (weights, backends, language).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelOpts {
@@ -203,6 +251,69 @@ pub struct ModelOpts {
     /// `character` metadata. Models loaded via explicit paths usually embed
     /// their charset, making this a no-op for them.
     pub ocr_lang: String,
+
+    /// Which table-structure backend to use (opt-in POTATR in v1).
+    #[serde(default = "default_table_backend")]
+    pub table_backend: TableBackend,
+
+    /// POTATR node-score threshold for final table claims in P2 routing
+    /// (reference eval default 0.8). Internal structure refinement keeps
+    /// the reference 0.8 fixed for fidelity; this filters emitted tables.
+    #[serde(default = "default_potatr_node_threshold")]
+    pub potatr_node_threshold: f32,
+
+    /// POTATR edge threshold (reference default 0.5, `inference.py`).
+    #[serde(default = "default_potatr_edge_threshold")]
+    pub potatr_edge_threshold: f32,
+
+    /// IoU at which a POTATR-claimed box suppresses an overlapping layout
+    /// region in P2 routing (option A: POTATR wins its claim set).
+    #[serde(default = "default_potatr_suppress_iou")]
+    pub potatr_suppress_iou: f32,
+
+    /// Minimum fraction of a claimed table's cells carrying text. Claims
+    /// below this (e.g. textless on CID-hole pages) fall back to the region
+    /// arms instead of suppressing them.
+    #[serde(default = "default_potatr_min_text_fill")]
+    pub potatr_min_text_fill: f32,
+}
+
+/// Render-health gate knobs (Option C, `docs/cid_render_blocker.md` §2).
+///
+/// Temporary shim for the pdf_oxide CID-renderer defect (upstream #3098):
+/// per page, on born-digital input with a substantial text layer, fire
+/// when OCR↔text-layer word-Jaccard falls below threshold — the ONNX
+/// output is discarded and the fast path is used instead. Fires only
+/// while built against pdf_oxide < 0.3.79 (compile-time scope from
+/// `build.rs`; the dep bump deactivates it automatically) **and**
+/// `render_gate_enabled`. Math handling is suppression-first: TexTeller
+/// spans on fired pages are dropped, with opt-in inline salvage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenderHealthOpts {
+    /// Master switch for the render-health gate. Default true; the
+    /// version scope (`build.rs`) can still deactivate it underneath.
+    #[serde(default = "default_true")]
+    pub render_gate_enabled: bool,
+
+    /// Minimum text-layer words for a page to count as born-digital
+    /// with a substantial layer (gate only judges such pages).
+    #[serde(default = "default_render_gate_min_layer_words")]
+    pub render_gate_min_layer_words: usize,
+
+    /// Fire when OCR↔layer word-Jaccard is strictly below this.
+    #[serde(default = "default_render_gate_min_jaccard")]
+    pub render_gate_min_jaccard: f32,
+
+    /// Salvage inline-only formula boxes from the text layer as `$…$`
+    /// on fired pages instead of dropping all math. Default false
+    /// (suppression-first: confident false equations are worse than
+    /// none; salvage is best-effort — corrupt layers salvage garbage).
+    #[serde(default)]
+    pub render_gate_salvage_inline_math: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Text-layer / markdown-shaping knobs.
@@ -274,6 +385,9 @@ pub struct ConverterConfig {
     /// Render / asset-staging knobs.
     #[serde(flatten)]
     pub render: RenderOpts,
+    /// Render-health gate knobs (Option C shim, pdf_oxide < 0.3.79).
+    #[serde(flatten)]
+    pub health: RenderHealthOpts,
     /// Model-selection knobs.
     #[serde(flatten)]
     pub models: ModelOpts,
@@ -300,6 +414,7 @@ impl Default for ProviderOpts {
             layout_ort_providers: None,
             ocr_ort_providers: None,
             table_ort_providers: None,
+            potatr_ort_providers: None,
         }
     }
 }
@@ -327,6 +442,22 @@ impl Default for ModelOpts {
             model_precision: ModelPrecision::Fp32,
             model_quantization: ModelQuantization::Fp32,
             ocr_lang: "en".to_string(),
+            table_backend: TableBackend::Slanet,
+            potatr_node_threshold: 0.8,
+            potatr_edge_threshold: 0.5,
+            potatr_suppress_iou: 0.5,
+            potatr_min_text_fill: 0.2,
+        }
+    }
+}
+
+impl Default for RenderHealthOpts {
+    fn default() -> Self {
+        Self {
+            render_gate_enabled: true,
+            render_gate_min_layer_words: 30,
+            render_gate_min_jaccard: 0.35,
+            render_gate_salvage_inline_math: false,
         }
     }
 }
@@ -357,6 +488,7 @@ impl Default for ConverterConfig {
             routing: RoutingOpts::default(),
             providers: ProviderOpts::default(),
             render: RenderOpts::default(),
+            health: RenderHealthOpts::default(),
             models: ModelOpts::default(),
             text: TextOpts::default(),
         }
@@ -374,6 +506,10 @@ mod tests {
         assert_eq!(c.models.formula_backend, FormulaBackend::TexTeller);
         assert_eq!(c.models.model_precision, ModelPrecision::Fp32);
         assert_eq!(c.models.model_quantization, ModelQuantization::Fp32);
+        assert!(c.health.render_gate_enabled);
+        assert_eq!(c.health.render_gate_min_layer_words, 30);
+        assert_eq!(c.health.render_gate_min_jaccard, 0.35);
+        assert!(!c.health.render_gate_salvage_inline_math);
     }
 
     #[test]
@@ -397,6 +533,9 @@ mod tests {
         for key in [
             "routing_mode",
             "use_onnx",
+            "render_gate_enabled",
+            "render_gate_min_layer_words",
+            "render_gate_min_jaccard",
             "ort_providers",
             "encoder_ort_providers",
             "render_dpi",
@@ -409,7 +548,7 @@ mod tests {
         ] {
             assert!(v.get(key).is_some(), "missing flat key {key}");
         }
-        for group in ["routing", "providers", "render", "models", "text"] {
+        for group in ["routing", "providers", "render", "models", "text", "health"] {
             assert!(v.get(group).is_none(), "nested group {group} leaked");
         }
         let back: ConverterConfig = serde_json::from_value(v).unwrap();

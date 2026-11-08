@@ -17,7 +17,9 @@ pub mod pdf_source;
 pub mod pipeline;
 pub mod rapid_layout;
 pub mod rapid_ocr;
+pub mod rapid_potatr;
 pub mod rapid_table;
+pub mod render_gate;
 pub mod sanitize;
 pub mod tables;
 pub mod tex_teller;
@@ -27,8 +29,9 @@ mod py_bindings;
 
 pub use config::{
     ConverterConfig, FormulaBackend, ImageMode, ModelOpts, ModelPrecision, ModelQuantization,
-    ProviderOpts, RenderOpts, RoutingMode, RoutingOpts, TextOpts,
+    ProviderOpts, RenderHealthOpts, RenderOpts, RoutingMode, RoutingOpts, TableBackend, TextOpts,
 };
+pub use render_gate::{GateAction, RenderGateStats, RENDER_GATE_CUTOFF};
 pub use converter::{HybridConverter, ProgressHooks};
 pub use engine::OnnxEngine;
 pub use error::BobineError;

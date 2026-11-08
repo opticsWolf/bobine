@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 
 use crate::config::{
     ConverterConfig, FormulaBackend, ImageMode, ModelOpts, ModelPrecision, ModelQuantization,
+    RenderHealthOpts, TableBackend,
     ProviderOpts, RenderOpts, RoutingMode, RoutingOpts, TextOpts,
 };
 use crate::converter::{HybridConverter, ProgressHooks};
@@ -86,6 +87,34 @@ pub enum PyModelQuantization {
     Int8,
 }
 
+#[pyclass(eq, eq_int, name = "TableBackend")]
+#[derive(Clone, PartialEq)]
+pub enum PyTableBackend {
+    Slanet,
+    Potatr,
+    Auto,
+}
+
+impl From<PyTableBackend> for TableBackend {
+    fn from(v: PyTableBackend) -> Self {
+        match v {
+            PyTableBackend::Slanet => TableBackend::Slanet,
+            PyTableBackend::Potatr => TableBackend::Potatr,
+            PyTableBackend::Auto => TableBackend::Auto,
+        }
+    }
+}
+
+impl From<TableBackend> for PyTableBackend {
+    fn from(v: TableBackend) -> Self {
+        match v {
+            TableBackend::Slanet => PyTableBackend::Slanet,
+            TableBackend::Potatr => PyTableBackend::Potatr,
+            TableBackend::Auto => PyTableBackend::Auto,
+        }
+    }
+}
+
 #[pyclass(name = "ConverterConfig")]
 #[derive(Clone)]
 pub struct PyConverterConfig {
@@ -123,13 +152,23 @@ impl PyConverterConfig {
         sanitize_ocr = true,
         math_char_threshold = 30usize,
         scanned_text_threshold = 50usize,
+        render_gate_enabled = true,
+        render_gate_min_layer_words = 30usize,
+        render_gate_min_jaccard = 0.35f32,
+        render_gate_salvage_inline_math = false,
         ocr_lang = "en".to_string(),
+        table_backend = PyTableBackend::Slanet,
+        potatr_node_threshold = 0.8f32,
+        potatr_edge_threshold = 0.5f32,
+        potatr_suppress_iou = 0.5f32,
+        potatr_min_text_fill = 0.2f32,
         ort_providers = None,
         encoder_ort_providers = None,
         decoder_ort_providers = None,
         layout_ort_providers = None,
         ocr_ort_providers = None,
         table_ort_providers = None,
+        potatr_ort_providers = None,
     ))]
     fn new(
         extract_images: bool,
@@ -159,13 +198,23 @@ impl PyConverterConfig {
         sanitize_ocr: bool,
         math_char_threshold: usize,
         scanned_text_threshold: usize,
+        render_gate_enabled: bool,
+        render_gate_min_layer_words: usize,
+        render_gate_min_jaccard: f32,
+        render_gate_salvage_inline_math: bool,
         ocr_lang: String,
+        table_backend: PyTableBackend,
+        potatr_node_threshold: f32,
+        potatr_edge_threshold: f32,
+        potatr_suppress_iou: f32,
+        potatr_min_text_fill: f32,
         ort_providers: Option<Vec<String>>,
         encoder_ort_providers: Option<Vec<String>>,
         decoder_ort_providers: Option<Vec<String>>,
         layout_ort_providers: Option<Vec<String>>,
         ocr_ort_providers: Option<Vec<String>>,
         table_ort_providers: Option<Vec<String>>,
+        potatr_ort_providers: Option<Vec<String>>,
     ) -> Self {
         // Execution-provider selection is resolved at runtime against the
         // loaded ONNX Runtime library (ORT_DYLIB_PATH). Requesting an
@@ -189,6 +238,11 @@ impl PyConverterConfig {
                         PyModelQuantization::Int8 => ModelQuantization::Int8,
                     },
                     ocr_lang,
+                    table_backend: table_backend.into(),
+                    potatr_node_threshold,
+                    potatr_edge_threshold,
+                    potatr_suppress_iou,
+                    potatr_min_text_fill,
                 },
                 providers: ProviderOpts {
                     ort_providers,
@@ -197,6 +251,7 @@ impl PyConverterConfig {
                     layout_ort_providers,
                     ocr_ort_providers,
                     table_ort_providers,
+                    potatr_ort_providers,
                 },
                 render: RenderOpts {
                     extract_images,
@@ -223,6 +278,12 @@ impl PyConverterConfig {
                     sanitize_ocr,
                     math_char_threshold,
                     scanned_text_threshold,
+                },
+                health: RenderHealthOpts {
+                    render_gate_enabled,
+                    render_gate_min_layer_words,
+                    render_gate_min_jaccard,
+                    render_gate_salvage_inline_math,
                 },
             },
         }
@@ -291,8 +352,48 @@ impl PyConverterConfig {
         self.inner.providers.table_ort_providers.clone()
     }
     #[getter]
+    fn potatr_ort_providers(&self) -> Option<Vec<String>> {
+        self.inner.providers.potatr_ort_providers.clone()
+    }
+    #[getter]
+    fn table_backend(&self) -> PyTableBackend {
+        self.inner.models.table_backend.into()
+    }
+    #[getter]
+    fn potatr_node_threshold(&self) -> f32 {
+        self.inner.models.potatr_node_threshold
+    }
+    #[getter]
+    fn potatr_edge_threshold(&self) -> f32 {
+        self.inner.models.potatr_edge_threshold
+    }
+    #[getter]
+    fn potatr_suppress_iou(&self) -> f32 {
+        self.inner.models.potatr_suppress_iou
+    }
+    #[getter]
+    fn potatr_min_text_fill(&self) -> f32 {
+        self.inner.models.potatr_min_text_fill
+    }
+    #[getter]
     fn sanitize_ocr(&self) -> bool {
         self.inner.text.sanitize_ocr
+    }
+    #[getter]
+    fn render_gate_enabled(&self) -> bool {
+        self.inner.health.render_gate_enabled
+    }
+    #[getter]
+    fn render_gate_min_layer_words(&self) -> usize {
+        self.inner.health.render_gate_min_layer_words
+    }
+    #[getter]
+    fn render_gate_min_jaccard(&self) -> f32 {
+        self.inner.health.render_gate_min_jaccard
+    }
+    #[getter]
+    fn render_gate_salvage_inline_math(&self) -> bool {
+        self.inner.health.render_gate_salvage_inline_math
     }
     fn __repr__(&self) -> String {
         format!(
@@ -702,6 +803,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRoutingMode>()?;
     m.add_class::<PyImageMode>()?;
     m.add_class::<PyFormulaBackend>()?;
+    m.add_class::<PyTableBackend>()?;
     m.add_class::<PyModelPrecision>()?;
     m.add_class::<PyConverterConfig>()?;
     m.add_class::<PyHybridConverter>()?;

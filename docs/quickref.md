@@ -78,7 +78,7 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `ConverterConfig` | Tuning knobs (see table below) |
 | `RoutingMode` | `Never` / `Auto` / `Surgical` / `Always` |
 | `FormulaBackend` | `TexTeller` (only backend) |
-| `ModelPrecision` | `Fp32` / `Fp16` (`*_fp16.onnx`, models deferred) |
+| `ModelPrecision` | `Fp32` / `Fp16` (`*_fp16.onnx`, shipped in the unified repo, 28-29/30 parity) |
 | `ModelQuantization` | `Fp32` (default) / `Int8` (formula weights) |
 
 ## RoutingMode
@@ -123,6 +123,11 @@ import json; data = json.loads(doc.json)  # typed values, formulas kept
 | `use_onnx` | `True` | Master switch for ONNX passes |
 | `routing_mode` | `Auto` | See table above |
 | `formula_backend` | `TexTeller` | Formula recognizer |
+| `table_backend` | `Slanet` | `Slanet` (default) or `Potatr` (opt-in page-level table recognition; weights auto-download, CPU-pinned like SLANet) |
+| `potatr_node_threshold` | `0.8` | Min node score for a POTATR table claim |
+| `potatr_edge_threshold` | `0.5` | Edge-link threshold for structure refinement |
+| `potatr_suppress_iou` | `0.5` | IoU at which a POTATR claim suppresses an overlapping layout region |
+| `potatr_min_text_fill` | `0.2` | Min fraction of claimed cells carrying text (textless claims fall back to region arms) |
 | `model_precision` | `Fp32` | Selects `*_fp16.onnx` when `Fp16` |
 | `model_quantization` | `Fp32` | Formula weights: `Fp32` (default) = reference output on CPU and CUDA; `Int8` = ~4x smaller RAM and ~1.9x faster on CPU, with occasional decode drift. Do not pair `Int8` with CUDA |
 | `render_dpi` | `300` | Renders for scanned-page OCR / layout |
@@ -145,6 +150,10 @@ import json; data = json.loads(doc.json)  # typed values, formulas kept
 | `scanned_text_threshold` | `50` | Auto: max chars for scanned-page detection |
 | `ocr_lang` | `"en"` | CTC charset fallback when the rec model lacks metadata |
 | `sanitize_ocr` | `True` | Post-OCR LaTeX repair (fence fixup, `\left`/`\right` balance, script split); set `False` to get raw OCR text |
+| `render_gate_enabled` | `True` | Render-health gate master switch (Option C; active only while built against pdf_oxide < 0.3.79, upstream #3098) |
+| `render_gate_min_layer_words` | `30` | Min text-layer words for the gate to judge a page (below = scanned/thin, gate passes) |
+| `render_gate_min_jaccard` | `0.35` | Fire when OCR↔layer word-Jaccard is strictly below this (page falls back to fast path, math suppressed) |
+| `render_gate_salvage_inline_math` | `False` | Salvage inline-only formula boxes from the text layer as `$…$` on fired pages instead of dropping all math |
 
 ## Structured sources: JATS (v0.7.0)
 
@@ -282,9 +291,10 @@ more than ~2 s per formula crop.
 |---|---|---|
 | TexTeller encoder + decoder + tokenizer (fp32, default) | auto-download from HuggingFace `opticsWolf/texteller3-onnx` into the hub cache | ~1.19 GB |
 | TexTeller encoder + decoder fp16 | same unified repo (`*_fp16.onnx` pair, pure-fp16 compute; measured 28-29/30 exact parity with fp32) | ~598 MB |
-| RapidLayout (DocLayout-YOLO) | auto-download from HF `wybxc/DocLayout-YOLO-DocStructBench-onnx` into the hub cache, or `set_layout_model` | ~72 MB |
-| RapidOCR PP-OCRv4 det + rec | auto-download from HF `SWHL/RapidOCR` into the hub cache, or `set_ocr_models` | ~16 MB |
-| RapidTable (SLANet-plus) | auto-download from HF `opendatalab/PDF-Extract-Kit-1.0` into the hub cache, or `set_table_model` | ~7.8 MB |
+| RapidLayout (PP-DocLayout_plus-L) | auto-download from HF `opticsWolf/pp-doclayout-plus-l-onnx` (Apache-2.0) into the hub cache, or `set_layout_model` | ~130 MB |
+| RapidOCR PP-OCRv5 det + rec + dict | auto-download from HF `opticsWolf/rapidocr-ppocrv5-onnx` (Apache-2.0) into the hub cache, or `set_ocr_models` | ~22 MB |
+| RapidTable (SLANet-plus) | auto-download from HF `opticsWolf/slanet-plus-onnx` (Apache-2.0) into the hub cache, or `set_table_model` | ~7.8 MB |
+| POTATR page tables (opt-in via `table_backend`) | auto-download from HF `opticsWolf/potatr-onnx` (MIT) into the hub cache, or `set_potatr_model` | ~116 MB |
 | TexTeller Int8 (opt-in CPU speed tier) | auto-download from HF `opticsWolf/texteller3-onnx` into the hub cache (KV-cache-capable merged graph) | ~303 MB |
 
 `cache_dir` is the hub-cache root (an override of the standard HF
@@ -302,7 +312,7 @@ CUDA probe — it never sees converter weights.
 ## Testing
 
 ```bash
-cargo test                 # 160 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
+cargo test                 # 181 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
 ORT_DYLIB_PATH=... cargo test --test test_converter   # incl. full-paper AUTO run
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```

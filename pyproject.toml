@@ -1,10 +1,15 @@
 [build-system]
-requires = ["maturin>=1.7,<2.0"]
+# Upper bound is a CDN workaround, not a feature need (2026-11-08): the
+# v1.16.0 release objects 504 from runner egress (92-107 byte error pages
+# instead of the 10 MB tarball — linux/windows wheel jobs fail inside
+# maturin-action's download). Re-resolve the bound once the objects are
+# servable again. Everything below uses only long-stable maturin features.
+requires = ["maturin>=1.7,<1.16"]
 build-backend = "maturin"
 
 [project]
 name = "bobine"
-version = "0.7.5"
+version = "0.8.0"
 description = "PDF / Office / text → Markdown ingestion engine (Rust core with Python bindings)"
 license = "Apache-2.0 OR MIT"
 authors = [{ name = "opticsWolf", email = "opticswolf@protonmail.com" }]
