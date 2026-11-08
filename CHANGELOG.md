@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **embroider 0.12 → 0.14.1.** Requirement bump (`Cargo.toml`) + lockfile;
+  zero code changes (used surface — `apply_providers`/`report`/
+  `cache_info_files`/`fetch_repo_file`/`parse_owner_name`/
+  `save_runtime_report`/`SessionPolicy`/`CacheReport` — intact), 181
+  lib + office/golden/rapid-table/bench suites green, ext-module clean.
+  Resolver confirms Rust 1.85 MSRV still holds.
+
 - **Option C: version-scoped render-health gate (pdf_oxide < 0.3.79).** New
   `src/render_gate.rs` + `RenderHealthOpts` (`render_gate_enabled=true`,
   `render_gate_min_layer_words=30`, `render_gate_min_jaccard=0.35`,
