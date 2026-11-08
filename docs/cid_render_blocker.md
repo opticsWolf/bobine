@@ -227,8 +227,11 @@ permanent value as a render-regression guard beyond 0.3.79.
 - okfgraph `formula_concepts` for `kind='pdf'` → same renderer fix
   (mining formulas from OCR-mojibake would enshrine garbage; JATS
   formula concepts unaffected).
-- Upstream issue → synthetic reproducer + `main` verification + human
-  authorship (§1.5).
+- Upstream issue → ~~synthetic reproducer + `main` verification +~~ human
+  authorship (§1.5). Synthetic reproducer BUILT + verified 2026-11-08
+  (matrix in §5.1): `cid-repro-type0.pdf` (custom `/Encoding`) +
+  `cid-repro-A.pdf` (Identity-H subset control); pdf_oxide 0.3.78 AND
+  `main`@`08accb2` render blank where PyMuPDF renders/extracts ABCDEF.
 - POTATR default-on (Auto triple-gate leg 3, "trustworthy renders") →
   same renderer fix; P2 opt-in validated on clean renders only
   (`05dff78`; econ-tax spot: correct 13-col structure, CID-garbage
@@ -264,23 +267,75 @@ gossamer §5 + okfgraph §6.1–6.4 implementation (external repos).
 7. Option A executed 2026-11-08: `main` renders byte-identical garbage
    (SHA-256 match) — no fix to wait for; upstream issue unblocked on
    content, draft prepared for human authorship.
+8. Synthetic reproducer built + verified 2026-11-08 (user-built, Arial
+   source): `cid-repro-type0.pdf` + `cid-repro-A.pdf` (paths+hashes in
+   §5.1). pdf_oxide 0.3.78 AND `main` render blank / extract FFFD
+   where PyMuPDF renders + extracts ABCDEF — proves a valid-file
+   render failure, not a malformed-file artifact. Remaining for filing:
+   human rewrite/submit of the §5 draft with reproducer attached.
 
 ## 5. Draft upstream report (human to rewrite + submit — agents may not file)
+
+### 5.1 Synthetic reproducer (built + verified 2026-11-08)
+
+Two minimal single-page Type0 files (user-built with fontTools from
+`C:/Windows/Fonts/arial.ttf`; subset keeps A–F + .notdef, upm 2048):
+
+- `D:/User/Documents/Rust/cid-repro-type0.pdf` (23,083 B, SHA-256
+  `e669747c f97444d9 68dd7d10 84949790 673649e4 251ac62b 0d2e3321b2b84dd2ad`):
+  custom `/Encoding` CMap stream (`<41>`–`<46>` → CID 1–6),
+  `CIDFontType2` subset, NO `/CIDToGIDMap` (identity default),
+  embedded `/FontFile2`, `/ToUnicode` covering post-Encoding CIDs
+  (`<0001>`–`<0006>` → U+0041–U+0046) AND raw codes
+  (`<0041>`–`<0046>` → U+0041–U+0046), content `(ABCDEF)`.
+  PLOS-faithful shape (custom Encoding + subset + no CIDToGIDMap).
+- `D:/User/Documents/Rust/cid-repro-A.pdf` (23,106 B, SHA-256
+  `e30de26a ed72f067 17921a4b 5c0bf5b6 dfd06dbcf 2825979e a8042efb9 69d0e0`):
+  same subset font but `/Encoding /Identity-H`, 2-byte codes
+  `<0001>`–`<0006>`. Subset control (no custom Encoding involved).
+
+Behavior matrix (all verified 2026-11-08):
+
+| file | PyMuPDF render | PyMuPDF extract | pdf_oxide 0.3.78 render | pdf_oxide `main`@`08accb2` render | pdf_oxide extract |
+|---|---|---|---|---|---|
+| `cid-repro-type0.pdf` | ABCDEF ✓ | `ABCDEF` ✓ | blank ✗ | blank ✗ (byte-identical to 0.3.78) | 3×U+FFFD ✗ |
+| `cid-repro-A.pdf` | ABCDEF ✓ | `ABCDEF` ✓ | blank ✗ | (same build, same path) | — |
+
+Reference renders kept at `C:/Users/Main/AppData/Local/Temp/repro_A_pym.png`
+(PyMuPDF ABCDEF) vs blank pdf_oxide PNGs (ink-sum = pure white).
+
+What the matrix proves: the file is VALID (independent reader renders
++ extracts correctly via Encoding CMap → CID → GID-identity → subset
+outlines). pdf_oxide fails the SAME bytes on both render and extract
+paths, on both 0.3.78 and `main`. The Identity-H control (`A`) shows
+the subset font never draws in pdf_oxide even on the trivial path, so
+the report should frame the primary file as "valid Type0 subset file
+renders blank" with the custom-Encoding structure as the PLOS link
+(codes 0x41–0x46 resolved as CIDs 65–70 → GIDs out of the 7-glyph
+subset range → skipped), not over-claim a single internal mechanism.
+Dead ends excluded from the report: full-font Identity-H probes drew
+`$%&'()` in BOTH readers (CID-as-codepoint→cmap consensus on CIDs
+36–41 — no divergence, file-design artifact, files deleted); ToUnicode
+named `Adobe-Identity-UCS` is silently replaced by readers' builtin
+identity (use a custom CMapName).
 
 Title: `Type0 render ignores embedded /Encoding CMap: glyphs shift on
 subset fonts without /CIDToGIDMap`
 
 Body skeleton (own words required, `Assisted-by:` trailer):
 
-1. Repro: shallow-clone @ `08accb2`, `cargo build -p pdf_oxide_cli`,
-   render any PLOS ONE PDF page with Type0 subset fonts
-   (e.g. a 2-col research article, `render --dpi 150 -p 1`) — title
-   and body glyphs render shifted (`RESEARCH ARTICLE` →
-   `RESECRCJ CRTKCLE`). Same output on 0.3.78 and `main`
-   (byte-identical PNGs, SHA-256 `e8b473ce…`). No third-party PDF
-   attached per repo rules; happy to test against a maintainer-chosen
-   fixture or a synthetic Type0 (custom `/Encoding` CMap stream,
-   indirect refs, no `/CIDToGIDMap`, embedded `/FontFile2` subset).
+1. Repro: two minimal synthetic Type0 files (attached, no third-party
+   PDF per repo rules — public-domain Arial-subset construction):
+   `cid-repro-type0.pdf` (custom `/Encoding` CMap stream, indirect
+   refs, no `/CIDToGIDMap`, embedded `/FontFile2` subset, content
+   `(ABCDEF)`) and `cid-repro-A.pdf` (same subset, `/Identity-H`).
+   `pdf-oxide render --dpi 150 -p 1` on either → blank page; PyMuPDF
+   renders AND extracts `ABCDEF` from the same bytes. Same blank on
+   0.3.78 and `main` @ `08accb2` (byte-identical PNGs). On real-world
+   PLOS ONE pages (Type0 subsets, custom Encoding, no CIDToGIDMap)
+   the same defect shifts glyphs instead of blanking (`RESEARCH
+   ARTICLE` → `RESECRCJ CRTKCLE`) — codes resolved as CIDs land on
+   arbitrary in-range subset GIDs there, out-of-range here.
 2. Structure: `Type0` + custom `/Encoding` CMap stream + no
    `/CIDToGIDMap` + `/FontFile2` subset; ToUnicode present so text
    extraction is correct — only the raster path shifts, consistent
