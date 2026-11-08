@@ -49,10 +49,13 @@ src/
 ├── pdf_source.rs     PdfSource trait: converter ↔ PDF backend seam;
 │                     pdf_oxide adapter + in-memory FakePdf test fakes
 ├── tex_teller.rs     TexTeller ONNX: preprocess → encoder → autoregressive decode
-├── rapid_layout.rs   DocLayout-YOLO: LetterBox(1024) → NMS → LayoutRegion
+├── rapid_layout.rs   PP-DocLayout_plus-L (RT-DETR) → LayoutRegion
 ├── rapid_ocr.rs      PaddleOCR DBNet + CRNN: DB unclip (min-area rect +
 │                     polygon offset), rotation-aware crops, CTC decode
 ├── rapid_table.rs    RapidTable (SLANet-plus): scanned-table → HTML
+│                     (default table backend)
+├── rapid_potatr.rs   POTATR page tables + captions → cells; P2 option-A
+│                     routing claims them over layout regions (opt-in)
 ├── sanitize.rs       Post-OCR LaTeX repair (fences, split_cmds, script split)
 ├── mml.rs            MathML → LaTeX verbatim port (GREEK/OPS/FUNC_NAMES…
 │                     tables, mml_to_tex + mathify + merge_math; 692-fixture
@@ -75,7 +78,7 @@ legacy/               frozen pure-Python bobine v0.2.0 (reference implementation
 ```
 
 Dependency direction: `pipeline → converter → engine → (tex_teller |
-rapid_layout | rapid_ocr | rapid_table)`; `converter → tables`,
+rapid_layout | rapid_ocr | rapid_table | rapid_potatr)`; `converter → tables`,
 `converter → pdf_source`, `converter → excel | office_images`;
 `pipeline → excel` (workbook siblings); `documents/assets` sit beside the
 pipeline layer. No cycles.
@@ -177,6 +180,7 @@ Three lazy slots, each loaded on first use and cached:
 | `layout` | First-party HF `opticsWolf/pp-doclayout-plus-l-onnx` PP-DocLayout_plus-L (Apache-2.0; auto-download, probe-first) or local path (`set_layout_model()`) | `ensure_layout()` |
 | `ocr` | First-party HF `opticsWolf/rapidocr-ppocrv5-onnx` PP-OCRv5 det+rec+dict (Apache-2.0; auto-download, probe-first) or local paths (`set_ocr_models()`) | `ensure_ocr()` |
 | `table` | First-party `opticsWolf/slanet-plus-onnx` (byte-identical to RapidAI/RapidTable v2.0.0, Apache-2.0; ~7.8 MB) or local path via `set_table_model()` | `ensure_table()` (lazy — only on table regions) |
+| `potatr` | First-party `opticsWolf/potatr-onnx` (kensho/POTATR-v1.1-Pub, MIT; ~116 MB) or local path via `set_potatr_model()` | `ensure_potatr()` (lazy — only on qualifying pages when `table_backend` selects Potatr) |
 
 Degradation contract: model-load failures propagate as `BobineError`, but
 `full_structure_page_markdown` failures are caught by the router
@@ -194,6 +198,7 @@ selects the default, which encodes the measured ledger:
 |---|---|---|
 | layout, ocr | **auto-GPU** — CUDAExecutionProvider prepended when the loaded dylib exposes a usable CUDA EP (EP-availability probe) | measured 12.3x / 3.6x on CUDA |
 | table | **CPU-pinned** | SLANet measures 2-9x slower on CUDA (graph fragments across devices) |
+| potatr | **CPU-pinned** | Same policy as the table slot (page-level DETR forward; no CUDA measurement yet) |
 | tex_teller | base `ort_providers` | Fp32 is the default tier; Int8+CUDA and Fp16-without-CUDA are guarded with warnings |
 
 Session construction runs through `engine::session_builder()`: the
@@ -286,7 +291,9 @@ as Python.
      **RapidTable** (SLANet-plus): the crop is OCR'd, lines are matched
      into decoded cell quads, and the resulting HTML also goes through
      `html_tables_to_gfm`. Placeholder `[table: <label>]` remains as the
-     last resort.
+     last resort. With `table_backend = Potatr`, a page-level POTATR
+     pre-pass runs first and claimed tables emit anchored markdown
+     while suppressing their layout regions (P2 option A).
    - math labels → crop → TexTeller → `$$…$$`.
    - `figure`/`image` → crop saved to work_dir, `![](name.png)` link.
    - else → text layer first, `ocr_lines` fallback; `title` → `## heading`.
@@ -347,9 +354,11 @@ as Python.
 
 Table-slot alternatives reviewed 2026-11-07: TableFormer (2022-03)
 and TATR (2022) both predate SLANet_plus (2023 PaddleOCR improvement
-for wireless/complex tables) — the slot stands. The newer generation
-(TABLET 2025, SLANet-1M 2025, POTATR 2026) has no clean ONNX serving
-artifacts; re-evaluate when it does.
+for wireless/complex tables) — the SLANet slot stands. POTATR (2026) has
+since been mirrored first-party (`opticsWolf/potatr-onnx`, MIT) and
+integrated behind the opt-in `table_backend` flag (P2,
+`docs/proposal_potatr.md`); TABLET 2025 and SLANet-1M 2025 still have no
+clean ONNX serving artifacts; re-evaluate when they do.
 
 Rust dependencies are locked in `Cargo.lock` (update deliberately with
 `cargo update -p <crate>`, never blindly — the pdf_oxide 0.3.77→0.3.78

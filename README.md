@@ -162,9 +162,10 @@ src/
 ├── engine.rs         OnnxEngine (lazy model manager: TexTeller/Layout/OCR)
 ├── converter.rs      HybridConverter (core PDF/Office pipeline + binary-sniffed text fallback)
 ├── tex_teller.rs     TexTeller ONNX — ViT encoder → RoBERTa decoder
-├── rapid_layout.rs   DocLayout-YOLO page layout analysis
+├── rapid_layout.rs   PP-DocLayout_plus-L page layout analysis (RT-DETR)
 ├── rapid_ocr.rs      PaddleOCR det + rec (DBNet / CRNN, CTC decode)
-├── rapid_table.rs    SLANet-plus table-structure recognition (scans)
+├── rapid_table.rs    SLANet-plus table-structure recognition (default backend)
+├── rapid_potatr.rs   POTATR page-table recognition (opt-in `table_backend`)
 ├── sanitize.rs       Post-OCR LaTeX repair (split_cmds, fence fixup, script split)
 ├── mml.rs            MathML → LaTeX (verbatim port, fixture-parity gated)
 ├── jats.rs           JATS XML → GFM (formulas/tables/figures, no ONNX needed)

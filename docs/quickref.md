@@ -123,6 +123,11 @@ import json; data = json.loads(doc.json)  # typed values, formulas kept
 | `use_onnx` | `True` | Master switch for ONNX passes |
 | `routing_mode` | `Auto` | See table above |
 | `formula_backend` | `TexTeller` | Formula recognizer |
+| `table_backend` | `Slanet` | `Slanet` (default) or `Potatr` (opt-in page-level table recognition; weights auto-download, CPU-pinned like SLANet) |
+| `potatr_node_threshold` | `0.8` | Min node score for a POTATR table claim |
+| `potatr_edge_threshold` | `0.5` | Edge-link threshold for structure refinement |
+| `potatr_suppress_iou` | `0.5` | IoU at which a POTATR claim suppresses an overlapping layout region |
+| `potatr_min_text_fill` | `0.2` | Min fraction of claimed cells carrying text (textless claims fall back to region arms) |
 | `model_precision` | `Fp32` | Selects `*_fp16.onnx` when `Fp16` |
 | `model_quantization` | `Fp32` | Formula weights: `Fp32` (default) = reference output on CPU and CUDA; `Int8` = ~4x smaller RAM and ~1.9x faster on CPU, with occasional decode drift. Do not pair `Int8` with CUDA |
 | `render_dpi` | `300` | Renders for scanned-page OCR / layout |
@@ -285,6 +290,7 @@ more than ~2 s per formula crop.
 | RapidLayout (PP-DocLayout_plus-L) | auto-download from HF `opticsWolf/pp-doclayout-plus-l-onnx` (Apache-2.0) into the hub cache, or `set_layout_model` | ~130 MB |
 | RapidOCR PP-OCRv5 det + rec + dict | auto-download from HF `opticsWolf/rapidocr-ppocrv5-onnx` (Apache-2.0) into the hub cache, or `set_ocr_models` | ~22 MB |
 | RapidTable (SLANet-plus) | auto-download from HF `opticsWolf/slanet-plus-onnx` (Apache-2.0) into the hub cache, or `set_table_model` | ~7.8 MB |
+| POTATR page tables (opt-in via `table_backend`) | auto-download from HF `opticsWolf/potatr-onnx` (MIT) into the hub cache, or `set_potatr_model` | ~116 MB |
 | TexTeller Int8 (opt-in CPU speed tier) | auto-download from HF `opticsWolf/texteller3-onnx` into the hub cache (KV-cache-capable merged graph) | ~303 MB |
 
 `cache_dir` is the hub-cache root (an override of the standard HF

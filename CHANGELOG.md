@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **POTATR P2: option-A routing with claim/suppress + e2e golden.** Page-level
+  pre-pass claims tables (`score>=0.8`, `>=2` words in rect, cell fill >=
+  `potatr_min_text_fill`=0.2) and suppresses overlapping layout regions
+  (IoU>0.5 plus caption/footer cover rule); each table emits anchored
+  markdown, unclaimed regions use the existing arms (SLANet fallback
+  intact). New `tests/fixtures/potatr_table.pdf` →
+  `tests/golden/potatr_table_potatr.golden.md` (ignored
+  `BOBINE_POTATR_PARITY=1` gate, full 20-cell GFM table) plus the
+  Never-mode `tests/golden/potatr_table.golden.md`. Incidental fixes
+  routing depended on: DETR `scale_factor` ones (3-4x box inflation),
+  `flip_chars_topdown` (bottom-up chars vs top-down boxes), `figure_title`
+  as caption, `<html>` wrapper strip + self-closing td/th, cover rule.
+  Default stays `Slanet` — no behavior change unless opted in.
 - **POTATR P1: postprocess port + parity gate.** `src/rapid_potatr.rs` ports
   `postprocess.py` (objects → structures → cells, rotations, NMS family),
   `metrics.cells_to_html` (thead/th + tbody/td, ET-faithful empty elements +

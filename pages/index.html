@@ -35,7 +35,7 @@
   <div class="hero-copy">
     <h1>Documents in.<br><span>Markdown out.</span></h1>
     <p class="sub">A standalone PDF, Office, and text <strong>ingestion engine</strong> — a pure-Rust core with Python bindings, and no ML framework in the import path.</p>
-    <p class="hero-detail">bobine runs on a single onnxruntime shared library with no CUDA-version coupling: pdf_oxide for fast native text extraction, ONNX models for the heavy passes — TexTeller formula OCR, DocLayout-YOLO layout, PaddleOCR. No torch, no optimum, no opencv — not even on the Python side.</p>
+    <p class="hero-detail">bobine runs on a single onnxruntime shared library with no CUDA-version coupling: pdf_oxide for fast native text extraction, ONNX models for the heavy passes — TexTeller formula OCR, PP-DocLayout_plus-L layout, PaddleOCR. No torch, no optimum, no opencv — not even on the Python side.</p>
     <div class="cta">
       <a class="btn" href="#workflow">Convert your first PDF <span aria-hidden="true">↓</span></a>
       <a class="text-link" href="https://github.com/opticsWolf/bobine#quick-start-python">Read the documentation <span aria-hidden="true">↗</span></a>
@@ -91,7 +91,7 @@ md = conv.<span class="syntax-link">convert_pdf</span>(<span class="syntax-muted
         <li><strong>Auto · Surgical</strong><span>Heuristics or formula-only. TexTeller-led.</span></li>
         <li><strong>Always</strong><span>Full layout + OCR on every page.</span></li>
       </ol>
-      <p class="memory-storage">Provider defaults follow measurement: CUDA helps layout and OCR enormously; SLANet-plus tables stay CPU-pinned because the graph fragments across devices. Int8 formula weights are the CPU default; fp32 on CUDA is the opt-in.</p>
+      <p class="memory-storage">Provider defaults follow measurement: CUDA helps layout and OCR enormously; SLANet-plus tables stay CPU-pinned because the graph fragments across devices (the opt-in POTATR table backend shares the CPU pinning). Int8 formula weights are the CPU default; fp32 on CUDA is the opt-in.</p>
     </div>
   </aside>
 </section>
@@ -110,9 +110,10 @@ pip install "bobine[cpu]"
 # cargo add bobine</code></pre></div>
     <div><h3>Converter weights</h3><pre tabindex="0" aria-label="Model sources"><code># TexTeller int8 default  ~319 MB  (Ji-Ha export)
 # TexTeller fp32 opt-in    ~1.25 GB (OleehyO)
-# DocLayout-YOLO           ~72 MB
+# PP-DocLayout_plus-L      ~130 MB
 # PP-OCRv4 det + rec       ~16 MB
-# SLANet-plus tables       ~7.8 MB</code></pre><p class="small-copy">Missing layout/OCR models degrade to the fast path per page — a conversion never fails because of them. A missing table model only disables scanned-table recognition.</p></div>
+# SLANet-plus tables       ~7.8 MB
+# POTATR tables (opt-in)   ~116 MB</code></pre><p class="small-copy">Missing layout/OCR models degrade to the fast path per page — a conversion never fails because of them. A missing table model only disables scanned-table recognition.</p></div>
   </div>
   <div class="timeline">
     <article class="step">
