@@ -4,7 +4,8 @@
 pushed) at original write; P2 POTATR routing since landed (`05dff78`,
 still `dev`). **pdf_oxide:** 0.3.78 (still latest release, re-verified
 via `cargo search` 2026-11-08; v0.3.79 still unreleased).
-**Owner of next actions:** see §6.
+**Owner of next actions:** human reporter (draft in §5) + maintainer
+waiting on synthetic reproducer; tracking in §4.
 
 This is the consolidated record of the pdf_oxide CID-font render
 corruption episode: what was found, what was ruled out, what is blocked,
@@ -119,15 +120,30 @@ facts ✓ (Win11 b26200, rustc 1.99.0, pdf_oxide 0.3.78), structure
 description partial ✓, **synthetic reproducer ✗, human-authored report
 ✗, main-vs-.78 verification ✗**.
 
+### 1.6 Option A outcome (2026-11-08): NOT fixed on `main`
+
+Shallow clone @ `08accb2` (2026-10-30, post-0.3.78), built
+`pdf_oxide_cli` (CLI self-reports 0.3.78 — version unbumped), rendered
+`cs-bodvw-2024.pdf` p0 @150dpi via `pdf-oxide render --dpi 150 -p 1`:
+byte-identical to the 0.3.78 render (SHA-256 `e8b473ce…` both files,
+`ImageChops.difference` sum 0). Same glyph-shifted pixels
+(`RESECRCJ CRTKCLE`, `deer learnkng`, `Cbst ract`). The #1500 mechanism
+(Type0 embedded `/Encoding` CMap ignored at render) is still present
+on `main`; no fix to wait for. The upstream issue for the residual
+variant is now unblocked on content — remaining: synthetic reproducer
++ human authorship (draft below).
+
 ---
 
 ## 2. Options analysis
 
 ### Option A — verify `main` fixes our case (investigative, ~30 min compute)
 
-Shallow-clone pdf_oxide, render one PLOS page on `main`, diff against
-0.3.78. Highest value per effort: a fix dissolves the problem (plan
-becomes "wait + pin"); a non-fix *is* the upstream issue content
+~~Shallow-clone pdf_oxide, render one PLOS page on `main`, diff against
+0.3.78.~~ **Executed 2026-11-08, result in §1.6: NOT fixed** (byte-identical
+garbage). Shallow-clone pdf_oxide, render one PLOS page on `main`, diff
+against 0.3.78. Highest value per effort: a fix dissolves the problem
+(plan becomes "wait + pin"); a non-fix *is* the upstream issue content
 (residual variant of #1500). **Prerequisite for every version-based
 plan. Recommended first.**
 
@@ -245,3 +261,31 @@ gossamer §5 + okfgraph §6.1–6.4 implementation (external repos).
 6. Docs refreshed 2026-11-08 ahead of Option A execution (0.3.78 still
    latest, 0.3.79 unreleased; text-layer corruption finding; corpus
    drift note).
+7. Option A executed 2026-11-08: `main` renders byte-identical garbage
+   (SHA-256 match) — no fix to wait for; upstream issue unblocked on
+   content, draft prepared for human authorship.
+
+## 5. Draft upstream report (human to rewrite + submit — agents may not file)
+
+Title: `Type0 render ignores embedded /Encoding CMap: glyphs shift on
+subset fonts without /CIDToGIDMap`
+
+Body skeleton (own words required, `Assisted-by:` trailer):
+
+1. Repro: shallow-clone @ `08accb2`, `cargo build -p pdf_oxide_cli`,
+   render any PLOS ONE PDF page with Type0 subset fonts
+   (e.g. a 2-col research article, `render --dpi 150 -p 1`) — title
+   and body glyphs render shifted (`RESEARCH ARTICLE` →
+   `RESECRCJ CRTKCLE`). Same output on 0.3.78 and `main`
+   (byte-identical PNGs, SHA-256 `e8b473ce…`). No third-party PDF
+   attached per repo rules; happy to test against a maintainer-chosen
+   fixture or a synthetic Type0 (custom `/Encoding` CMap stream,
+   indirect refs, no `/CIDToGIDMap`, embedded `/FontFile2` subset).
+2. Structure: `Type0` + custom `/Encoding` CMap stream + no
+   `/CIDToGIDMap` + `/FontFile2` subset; ToUnicode present so text
+   extraction is correct — only the raster path shifts, consistent
+   with `CIDToGIDMap[code]` identity fallback ignoring the Encoding
+   CMap (code-as-CID on arbitrary subset GIDs). Adjacent to #1500;
+   persists after it.
+3. Env: Windows 11 b26200, rustc 1.99.0, pdf_oxide `main` @ `08accb2`
+   (CLI reports 0.3.78) and crates.io 0.3.78 — identical bytes.
