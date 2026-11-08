@@ -1,6 +1,6 @@
 # Changelog — bobine
 
-## Unreleased
+## 0.8.0 — 2026-11-08
 
 - **embroider 0.12 → 0.14.1.** Requirement bump (`Cargo.toml`) + lockfile;
   zero code changes (used surface — `apply_providers`/`report`/
@@ -55,8 +55,6 @@
   `Slanet`) + thresholds + `potatr_ort_providers` in config, Python
   bindings, and `tests/test_potatr.rs` preprocess parity vs the reference
   transform (max|d| 0.0175 ≤ 0.03). No routing yet — behavior unchanged.
-
-## 0.8.0 — 2026-11-07
 
 The 0.7.5 development line (TexTeller fp32 default, variant matrix)
 was never tagged; it ships here together with the serving-stack

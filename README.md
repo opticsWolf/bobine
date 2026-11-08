@@ -27,8 +27,8 @@
 
 Runs on a single `onnxruntime` shared library with no CUDA-version
 coupling: `pdf_oxide` for fast native PDF text extraction, ONNX models
-(TexTeller formula OCR, DocLayout-YOLO layout analysis, PaddleOCR)
-for the heavy passes.
+(TexTeller formula OCR, PP-DocLayout_plus-L layout analysis, PP-OCRv5
+det+rec) for the heavy passes.
 
 **No torch, no optimum, no opencv** — not even on the Python side.
 
@@ -127,9 +127,10 @@ md = conv.convert("notes.txt", work_dir="/tmp/out")
 | `Always`  | Every page through the full ONNX layout + OCR pipeline; on born-digital pages, formula regions are refined against text-layer math boxes (v0.4.8) and output matches `Surgical`. | TexTeller + layout + OCR (table lazy) |
 
 RapidLayout and RapidOCR weights also auto-download from HuggingFace on
-first use (DocStructBench YOLO ~72 MB, PP-OCRv4 ~16 MB); explicit local
-paths can override them. Missing/broken heavy models degrade gracefully to
-the fast path per page — a conversion never fails because of them.
+first use (PP-DocLayout_plus-L ~130 MB, PP-OCRv5 mobile det+rec+dict
+~22 MB); explicit local paths can override them. Missing/broken heavy
+models degrade gracefully to the fast path per page — a conversion
+never fails because of them.
 
 Converter models live in the standard HuggingFace hub cache (0.6.0+):
 `cache_dir` is the hub-cache root — an override of the env-resolved
@@ -159,13 +160,14 @@ let md = conv.convert_pdf(std::path::Path::new("paper.pdf"),
 src/
 ├── lib.rs            crate root & re-exports
 ├── config.rs         ConverterConfig · RoutingMode · ModelPrecision · ImageMode
-├── engine.rs         OnnxEngine (lazy model manager: TexTeller/Layout/OCR)
+├── engine.rs         OnnxEngine (lazy model manager: TexTeller/Layout/OCR/Table/POTATR)
 ├── converter.rs      HybridConverter (core PDF/Office pipeline + binary-sniffed text fallback)
 ├── tex_teller.rs     TexTeller ONNX — ViT encoder → RoBERTa decoder
 ├── rapid_layout.rs   PP-DocLayout_plus-L page layout analysis (RT-DETR)
 ├── rapid_ocr.rs      PaddleOCR det + rec (DBNet / CRNN, CTC decode)
 ├── rapid_table.rs    SLANet-plus table-structure recognition (default backend)
 ├── rapid_potatr.rs   POTATR page-table recognition (opt-in `table_backend`)
+├── render_gate.rs    Render-health gate (Option C: OCR↔layer agreement, version-scoped to pdf_oxide < 0.3.79)
 ├── sanitize.rs       Post-OCR LaTeX repair (split_cmds, fence fixup, script split)
 ├── mml.rs            MathML → LaTeX (verbatim port, fixture-parity gated)
 ├── jats.rs           JATS XML → GFM (formulas/tables/figures, no ONNX needed)
@@ -191,8 +193,8 @@ repro commands in
 
 | Workload | CPU | CUDA (RTX 3090) | Routing |
 |---|---|---|---|
-| Layout (DocLayout-YOLO, 1024²) | 480 ms | **37–38 ms (~12.8×)** | CUDA auto-enabled |
-| OCR det+rec (PP-OCRv4, 1024²) | 131 ms | **36 ms (~3.6×)** | CUDA auto-enabled |
+| Layout (PP-DocLayout_plus-L, 1024²) | 320 ms | **44.6 ms (~7.2×)** | CUDA auto-enabled |
+| OCR det+rec (PP-OCRv5, 1024²) | 143 ms | **38.0 ms (~3.8×)** | CUDA auto-enabled |
 | OCR 47-line page (batched) | 0.79 s | **0.32 s (6.3× vs per-line)** | CUDA + chunked rec |
 | Table (SLANet-plus, 700×400) | **28.8 ms** | 49 ms (0.6× — slower) | Pinned to CPU |
 | Table (SLANet-plus, 1024²) | **133 ms** | 893 ms (0.15× — much slower) | Pinned to CPU |
@@ -202,7 +204,7 @@ repro commands in
 
 Takeaways:
 
-- **CUDA wins big on layout + OCR** (12.8× / 3.6×) — auto-enabled, zero config.
+- **CUDA wins big on layout + OCR** (7.2× / 3.8×) — auto-enabled, zero config.
 - **Tables stay on CPU by design** — SLANet fragments across devices (2–9× slower on CUDA).
 - **Quantization is hardware-dependent**: fp32 is the default on both CPU and
   CUDA. On CPU, int8 is the speed alternative — 1.9× faster than fp32 at a
@@ -309,7 +311,7 @@ for unreferenced figures. Office docs additionally stage pictures into
 ## Testing
 
 ```bash
-cargo test                # 137 lib tests (ORT_DYLIB_PATH required — no dylib = abort)
+cargo test                # 181 lib tests (ORT_DYLIB_PATH required — no dylib = abort)
 cargo test --test test_office --test test_excel --test test_golden   # no models needed
 ORT_DYLIB_PATH=... cargo test --test test_converter                 # incl. full-paper AUTO run
 maturin develop && python -c "import bobine"   # bindings smoke test
@@ -325,6 +327,8 @@ generated OOXML fixtures — see `tests/fixtures/SOURCES.md` for provenance.
 - [**Benchmarks & test results**](https://github.com/opticsWolf/bobine/blob/main/docs/benchmarks.md) - full CPU vs CUDA tables, TexTeller fp32/fp16/q8/int8 speed and parity, OCR batching analysis, environment setup
 - [**Proposal: figures/tables/layout**](https://github.com/opticsWolf/bobine/blob/main/docs/proposal_media_tables.md) — plan for reading-order image placement and structured table extraction
 - [**Proposal: JATS/MathML formulas**](https://github.com/opticsWolf/bobine/blob/main/docs/proposal_jats_mml.md) — `mml_to_tex` in Rust, JATS input adapter, OCR sanitizer + benchmark, okfgraph/gossamer phases
+- [**Proposal: POTATR page tables**](https://github.com/opticsWolf/bobine/blob/main/docs/proposal_potatr.md) — opt-in `table_backend`, triple-gate Auto flip
+- [**CID render blocker**](https://github.com/opticsWolf/bobine/blob/main/docs/cid_render_blocker.md) — pdf_oxide Type0 defect (upstream #3098), render-health gate, P-D numbers withheld
 
 ## License
 

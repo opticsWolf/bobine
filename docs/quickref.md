@@ -78,7 +78,7 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `ConverterConfig` | Tuning knobs (see table below) |
 | `RoutingMode` | `Never` / `Auto` / `Surgical` / `Always` |
 | `FormulaBackend` | `TexTeller` (only backend) |
-| `ModelPrecision` | `Fp32` / `Fp16` (`*_fp16.onnx`, models deferred) |
+| `ModelPrecision` | `Fp32` / `Fp16` (`*_fp16.onnx`, shipped in the unified repo, 28-29/30 parity) |
 | `ModelQuantization` | `Fp32` (default) / `Int8` (formula weights) |
 
 ## RoutingMode
@@ -312,7 +312,7 @@ CUDA probe — it never sees converter weights.
 ## Testing
 
 ```bash
-cargo test                 # 160 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
+cargo test                 # 181 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
 ORT_DYLIB_PATH=... cargo test --test test_converter   # incl. full-paper AUTO run
 maturin develop && python -c "import bobine"   # bindings smoke test
 ```
