@@ -115,10 +115,16 @@ Full policy pulled from `ISSUE_TEMPLATE/bug_report.yml`,
   contributor, a failing-before/passing-after regression test, and a
   corpus sweep on the contributor's own corpus vs *two* baselines.
 
-Filing readiness: latest-version ✓, duplicate search ✓, environment
-facts ✓ (Win11 b26200, rustc 1.99.0, pdf_oxide 0.3.78), structure
-description partial ✓, **synthetic reproducer ✗, human-authored report
-✗, main-vs-.78 verification ✗**.
+Filing readiness: latest-version ✓, duplicate search ✓ (triaged #1500
+open-adjacent, #1626 open-distinct, #2217/#2854 closed-distinct — details
+in filing record), environment facts ✓ (Win11 b26200, rustc 1.99.0,
+pdf_oxide 0.3.78), structure description ✓, synthetic reproducer ✓
+(2026-11-08), main-vs-.78 verification ✓ (2026-11-08),
+human-authored report ✓ — **FILED as
+[#3098](https://github.com/yfedoseev/pdf_oxide/issues/3098) 2026-11-08**
+(custom Encoding + no-CIDToGIDMap residual variant of #1500; both
+synthetic PDFs attached; persists after #2217/#2854 on main @
+`08accb2`). Awaiting maintainer response.
 
 ### 1.6 Option A outcome (2026-11-08): NOT fixed on `main`
 
@@ -227,11 +233,11 @@ permanent value as a render-regression guard beyond 0.3.79.
 - okfgraph `formula_concepts` for `kind='pdf'` → same renderer fix
   (mining formulas from OCR-mojibake would enshrine garbage; JATS
   formula concepts unaffected).
-- Upstream issue → ~~synthetic reproducer + `main` verification +~~ human
-  authorship (§1.5). Synthetic reproducer BUILT + verified 2026-11-08
-  (matrix in §5.1): `cid-repro-type0.pdf` (custom `/Encoding`) +
-  `cid-repro-A.pdf` (Identity-H subset control); pdf_oxide 0.3.78 AND
-  `main`@`08accb2` render blank where PyMuPDF renders/extracts ABCDEF.
+- Upstream issue → **FILED as
+  [#3098](https://github.com/yfedoseev/pdf_oxide/issues/3098) 2026-11-08**
+  (both synthetic PDFs attached; residual variant of #1500; persists
+  after #2217/#2854 on main @ `08accb2`). Awaiting maintainer
+  response / 0.3.79; re-run Option A check on fix or request.
 - POTATR default-on (Auto triple-gate leg 3, "trustworthy renders") →
   same renderer fix; P2 opt-in validated on clean renders only
   (`05dff78`; econ-tax spot: correct 13-col structure, CID-garbage
@@ -271,8 +277,12 @@ gossamer §5 + okfgraph §6.1–6.4 implementation (external repos).
    source): `cid-repro-type0.pdf` + `cid-repro-A.pdf` (paths+hashes in
    §5.1). pdf_oxide 0.3.78 AND `main` render blank / extract FFFD
    where PyMuPDF renders + extracts ABCDEF — proves a valid-file
-   render failure, not a malformed-file artifact. Remaining for filing:
-   human rewrite/submit of the §5 draft with reproducer attached.
+   render failure, not a malformed-file artifact. Filed as #3098
+   2026-11-08 (human-authored, both PDFs attached, duplicate triage
+   vs #1500/#1626/#2217/#2854 recorded).
+9. Upstream issue #3098 filed 2026-11-08; awaiting maintainer response.
+   Re-run Option A render check when 0.3.79 lands or maintainer
+   requests verification; unblock P-D table + POTATR Auto leg 3 if fixed.
 
 ## 5. Draft upstream report (human to rewrite + submit — agents may not file)
 
