@@ -1,5 +1,14 @@
 # Changelog — bobine
 
+## 0.8.1 — 2026-11-10
+
+- **ONNX Runtime extras 1.29.0 → 1.31.1.** `bobine[cpu]` / `bobine[gpu]`
+  now pin the same binary as embroider 0.14.1 and okfgraph 0.12
+  (`onnxruntime==1.31.1`, `onnxruntime-gpu[cuda,cudnn]==1.31.1`).
+  Installing `bobine[cpu]` next to `okfgraph[cpu]` no longer fails to
+  resolve or downgrades the shared runtime. CI downloads the 1.31.1 CPU
+  build; README, quickref and the site follow. No code changes.
+
 ## 0.8.0 — 2026-11-08
 
 - **embroider 0.12 → 0.14.1.** Requirement bump (`Cargo.toml`) + lockfile;

@@ -67,7 +67,7 @@ The heavy passes need an ONNX Runtime library — or nothing at all
 (Office/text/fast-path PDF work needs no models):
 
 ```bash
-pip install bobine[cpu]   # adds onnxruntime == 1.29.0 (CPU)
+pip install bobine[cpu]   # adds onnxruntime == 1.31.1 (CPU)
 # or: pip install bobine[gpu]   # onnxruntime-gpu (self-contained CUDA)
 ```
 
@@ -85,7 +85,7 @@ export ORT_DYLIB_PATH=/path/to/onnxruntime.dll   # e.g. <venv>/Lib/site-packages
 
 `ort` loads the library dynamically (`load-dynamic`, no CUDA-version
 coupling) and refuses runtimes older than 1.28 (`BadVersion`). The extras
-pin exactly `1.29.0`, the one runtime shared with okfgraph/embroider
+pin exactly `1.31.1`, the one runtime shared with okfgraph/embroider
 (embroider `docs/compat.md`). Never install both `onnxruntime` and
 `onnxruntime-gpu` (same module name, they clobber each other).
 
@@ -186,7 +186,7 @@ legacy/               frozen pure-Python bobine v0.2.0 (reference implementation
 
 ## Performance
 
-Reference box: RTX 3090, ORT 1.28.1 (benches predate the 1.29.0 pin —
+Reference box: RTX 3090, ORT 1.28.1 (benches predate the 1.31.1 pin —
 ratios, not absolutes, are the takeaway). Full tables, fixtures, and
 repro commands in
 [docs/benchmarks.md](https://github.com/opticsWolf/bobine/blob/main/docs/benchmarks.md).

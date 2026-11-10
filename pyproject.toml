@@ -9,7 +9,7 @@ build-backend = "maturin"
 
 [project]
 name = "bobine"
-version = "0.8.0"
+version = "0.8.1"
 description = "PDF / Office / text → Markdown ingestion engine (Rust core with Python bindings)"
 license = "Apache-2.0 OR MIT"
 authors = [{ name = "opticsWolf", email = "opticswolf@protonmail.com" }]
@@ -24,14 +24,14 @@ Issues = "https://github.com/opticsWolf/bobine/issues"
 
 [project.optional-dependencies]
 # ONNX Runtime libraries (auto-located on `import bobine`; see ORT_DYLIB_PATH).
-# Pinned to the single shared binary (plan-onnx-only Phase 3): same 1.29.0
-# okfgraph[cpu|gpu] resolves, so both consumers load one DLL.
+# Pinned to the single shared binary (plan-onnx-only Phase 3): same 1.31.1
+# embroider and okfgraph[cpu|gpu] resolve, so both consumers load one DLL.
 # cpu XOR gpu — never install both (same `onnxruntime` module name).
 # gpu pulls NVIDIA's wheel-packaged CUDA/cuDNN via onnxruntime-gpu's own
 # extras — a bare onnxruntime-gpu has NO cudnn64_9.dll and its CUDA EP
 # fails at the first Conv node (verified: graceful CPU/image fallback).
-cpu = ["onnxruntime==1.29.0"]
-gpu = ["onnxruntime-gpu[cuda,cudnn]==1.29.0"]
+cpu = ["onnxruntime==1.31.1"]
+gpu = ["onnxruntime-gpu[cuda,cudnn]==1.31.1"]
 # TexTeller formula OCR (ONNX models auto-downloaded from HuggingFace)
 formula = []
 
