@@ -165,6 +165,136 @@ pub struct ProviderOpts {
     pub potatr_ort_providers: Option<Vec<String>>,
 }
 
+/// Which device a pass should run on.
+///
+/// The same three words embroider and okfgraph accept (`auto` / `cpu` /
+/// `cuda`), parsed through embroider's `DeviceReq` so the three packages
+/// cannot disagree about what "cuda" means. `auto` keeps each slot's
+/// measured policy (layout/OCR take CUDA when the loaded library registers
+/// it; the table slots stay CPU-pinned); `cpu` and `cuda` override that
+/// policy for every pass, which is the point of asking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Device {
+    /// Each slot's measured policy (the pre-0.9 behaviour).
+    Auto,
+    /// Every pass on CPU.
+    Cpu,
+    /// Every pass on CUDA with CPU fallback (including the CPU-pinned
+    /// table slots, whose pin is a measurement, not a hard limit).
+    Cuda,
+}
+
+impl Default for Device {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+impl Device {
+    /// The accepted words, in the order the docs list them.
+    pub const ALL: [&'static str; 3] = ["auto", "cpu", "cuda"];
+
+    /// Parse a word; the message names the accepted set.
+    pub fn parse(word: &str) -> Result<Self, String> {
+        use embroider::policy::DeviceReq;
+        match DeviceReq::parse(word) {
+            Ok(DeviceReq::Auto) => Ok(Self::Auto),
+            Ok(DeviceReq::Cpu) => Ok(Self::Cpu),
+            Ok(DeviceReq::Cuda) => Ok(Self::Cuda),
+            Err(_) => Err(format!(
+                "device must be one of {}, got '{}'",
+                Self::ALL.join(", "),
+                word
+            )),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Cpu => "cpu",
+            Self::Cuda => "cuda",
+        }
+    }
+}
+
+/// Numeric precision, the stack-wide vocabulary.
+///
+/// bobine has no `q8` artifact: `int8` is the compact TexTeller pair
+/// (~303 MB, CPU speed tier) and the layout/OCR/table graphs ship one
+/// precision. `q8` is therefore refused **by name**, with the word that
+/// would have worked, instead of being accepted and ignored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Precision {
+    /// The configured `model_precision` / `model_quantization` (fp32/fp32
+    /// unless they were set).
+    Auto,
+    /// Full-precision weights (the reference variant).
+    Fp32,
+    /// Half-precision TexTeller pair (CUDA alternative to fp32).
+    Fp16,
+    /// Dynamic-int8 TexTeller pair (CPU speed tier; do not pair with CUDA).
+    Int8,
+}
+
+impl Default for Precision {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+impl Precision {
+    /// The accepted words, in the order the docs list them.
+    pub const ALL: [&'static str; 4] = ["auto", "fp32", "fp16", "int8"];
+
+    pub fn parse(word: &str) -> Result<Self, String> {
+        match word.trim().to_ascii_lowercase().as_str() {
+            "auto" => Ok(Self::Auto),
+            "fp32" => Ok(Self::Fp32),
+            "fp16" => Ok(Self::Fp16),
+            "int8" => Ok(Self::Int8),
+            "q8" => Err(
+                "bobine has no q8 artifact: use 'int8' (the compact TexTeller pair) or 'fp32'"
+                    .to_string(),
+            ),
+            other => Err(format!(
+                "precision must be one of {}, got '{}'",
+                Self::ALL.join(", "),
+                other
+            )),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Fp32 => "fp32",
+            Self::Fp16 => "fp16",
+            Self::Int8 => "int8",
+        }
+    }
+}
+
+/// The vocabulary pair, flattened into [`ConverterConfig`] like every other
+/// group (config files stay flat).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeOpts {
+    /// Where each pass runs (`auto` / `cpu` / `cuda`).
+    #[serde(default)]
+    pub device: Device,
+    /// Weight precision (`auto` / `fp32` / `fp16` / `int8`).
+    #[serde(default)]
+    pub precision: Precision,
+}
+
+impl Default for RuntimeOpts {
+    fn default() -> Self {
+        Self { device: Device::Auto, precision: Precision::Auto }
+    }
+}
+
 /// How figure images are referenced in the markdown output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -388,6 +518,9 @@ pub struct ConverterConfig {
     /// Render-health gate knobs (Option C shim, pdf_oxide < 0.3.79).
     #[serde(flatten)]
     pub health: RenderHealthOpts,
+    /// Device / precision vocabulary (0.9).
+    #[serde(flatten)]
+    pub runtime: RuntimeOpts,
     /// Model-selection knobs.
     #[serde(flatten)]
     pub models: ModelOpts,
@@ -482,10 +615,186 @@ impl Default for TextOpts {
     }
 }
 
+/// What one pass will open with.
+///
+/// `providers = None` means the answer depends on the loaded ONNX Runtime
+/// library (the auto-CUDA slots) and the caller did not say whether CUDA
+/// registers — that is the honest report before the first session, and it
+/// is why `describe()` fills it in once a pass has landed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PassPlan {
+    /// The execution-provider list the session opens with.
+    pub providers: Option<Vec<String>>,
+    /// Why: `explicit` (a per-pass list), `auto-cuda`, `auto-cpu`,
+    /// `cpu-pinned` (measured: table slots), `cpu`, or `cuda`.
+    pub policy: &'static str,
+    /// The precision label this pass loads (`fp32` for the non-formula
+    /// slots, which ship one precision).
+    pub precision: &'static str,
+}
+
+/// Every pass's plan, resolved from the vocabulary and the per-pass
+/// overrides. Pure — the CUDA state is an argument — so the mapping is a
+/// table test rather than an argument.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimePlan {
+    pub encoder: PassPlan,
+    pub decoder: PassPlan,
+    pub layout: PassPlan,
+    pub ocr: PassPlan,
+    pub table: PassPlan,
+    pub potatr: PassPlan,
+}
+
+/// CUDA with CPU fallback: ORT drops to the next provider in the list when
+/// the first cannot register.
+fn cuda_then_cpu() -> Vec<String> {
+    vec![
+        "CUDAExecutionProvider".to_string(),
+        "CPUExecutionProvider".to_string(),
+    ]
+}
+
+fn cpu_only() -> Vec<String> {
+    vec!["CPUExecutionProvider".to_string()]
+}
+
+impl ConverterConfig {
+    /// The TexTeller variant the vocabulary selects.
+    ///
+    /// `precision` is authoritative when it is not `auto`; otherwise the
+    /// legacy `model_precision` / `model_quantization` fields stand. That
+    /// one rule keeps old callers working and means a caller never gets a
+    /// variant it did not ask for.
+    pub fn formula_variant(&self) -> (ModelPrecision, ModelQuantization) {
+        match self.runtime.precision {
+            Precision::Auto => (self.models.model_precision, self.models.model_quantization),
+            Precision::Fp32 => (ModelPrecision::Fp32, ModelQuantization::Fp32),
+            Precision::Fp16 => (ModelPrecision::Fp16, ModelQuantization::Fp32),
+            Precision::Int8 => (ModelPrecision::Fp32, ModelQuantization::Int8),
+        }
+    }
+
+    /// The label `describe()` reports for the formula pass.
+    pub fn formula_precision_label(&self) -> &'static str {
+        let (precision, quantization) = self.formula_variant();
+        match quantization {
+            ModelQuantization::Int8 => "int8",
+            ModelQuantization::Fp32 => match precision {
+                ModelPrecision::Fp16 => "fp16",
+                ModelPrecision::Fp32 => "fp32",
+            },
+        }
+    }
+
+    /// The base provider list for passes without a measured slot policy.
+    fn base_providers(&self) -> Vec<String> {
+        match self.runtime.device {
+            Device::Cpu => cpu_only(),
+            Device::Cuda => cuda_then_cpu(),
+            Device::Auto => self.providers.ort_providers.clone(),
+        }
+    }
+
+    /// A pass with a plain policy: explicit override, else the device base.
+    fn base_plan(&self, override_list: &Option<Vec<String>>, precision: &'static str) -> PassPlan {
+        if let Some(list) = override_list {
+            return PassPlan {
+                providers: Some(list.clone()),
+                policy: "explicit",
+                precision,
+            };
+        }
+        PassPlan {
+            providers: Some(self.base_providers()),
+            policy: self.runtime.device.as_str(),
+            precision,
+        }
+    }
+
+    /// A slot whose measured default is "CUDA when the library registers
+    /// it, else the base list" (layout 12.3x, OCR 3.6x).
+    fn auto_gpu_plan(&self, override_list: &Option<Vec<String>>, cuda: Option<bool>) -> PassPlan {
+        if let Some(list) = override_list {
+            return PassPlan { providers: Some(list.clone()), policy: "explicit", precision: "fp32" };
+        }
+        match self.runtime.device {
+            Device::Cpu => PassPlan { providers: Some(cpu_only()), policy: "cpu", precision: "fp32" },
+            Device::Cuda => {
+                PassPlan { providers: Some(cuda_then_cpu()), policy: "cuda", precision: "fp32" }
+            }
+            Device::Auto => match cuda {
+                Some(true) => PassPlan {
+                    providers: Some(cuda_then_cpu()),
+                    policy: "auto-cuda",
+                    precision: "fp32",
+                },
+                Some(false) => PassPlan {
+                    providers: Some(self.base_providers()),
+                    policy: "auto-cpu",
+                    precision: "fp32",
+                },
+                None => PassPlan { providers: None, policy: "auto-cuda", precision: "fp32" },
+            },
+        }
+    }
+
+    /// A slot pinned to CPU by measurement (SLANet 2-9x slower on CUDA; no
+    /// POTATR CUDA numbers yet). `device = cuda` still overrides the pin:
+    /// the caller asked for every pass on the GPU.
+    fn cpu_pinned_plan(&self, override_list: &Option<Vec<String>>) -> PassPlan {
+        if let Some(list) = override_list {
+            return PassPlan { providers: Some(list.clone()), policy: "explicit", precision: "fp32" };
+        }
+        match self.runtime.device {
+            Device::Cuda => {
+                PassPlan { providers: Some(cuda_then_cpu()), policy: "cuda", precision: "fp32" }
+            }
+            _ => PassPlan { providers: Some(cpu_only()), policy: "cpu-pinned", precision: "fp32" },
+        }
+    }
+
+    /// Resolve every pass. *cuda* is `None` when the caller does not know
+    /// yet (no session has opened, so probing would load the runtime just
+    /// to answer a question about a future load).
+    pub fn runtime_plan(&self, cuda: Option<bool>) -> RuntimePlan {
+        let formula = self.formula_precision_label();
+        RuntimePlan {
+            encoder: self.base_plan(&self.providers.encoder_ort_providers, formula),
+            decoder: self.base_plan(&self.providers.decoder_ort_providers, formula),
+            layout: self.auto_gpu_plan(&self.providers.layout_ort_providers, cuda),
+            ocr: self.auto_gpu_plan(&self.providers.ocr_ort_providers, cuda),
+            table: self.cpu_pinned_plan(&self.providers.table_ort_providers),
+            potatr: self.cpu_pinned_plan(&self.providers.potatr_ort_providers),
+        }
+    }
+
+    /// Refuse a vocabulary pair that contradicts the legacy fields.
+    ///
+    /// `precision` is authoritative when set (see [`Self::formula_variant`]),
+    /// so this is not needed for correctness — it exists so a caller who
+    /// set both gets told rather than silently losing one.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.runtime.precision == Precision::Auto {
+            return Ok(());
+        }
+        let legacy_touched = self.models.model_precision != ModelPrecision::Fp32
+            || self.models.model_quantization != ModelQuantization::Fp32;
+        if legacy_touched {
+            return Err(format!(
+                "precision='{}' conflicts with model_precision/model_quantization: set one or the other",
+                self.runtime.precision.as_str()
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl Default for ConverterConfig {
     fn default() -> Self {
         Self {
             routing: RoutingOpts::default(),
+            runtime: RuntimeOpts::default(),
             providers: ProviderOpts::default(),
             render: RenderOpts::default(),
             health: RenderHealthOpts::default(),
@@ -542,17 +851,155 @@ mod tests {
             "formula_dpi",
             "extract_images",
             "model_precision",
+            "device",
+            "precision",
             "ocr_lang",
             "detect_headings",
             "scanned_text_threshold",
         ] {
             assert!(v.get(key).is_some(), "missing flat key {key}");
         }
-        for group in ["routing", "providers", "render", "models", "text", "health"] {
+        for group in ["routing", "providers", "render", "models", "text", "health", "runtime"] {
             assert!(v.get(group).is_none(), "nested group {group} leaked");
         }
         let back: ConverterConfig = serde_json::from_value(v).unwrap();
         assert_eq!(format!("{:?}", back), format!("{:?}", c));
+    }
+
+    // ---- device / precision vocabulary (0.9, plan B3) -------------------
+
+    #[test]
+    fn device_words_match_the_stack() {
+        for word in Device::ALL {
+            assert_eq!(Device::parse(word).unwrap().as_str(), word);
+        }
+        // The alias embroider accepts, and the refusal naming the set.
+        assert_eq!(Device::parse("gpu").unwrap(), Device::Cuda);
+        let err = Device::parse("gpu2").unwrap_err();
+        assert!(err.contains("auto, cpu, cuda"), "{err}");
+        assert!(err.contains("'gpu2'"), "{err}");
+    }
+
+    #[test]
+    fn precision_words_and_the_q8_refusal() {
+        for word in Precision::ALL {
+            assert_eq!(Precision::parse(word).unwrap().as_str(), word);
+        }
+        let err = Precision::parse("q8").unwrap_err();
+        assert!(err.contains("no q8 artifact"), "{err}");
+        assert!(err.contains("int8"), "{err}");
+        let err = Precision::parse("fp8").unwrap_err();
+        assert!(err.contains("auto, fp32, fp16, int8"), "{err}");
+    }
+
+    #[test]
+    fn precision_maps_onto_the_legacy_pair() {
+        let mut c = ConverterConfig::default();
+        assert_eq!(
+            c.formula_variant(),
+            (ModelPrecision::Fp32, ModelQuantization::Fp32),
+            "auto keeps the legacy defaults"
+        );
+
+        c.runtime.precision = Precision::Fp16;
+        assert_eq!(c.formula_variant(), (ModelPrecision::Fp16, ModelQuantization::Fp32));
+        assert_eq!(c.formula_precision_label(), "fp16");
+
+        c.runtime.precision = Precision::Int8;
+        assert_eq!(c.formula_variant(), (ModelPrecision::Fp32, ModelQuantization::Int8));
+        assert_eq!(c.formula_precision_label(), "int8");
+
+        c.runtime.precision = Precision::Fp32;
+        assert_eq!(c.formula_variant(), (ModelPrecision::Fp32, ModelQuantization::Fp32));
+        assert_eq!(c.formula_precision_label(), "fp32");
+    }
+
+    #[test]
+    fn precision_wins_over_the_legacy_fields_and_conflicts_are_refused() {
+        let mut c = ConverterConfig::default();
+        c.models.model_quantization = ModelQuantization::Int8;
+        c.runtime.precision = Precision::Fp16;
+        // The vocabulary is authoritative when set...
+        assert_eq!(c.formula_variant(), (ModelPrecision::Fp16, ModelQuantization::Fp32));
+        // ...and setting both is a caller error the binding surfaces.
+        assert!(c.validate().is_err());
+
+        let mut c = ConverterConfig::default();
+        c.models.model_quantization = ModelQuantization::Int8;
+        assert!(c.validate().is_ok(), "auto is not a conflict");
+        assert_eq!(c.formula_variant().1, ModelQuantization::Int8);
+    }
+
+    #[test]
+    fn device_cpu_pins_every_pass() {
+        let mut c = ConverterConfig::default();
+        c.runtime.device = Device::Cpu;
+        let plan = c.runtime_plan(Some(true));
+        for (slot, pass) in [
+            ("encoder", &plan.encoder),
+            ("decoder", &plan.decoder),
+            ("layout", &plan.layout),
+            ("ocr", &plan.ocr),
+            ("table", &plan.table),
+            ("potatr", &plan.potatr),
+        ] {
+            assert_eq!(
+                pass.providers.as_deref().unwrap(),
+                vec!["CPUExecutionProvider"],
+                "{slot} must be CPU"
+            );
+        }
+        assert_eq!(plan.layout.policy, "cpu");
+    }
+
+    #[test]
+    fn device_cuda_overrides_the_measured_table_pin() {
+        let mut c = ConverterConfig::default();
+        c.runtime.device = Device::Cuda;
+        let plan = c.runtime_plan(Some(false));
+        for (slot, pass) in [
+            ("encoder", &plan.encoder),
+            ("layout", &plan.layout),
+            ("table", &plan.table),
+            ("potatr", &plan.potatr),
+        ] {
+            assert_eq!(
+                pass.providers.as_deref().unwrap(),
+                vec!["CUDAExecutionProvider", "CPUExecutionProvider"],
+                "{slot} must be CUDA first"
+            );
+        }
+        // The automatic policy is what a `cuda` request replaces: the
+        // table pin only holds under `auto`.
+        assert_eq!(plan.table.policy, "cuda");
+    }
+
+    #[test]
+    fn per_pass_overrides_beat_the_device_word() {
+        let mut c = ConverterConfig::default();
+        c.runtime.device = Device::Cuda;
+        c.providers.ocr_ort_providers = Some(vec!["CPUExecutionProvider".into()]);
+        c.providers.table_ort_providers = Some(vec!["CPUExecutionProvider".into()]);
+        let plan = c.runtime_plan(Some(true));
+        assert_eq!(plan.ocr.providers.as_deref().unwrap(), vec!["CPUExecutionProvider"]);
+        assert_eq!(plan.ocr.policy, "explicit");
+        assert_eq!(plan.table.providers.as_deref().unwrap(), vec!["CPUExecutionProvider"]);
+        assert_eq!(plan.layout.providers.as_deref().unwrap()[0], "CUDAExecutionProvider");
+    }
+
+    #[test]
+    fn auto_device_keeps_every_measured_policy() {
+        let c = ConverterConfig::default();
+        let plan = c.runtime_plan(Some(true));
+        assert_eq!(plan.layout.policy, "auto-cuda");
+        assert_eq!(plan.ocr.policy, "auto-cuda");
+        assert_eq!(plan.table.policy, "cpu-pinned");
+        assert_eq!(plan.potatr.policy, "cpu-pinned");
+        // Unknown CUDA state: the auto slots report the policy, not a guess.
+        let plan = c.runtime_plan(None);
+        assert!(plan.layout.providers.is_none());
+        assert_eq!(plan.table.policy, "cpu-pinned", "a pinned slot is known either way");
+        assert!(plan.table.providers.is_some());
     }
 
     #[test]

@@ -128,64 +128,53 @@ pub struct OnnxEngine {
 }
 
 impl OnnxEngine {
-    /// Resolve providers for a GPU-eligible slot (layout / OCR): an
-    /// explicit override, else CUDA + CPU fallback when the loaded ORT
-    /// library registers CUDA (measured 12.3x / 3.6x speedups), else
-    /// the base `ort_providers` list.
-    fn resolve_auto_gpu_providers(
-        &self,
-        override_providers: Option<&Vec<String>>,
-        slot: &str,
-    ) -> Vec<String> {
-        match override_providers {
-            Some(p) => p.clone(),
-            None if cuda_available() => {
-                tracing::info!(
-                    slot,
-                    "CUDA registers in the loaded ONNX Runtime library: auto-enabling CUDAExecutionProvider"
-                );
-                vec![
-                    "CUDAExecutionProvider".to_string(),
-                    "CPUExecutionProvider".to_string(),
-                ]
-            }
-            None => self.config.providers.ort_providers.clone(),
+    /// The resolved plan for this engine, or the policy-only view when no
+    /// ONNX pass has opened yet (probing CUDA would load the runtime just
+    /// to answer a question about a future load).
+    fn plan(&self) -> crate::config::RuntimePlan {
+        let cuda = if self.any_loaded() { Some(embroider::cuda_available()) } else { None };
+        self.config.runtime_plan(cuda)
+    }
+
+    /// Whether any ONNX session is already open.
+    pub fn any_loaded(&self) -> bool {
+        self.tex_teller.is_some()
+            || self.layout.is_some()
+            || self.ocr.is_some()
+            || self.table.is_some()
+            || self.potatr.is_some()
+    }
+
+    /// Which passes hold a session (for `describe()`).
+    pub fn loaded(&self) -> crate::converter::LoadedPasses {
+        crate::converter::LoadedPasses {
+            formula: self.tex_teller.is_some(),
+            layout: self.layout.is_some(),
+            ocr: self.ocr.is_some(),
+            table: self.table.is_some(),
+            potatr: self.potatr.is_some(),
         }
     }
 
-    /// Resolve providers for the table slot: explicit override, else
-    /// always CPU — SLANet measures 2-9x slower on CUDA (the graph
-    /// fragments across devices).
-    fn resolve_table_providers(&self) -> Vec<String> {
-        match self.config.providers.table_ort_providers.clone() {
-            Some(p) => p,
-            None => {
-                if cuda_available() {
-                    tracing::info!(
-                        "table slot pinned to CPUExecutionProvider (SLANet measures 2-9x slower on CUDA; set table_ort_providers to override)"
-                    );
-                }
-                vec!["CPUExecutionProvider".to_string()]
-            }
+    /// Providers for a slot, from the plan. The plan is concrete here: a
+    /// session is about to open, so the CUDA question is answerable.
+    fn providers_for(&self, slot: &str) -> Vec<String> {
+        let plan = self.config.runtime_plan(Some(embroider::cuda_available()));
+        let pass = match slot {
+            "encoder" => &plan.encoder,
+            "decoder" => &plan.decoder,
+            "layout" => &plan.layout,
+            "ocr" => &plan.ocr,
+            "table" => &plan.table,
+            "potatr" => &plan.potatr,
+            other => unreachable!("unknown ONNX slot {other}"),
+        };
+        if let Some(list) = &pass.providers {
+            return list.clone();
         }
-    }
-
-    /// Resolve providers for the POTATR slot: explicit override, else
-    /// always CPU — same attention-heavy profile as the SLANet slot, and
-    /// no CUDA numbers exist yet (measure before overriding; the P0 gate
-    /// is CPU-only).
-    fn resolve_potatr_providers(&self) -> Vec<String> {
-        match self.config.providers.potatr_ort_providers.clone() {
-            Some(p) => p,
-            None => {
-                if cuda_available() {
-                    tracing::info!(
-                        "potatr slot pinned to CPUExecutionProvider (no CUDA numbers yet; set potatr_ort_providers to override)"
-                    );
-                }
-                vec!["CPUExecutionProvider".to_string()]
-            }
-        }
+        // `None` only happens for an auto-CUDA slot with the probe
+        // withheld; this path always probes, so fall back to the base.
+        self.config.providers.ort_providers.clone()
     }
 
     pub fn new(config: &ConverterConfig, cache_dir: &Path) -> Self {
@@ -287,10 +276,11 @@ impl OnnxEngine {
         // Variant selection mirrors ensure_tex_teller so the status
         // filenames are exactly the fetch filenames (pinned by test).
         // (Owned names hoisted: the probe borrows them.)
-        let tt_owned: Option<[String; 3]> = match self.config.models.model_quantization {
-            crate::config::ModelQuantization::Fp32 => Some(
-                crate::tex_teller::texteller_filenames(self.config.models.model_precision),
-            ),
+        let (variant_precision, variant_quantization) = self.config.formula_variant();
+        let tt_owned: Option<[String; 3]> = match variant_quantization {
+            crate::config::ModelQuantization::Fp32 => {
+                Some(crate::tex_teller::texteller_filenames(variant_precision))
+            }
             crate::config::ModelQuantization::Int8 => None,
         };
         // Pinned revision follows the variant (mirrors the fetch sites).
@@ -346,61 +336,60 @@ impl OnnxEngine {
 
     fn ensure_tex_teller(&mut self) -> Result<()> {
         if self.tex_teller.is_none() {
+            let (variant_precision, variant_quantization) = self.config.formula_variant();
             info!(
                 "Loading TexTeller ({:?}, {:?})...",
-                self.config.models.model_precision, self.config.models.model_quantization
+                variant_precision, variant_quantization
             );
-            let has_cuda = self
+            // The provider question is the plan's (device vocabulary and
+            // the per-pass overrides already resolved).
+            let enc_providers: Option<Vec<String>> = self
                 .config
                 .providers
-                .ort_providers
-                .iter()
-                .chain(self.config.providers.encoder_ort_providers.iter().flatten())
-                .chain(self.config.providers.decoder_ort_providers.iter().flatten())
-                .any(|p| p.to_lowercase().contains("cuda"));
-            // Quantized ops have no CUDA kernels - requesting CUDA with
-            // Int8 weights makes ORT split the graph across devices
-            // (171-267 Memcpy nodes) and runs ~1.8x SLOWER than fp32.
-            if self.config.models.model_quantization == crate::config::ModelQuantization::Int8
-                && has_cuda
-            {
-                tracing::warn!(
-                    "model_quantization=Int8 combined with CUDA providers: quantized ops \
-                     fall back across devices (Memcpy-node overhead) and measure ~1.8x \
-                     slower than fp32. Prefer model_quantization=Fp32 on a GPU."
-                );
-            }
-            // fp16 has no fast CPU path: the f16 graph casts around every
-            // op and measures ~3x slower than fp32 on CPU. Only relevant
-            // when fp32 quantization is selected (int8 ignores precision).
-            if self.config.models.model_quantization == crate::config::ModelQuantization::Fp32
-                && self.config.models.model_precision == crate::config::ModelPrecision::Fp16
-                && !has_cuda
-            {
-                tracing::warn!(
-                    "model_precision=Fp16 without a CUDA provider: the f16 graph measures \
-                     ~3x slower than fp32 on CPU (cast overhead). Prefer Fp32 on CPU, or \
-                     model_quantization=Int8 for speed."
-                );
-            }
-            let enc_providers = self.config.providers.encoder_ort_providers.as_deref();
+                .encoder_ort_providers
+                .clone()
+                .or_else(|| Some(self.providers_for("encoder")));
             let dec_providers: Vec<String> = self
                 .config
                 .providers
                 .decoder_ort_providers
                 .clone()
-                .unwrap_or_else(|| self.config.providers.ort_providers.clone());
-            let tt = match self.config.models.model_quantization {
+                .unwrap_or_else(|| self.providers_for("decoder"));
+            let has_cuda = enc_providers
+                .iter()
+                .flatten()
+                .chain(dec_providers.iter())
+                .any(|p| p.to_lowercase().contains("cuda"));
+            // Quantized ops have no CUDA kernels - requesting CUDA with
+            // Int8 weights makes ORT split the graph across devices
+            // (171-267 Memcpy nodes) and runs ~1.8x SLOWER than fp32.
+            if variant_quantization == crate::config::ModelQuantization::Int8 && has_cuda {
+                tracing::warn!(
+                    "int8 weights combined with CUDA providers: quantized ops fall back across devices (Memcpy-node overhead) and measure ~1.8x slower than fp32. Prefer precision=fp32 (or fp16) on a GPU."
+                );
+            }
+            // fp16 has no fast CPU path: the f16 graph casts around every
+            // op and measures ~3x slower than fp32 on CPU. Only relevant
+            // when fp32 quantization is selected (int8 ignores precision).
+            if variant_quantization == crate::config::ModelQuantization::Fp32
+                && variant_precision == crate::config::ModelPrecision::Fp16
+                && !has_cuda
+            {
+                tracing::warn!(
+                    "fp16 weights without a CUDA provider: the f16 graph measures ~3x slower than fp32 on CPU (cast overhead). Prefer precision=fp32 on CPU, or precision=int8 for speed."
+                );
+            }
+            let tt = match variant_quantization {
                 crate::config::ModelQuantization::Fp32 => TexTeller::from_pretrained_split(
-                crate::tex_teller::TEX_TELLER_REPO,
+                    crate::tex_teller::TEX_TELLER_REPO,
                     &self.cache_dir,
-                    self.config.models.model_precision,
-                    enc_providers,
+                    variant_precision,
+                    enc_providers.as_deref(),
                     &dec_providers,
                 )?,
                 crate::config::ModelQuantization::Int8 => TexTeller::from_pretrained_int8_split(
                     &self.cache_dir,
-                    enc_providers,
+                    enc_providers.as_deref(),
                     &dec_providers,
                 )?,
             };
@@ -419,7 +408,7 @@ impl OnnxEngine {
                 Some(p) => p,
                 None => crate::rapid_table::download_slanet_plus(&self.cache_dir)?,
             };
-            let providers = self.resolve_table_providers();
+            let providers = self.providers_for("table");
             self.table = Some(crate::rapid_table::RapidTable::load(&path, &providers)?);
         }
         Ok(())
@@ -435,7 +424,7 @@ impl OnnxEngine {
                 Some(p) => p,
                 None => crate::rapid_potatr::download_potatr(&self.cache_dir)?,
             };
-            let providers = self.resolve_potatr_providers();
+            let providers = self.providers_for("potatr");
             self.potatr = Some(crate::rapid_potatr::Potatr::load(&path, &providers)?);
         }
         Ok(())
@@ -515,10 +504,7 @@ impl OnnxEngine {
                 )?),
             };
             info!("Loading RapidLayout from {}...", path.display());
-            let providers = self.resolve_auto_gpu_providers(
-                self.config.providers.layout_ort_providers.as_ref(),
-                "layout",
-            );
+            let providers = self.providers_for("layout");
             let layout = RapidLayout::load(&path, labels.as_deref(), &providers)?;
             self.layout = Some(layout);
         }
@@ -570,10 +556,7 @@ impl OnnxEngine {
                     Some(OCR_REV),
                 )?),
             };
-            let providers = self.resolve_auto_gpu_providers(
-                self.config.providers.ocr_ort_providers.as_ref(),
-                "ocr",
-            );
+            let providers = self.providers_for("ocr");
             info!(
                 "Loading RapidOCR from {} and {}...",
                 det.display(),
@@ -683,6 +666,7 @@ mod tests {
 
     #[test]
     fn table_slot_defaults_to_cpu_even_with_cuda_base() {
+        // The measured pin survives a CUDA-capable base list.
         let cfg = ConverterConfig {
             providers: ProviderOpts {
                 ort_providers: vec![
@@ -693,11 +677,10 @@ mod tests {
             },
             ..Default::default()
         };
-        let engine = OnnxEngine::new(&cfg, Path::new("/tmp/bobine_test"));
-        assert_eq!(
-            engine.resolve_table_providers(),
-            vec!["CPUExecutionProvider".to_string()]
-        );
+        let plan = cfg.runtime_plan(Some(true));
+        assert_eq!(plan.table.providers.as_deref().unwrap(), vec!["CPUExecutionProvider"]);
+        assert_eq!(plan.table.policy, "cpu-pinned");
+        assert_eq!(plan.potatr.providers.as_deref().unwrap(), vec!["CPUExecutionProvider"]);
 
         // An explicit override is honored, even against the default policy.
         let cfg = ConverterConfig {
@@ -707,36 +690,41 @@ mod tests {
             },
             ..Default::default()
         };
-        let engine = OnnxEngine::new(&cfg, Path::new("/tmp/bobine_test"));
-        assert_eq!(
-            engine.resolve_table_providers(),
-            vec!["CUDAExecutionProvider".to_string()]
-        );
+        let plan = cfg.runtime_plan(Some(true));
+        assert_eq!(plan.table.providers.as_deref().unwrap(), vec!["CUDAExecutionProvider"]);
+        assert_eq!(plan.table.policy, "explicit");
     }
 
     #[test]
     fn auto_gpu_slot_respects_pins_and_cuda_probe() {
-        if std::env::var("ORT_DYLIB_PATH").is_err() {
-            eprintln!("skipped: ORT_DYLIB_PATH not set");
-            return;
-        }
         let cfg = ConverterConfig::default();
-        let engine = OnnxEngine::new(&cfg, Path::new("/tmp/bobine_test"));
-        let resolved = engine.resolve_auto_gpu_providers(None, "layout");
-        if cuda_available() {
-            // GPU dylib: CUDA first, CPU fallback behind it.
-            assert_eq!(resolved[0], "CUDAExecutionProvider");
-            assert!(resolved.contains(&"CPUExecutionProvider".to_string()));
-        } else {
-            // CPU-only dylib: untouched base list.
-            assert_eq!(resolved, vec!["CPUExecutionProvider".to_string()]);
-        }
-        // An explicit pin always wins.
-        let pinned = engine.resolve_auto_gpu_providers(
-            Some(&vec!["CPUExecutionProvider".to_string()]),
-            "ocr",
+        // With CUDA registered, the auto slots take CUDA + CPU fallback.
+        let plan = cfg.runtime_plan(Some(true));
+        assert_eq!(
+            plan.layout.providers.as_deref().unwrap(),
+            vec!["CUDAExecutionProvider".to_string(), "CPUExecutionProvider".to_string()]
         );
-        assert_eq!(pinned, vec!["CPUExecutionProvider".to_string()]);
+        assert_eq!(plan.layout.policy, "auto-cuda");
+        // Without it, the base list is untouched.
+        let plan = cfg.runtime_plan(Some(false));
+        assert_eq!(plan.layout.providers.as_deref().unwrap(), vec!["CPUExecutionProvider"]);
+        assert_eq!(plan.layout.policy, "auto-cpu");
+        // Before any session the answer is the policy, not a list.
+        let plan = cfg.runtime_plan(None);
+        assert!(plan.layout.providers.is_none());
+        assert_eq!(plan.layout.policy, "auto-cuda");
+
+        // An explicit pin always wins.
+        let cfg = ConverterConfig {
+            providers: ProviderOpts {
+                ocr_ort_providers: Some(vec!["CPUExecutionProvider".into()]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let plan = cfg.runtime_plan(Some(true));
+        assert_eq!(plan.ocr.providers.as_deref().unwrap(), vec!["CPUExecutionProvider"]);
+        assert_eq!(plan.ocr.policy, "explicit");
     }
 
     // ---- model_status: shared-surface preflight -------------------------

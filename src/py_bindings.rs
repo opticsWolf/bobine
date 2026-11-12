@@ -3,8 +3,8 @@
 use pyo3::prelude::*;
 
 use crate::config::{
-    ConverterConfig, FormulaBackend, ImageMode, ModelOpts, ModelPrecision, ModelQuantization,
-    RenderHealthOpts, TableBackend,
+    ConverterConfig, Device, FormulaBackend, ImageMode, ModelOpts, ModelPrecision,
+    ModelQuantization, Precision, RenderHealthOpts, TableBackend,
     ProviderOpts, RenderOpts, RoutingMode, RoutingOpts, TextOpts,
 };
 use crate::converter::{HybridConverter, ProgressHooks};
@@ -162,6 +162,8 @@ impl PyConverterConfig {
         potatr_edge_threshold = 0.5f32,
         potatr_suppress_iou = 0.5f32,
         potatr_min_text_fill = 0.2f32,
+        device = None,
+        precision = None,
         ort_providers = None,
         encoder_ort_providers = None,
         decoder_ort_providers = None,
@@ -208,6 +210,8 @@ impl PyConverterConfig {
         potatr_edge_threshold: f32,
         potatr_suppress_iou: f32,
         potatr_min_text_fill: f32,
+        device: Option<&str>,
+        precision: Option<&str>,
         ort_providers: Option<Vec<String>>,
         encoder_ort_providers: Option<Vec<String>>,
         decoder_ort_providers: Option<Vec<String>>,
@@ -215,18 +219,31 @@ impl PyConverterConfig {
         ocr_ort_providers: Option<Vec<String>>,
         table_ort_providers: Option<Vec<String>>,
         potatr_ort_providers: Option<Vec<String>>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         // Execution-provider selection is resolved at runtime against the
         // loaded ONNX Runtime library (ORT_DYLIB_PATH). Requesting an
         // accelerator that the library lacks degrades gracefully to CPU.
         let ort_providers = ort_providers.unwrap_or_else(|| vec!["cpu".to_string()]);
 
-        PyConverterConfig {
-            inner: ConverterConfig {
+        // The shared vocabulary: parsed here so a bad word fails at
+        // construction, naming the accepted set.
+        let device = match device {
+            Some(word) => Device::parse(word).map_err(pyo3::exceptions::PyValueError::new_err)?,
+            None => Device::Auto,
+        };
+        let precision = match precision {
+            Some(word) => {
+                Precision::parse(word).map_err(pyo3::exceptions::PyValueError::new_err)?
+            }
+            None => Precision::Auto,
+        };
+
+        let inner = ConverterConfig {
                 routing: RoutingOpts {
                     use_onnx,
                     routing_mode: routing_mode.into(),
                 },
+                runtime: crate::config::RuntimeOpts { device, precision },
                 models: ModelOpts {
                     formula_backend: FormulaBackend::TexTeller,
                     model_precision: match model_precision {
@@ -285,8 +302,11 @@ impl PyConverterConfig {
                     render_gate_min_jaccard,
                     render_gate_salvage_inline_math,
                 },
-            },
-        }
+        };
+        inner
+            .validate()
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        Ok(PyConverterConfig { inner })
     }
 
     #[getter]
@@ -313,16 +333,28 @@ impl PyConverterConfig {
     fn ocr_lang(&self) -> String {
         self.inner.models.ocr_lang.clone()
     }
+    /// Where each pass runs (`auto` / `cpu` / `cuda`).
+    #[getter]
+    fn device(&self) -> &'static str {
+        self.inner.runtime.device.as_str()
+    }
+    /// The precision word that was asked for (`auto` / `fp32` / `fp16` / `int8`).
+    #[getter]
+    fn precision(&self) -> &'static str {
+        self.inner.runtime.precision.as_str()
+    }
+    /// The TexTeller precision the vocabulary resolves to (legacy name,
+    /// kept so existing callers keep working).
     #[getter]
     fn model_precision(&self) -> PyModelPrecision {
-        match self.inner.models.model_precision {
+        match self.inner.formula_variant().0 {
             ModelPrecision::Fp32 => PyModelPrecision::Fp32,
             ModelPrecision::Fp16 => PyModelPrecision::Fp16,
         }
     }
     #[getter]
     fn model_quantization(&self) -> PyModelQuantization {
-        match self.inner.models.model_quantization {
+        match self.inner.formula_variant().1 {
             ModelQuantization::Fp32 => PyModelQuantization::Fp32,
             ModelQuantization::Int8 => PyModelQuantization::Int8,
         }
@@ -414,6 +446,32 @@ impl PyHybridConverter {
     fn new(config: &PyConverterConfig, cache_dir: &str) -> PyResult<Self> {
         let inner = HybridConverter::new(config.inner.clone(), std::path::Path::new(cache_dir));
         Ok(PyHybridConverter { inner })
+    }
+
+    /// What this converter will do, per pass (0.9 vocabulary).
+    ///
+    /// Answerable before the first conversion: `device_requested` /
+    /// `precision_requested` are the words the caller used, `landed` is
+    /// `false`, and an auto-CUDA slot reports `providers = None` with its
+    /// policy — probing CUDA would load the runtime just to describe a
+    /// future load. Once a pass has opened, its `providers` list is the one
+    /// the session was opened with.
+    fn describe<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let report = self.inner.runtime_report();
+        let out = pyo3::types::PyDict::new(py);
+        out.set_item("device_requested", report.device_requested)?;
+        out.set_item("precision_requested", report.precision_requested)?;
+        let passes = pyo3::types::PyDict::new(py);
+        for (slot, pass) in &report.passes {
+            let d = pyo3::types::PyDict::new(py);
+            d.set_item("providers", pass.providers.as_deref())?;
+            d.set_item("policy", pass.policy)?;
+            d.set_item("precision", pass.precision)?;
+            d.set_item("landed", pass.landed)?;
+            passes.set_item(*slot, d)?;
+        }
+        out.set_item("passes", passes)?;
+        Ok(out)
     }
 
     fn convert(&mut self, input: &str, work_dir: &str) -> PyResult<String> {
@@ -877,6 +935,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFormulaBackend>()?;
     m.add_class::<PyTableBackend>()?;
     m.add_class::<PyModelPrecision>()?;
+    m.add_class::<PyModelQuantization>()?;
     m.add_class::<PyConverterConfig>()?;
     m.add_class::<PyHybridConverter>()?;
     m.add_function(wrap_pyfunction!(convert_to_markdown, m)?)?;
@@ -888,6 +947,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ingest_document, m)?)?;
     m.add_function(wrap_pyfunction!(convert_directory, m)?)?;
     m.add_function(wrap_pyfunction!(model_status, m)?)?;
+    m.add("DEVICES", pyo3::types::PyTuple::new(m.py(), Device::ALL)?)?;
+    m.add("PRECISIONS", pyo3::types::PyTuple::new(m.py(), Precision::ALL)?)?;
     m.add_function(wrap_pyfunction!(bootstrap_runtime_py, m)?)?;
     m.add_function(wrap_pyfunction!(runtime_info_py, m)?)?;
     Ok(())

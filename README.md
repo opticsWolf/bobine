@@ -73,9 +73,12 @@ pip install bobine[cpu]   # adds onnxruntime == 1.31.1 (CPU)
 
 ### Library discovery
 
-`import bobine` points `ORT_DYLIB_PATH` at the pip-installed library
-automatically; an already-set `ORT_DYLIB_PATH` always wins (e.g. a custom
-CUDA build):
+`import bobine` finds the library with embroider's locator — the same one
+every embroider model open and okfgraph use — reading the installed
+dist's metadata instead of importing `onnxruntime` (importing it would
+load a second runtime into the process). An already-set `ORT_DYLIB_PATH`
+always wins (e.g. a custom CUDA build), and `bobine.runtime_info()` reports
+what was found and who chose it:
 
 ```bash
 export ORT_DYLIB_PATH=/path/to/onnxruntime.dll   # e.g. <venv>/Lib/site-packages/onnxruntime/capi/onnxruntime.dll
@@ -153,6 +156,15 @@ let mut conv = HybridConverter::new(
 let md = conv.convert_pdf(std::path::Path::new("paper.pdf"),
                           std::path::Path::new("/tmp/out"))?;
 ```
+
+### Device and precision
+
+`ConverterConfig` takes the stack-wide vocabulary — `device="auto|cpu|cuda"`
+and `precision="auto|fp32|fp16|int8"`, the same words embroider and
+okfgraph accept (`bobine.DEVICES` / `bobine.PRECISIONS` list them).
+`auto` keeps each slot's measured policy; `cuda` puts every pass on the
+GPU, including the table slots that are CPU-pinned by default.
+`conv.describe()` reports the resolved plan per pass.
 
 ## Module layout
 

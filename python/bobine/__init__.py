@@ -69,6 +69,8 @@ def runtime_info() -> dict:
 
 
 from bobine._native import (
+    DEVICES,
+    PRECISIONS,
     ConverterConfig,
     HybridConverter,
     RoutingMode,
@@ -76,6 +78,7 @@ from bobine._native import (
     FormulaBackend,
     TableBackend,
     ModelPrecision,
+    ModelQuantization,
     convert_to_markdown,
     ConvertedDocument,
     ExcelDocument,
@@ -88,6 +91,8 @@ from bobine._native import (
 )
 
 __all__ = [
+    "DEVICES",
+    "PRECISIONS",
     "ConverterConfig",
     "HybridConverter",
     "RoutingMode",
@@ -95,6 +100,7 @@ __all__ = [
     "FormulaBackend",
     "TableBackend",
     "ModelPrecision",
+    "ModelQuantization",
     "convert_to_markdown",
     "ConvertedDocument",
     "ExcelDocument",

@@ -2,6 +2,25 @@
 
 ## 0.9.0 — unreleased
 
+- **`device` / `precision`, the stack vocabulary.** `ConverterConfig`
+  accepts `device="auto|cpu|cuda"` and `precision="auto|fp32|fp16|int8"`,
+  the words embroider and okfgraph use, parsed through embroider's
+  `DeviceReq` so the three cannot disagree. `auto` keeps every measured
+  slot policy (layout/OCR take CUDA when it registers, the table slots stay
+  CPU-pinned); `cpu` and `cuda` override it, with `cuda` deliberately
+  overriding the table pin. `precision` maps onto
+  `model_precision`/`model_quantization` and is authoritative when set —
+  setting both is refused. `q8` is refused **by name** (bobine has no q8
+  artifact; `int8` is the compact pair), and the accepted words are
+  exported as `bobine.DEVICES` / `bobine.PRECISIONS` so callers validate
+  against the source. The mapping lives in Rust
+  (`ConverterConfig::runtime_plan`, pure and table-tested; the CUDA state is
+  an argument), and `HybridConverter.describe()` reports it per pass:
+  `providers`, `policy`, `precision`, `landed` — answerable before the
+  first conversion, concrete once a session opens. Per-pass provider lists
+  still win as the expert override. `ModelQuantization` is now exported
+  from the package (it was only in `_native`).
+
 - **One runtime locator; `import bobine` no longer imports
   `onnxruntime`.** The old `_ensure_ort_dylib` / `_warm_gpu_dlls` pair
   imported the Python `onnxruntime` module at import time to find

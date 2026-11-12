@@ -1236,6 +1236,48 @@ fn assign_region_lines(
 // HybridConverter
 // ---------------------------------------------------------------------------
 
+/// Which passes hold an ONNX session right now (`describe()`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LoadedPasses {
+    pub formula: bool,
+    pub layout: bool,
+    pub ocr: bool,
+    pub table: bool,
+    pub potatr: bool,
+}
+
+impl LoadedPasses {
+    pub fn any(&self) -> bool {
+        self.formula || self.layout || self.ocr || self.table || self.potatr
+    }
+}
+
+/// One pass in the runtime report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PassReport {
+    /// The provider list the pass opens with; `None` while the answer
+    /// depends on the loaded library (auto-CUDA) and nothing has opened yet.
+    pub providers: Option<Vec<String>>,
+    /// Why the list is what it is (`explicit`, `auto-cuda`, `auto-cpu`,
+    /// `cpu-pinned`, `cpu`, `cuda`).
+    pub policy: &'static str,
+    /// The precision this pass loads.
+    pub precision: &'static str,
+    /// Whether a session for this pass is already open.
+    pub landed: bool,
+}
+
+/// What `describe()` reports: what was asked for, and what each pass will
+/// do (concrete once a session exists).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeReport {
+    pub device_requested: &'static str,
+    pub precision_requested: &'static str,
+    /// `(slot, pass)` in a stable order: encoder, decoder, layout, ocr,
+    /// table, potatr.
+    pub passes: Vec<(&'static str, PassReport)>,
+}
+
 pub struct HybridConverter {
     #[allow(dead_code)]
     pub config: ConverterConfig,
@@ -1250,6 +1292,37 @@ impl HybridConverter {
     pub fn new(config: ConverterConfig, cache_dir: &Path) -> Self {
         let engine = OnnxEngine::new(&config, cache_dir);
         Self { config, engine, gate_stats: RenderGateStats::default() }
+    }
+
+    /// What this converter will do, per pass (0.9 vocabulary).
+    ///
+    /// Answerable before the first conversion: the requested words are
+    /// always there, `landed` is `false`, and an auto-CUDA slot reports
+    /// `providers = None` with its policy — probing CUDA would load the
+    /// runtime just to describe a future load. Once a pass has opened, the
+    /// answer is concrete.
+    pub fn runtime_report(&self) -> RuntimeReport {
+        let loaded = self.engine.loaded();
+        let cuda = if loaded.any() { Some(embroider::cuda_available()) } else { None };
+        let plan = self.config.runtime_plan(cuda);
+        let pass = |p: &crate::config::PassPlan, landed: bool| PassReport {
+            providers: p.providers.clone(),
+            policy: p.policy,
+            precision: p.precision,
+            landed,
+        };
+        RuntimeReport {
+            device_requested: self.config.runtime.device.as_str(),
+            precision_requested: self.config.runtime.precision.as_str(),
+            passes: vec![
+                ("encoder", pass(&plan.encoder, loaded.formula)),
+                ("decoder", pass(&plan.decoder, loaded.formula)),
+                ("layout", pass(&plan.layout, loaded.layout)),
+                ("ocr", pass(&plan.ocr, loaded.ocr)),
+                ("table", pass(&plan.table, loaded.table)),
+                ("potatr", pass(&plan.potatr, loaded.potatr)),
+            ],
+        }
     }
 
     /// Render-health gate counters for the last conversion run.

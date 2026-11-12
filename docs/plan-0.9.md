@@ -218,8 +218,9 @@ bobine.PRECISIONS # ("auto", "fp32", "fp16", "int8")
     (`DeviceReq::parse` already exists and rejects anything else with a
     readable message), mapped onto the provider lists exactly as today so
     the existing routing policy — **CUDA helps layout/OCR, SLANet-plus
-    tables stay CPU-pinned, TexTeller defaults to int8 CPU** — is
-    preserved by construction, not re-decided.
+    tables stay CPU-pinned, TexTeller runs its configured variant (fp32 by
+    default; int8 is opt-in)** — is preserved by construction, not
+    re-decided.
   - `precision` → the existing `ModelPrecision` / `ModelQuantization`
     pair, with the same per-pass defaults (TexTeller int8).
 - **Precedence, explicit:** a per-pass provider list (`layout_ort_providers`
@@ -234,16 +235,20 @@ bobine.PRECISIONS # ("auto", "fp32", "fp16", "int8")
 
   ```python
   {"device_requested": "auto", "precision_requested": "auto",
-   "passes": {"layout": {"provider": "CUDAExecutionProvider",
-                         "precision": "fp32"},
-              "ocr": {...}, "table": {"provider": "CPUExecutionProvider", ...},
-              "formula": {...}}}
+   "passes": {"encoder": {"providers": ["cpu"], "policy": "auto",
+                          "precision": "fp32", "landed": False},
+              "layout":  {"providers": None, "policy": "auto-cuda",
+                          "precision": "fp32", "landed": False},
+              "table":   {"providers": ["CPUExecutionProvider"],
+                          "policy": "cpu-pinned", "precision": "fp32", ...},
+              ...}}
   ```
 
-  Answerable **before** the first conversion (requested filled, landed
-  `None` until sessions open) and after (both). That is what okfgraph's
-  `pdf_converter` row and Silk's tooltip read; `model_status()` is not
-  touched (finding 3).
+  Answerable **before** the first conversion: `providers=None` on an
+  auto-CUDA slot is the honest answer (probing would load the runtime just
+  to describe a future load), `policy` names why, and `landed` flips per
+  pass as sessions open. That is what okfgraph's `pdf_converter` row and
+  Silk's tooltip read; `model_status()` is not touched (finding 3).
 
 ### Tests
 

@@ -81,6 +81,8 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `FormulaBackend` | `TexTeller` (only backend) |
 | `ModelPrecision` | `Fp32` / `Fp16` (`*_fp16.onnx`, shipped in the unified repo, 28-29/30 parity) |
 | `ModelQuantization` | `Fp32` (default) / `Int8` (formula weights) |
+| `DEVICES` / `PRECISIONS` | The accepted `device` / `precision` words (tuples) |
+| `HybridConverter.describe()` | Per-pass plan: `providers`, `policy`, `precision`, `landed` |
 
 ## ONNX Runtime discovery
 
@@ -112,6 +114,52 @@ layer only passes `sys.path` and mirrors the choice into `os.environ`.
 | `Auto` *(default)* | Per-page heuristics (math signal / scanned) → full layout+OCR only on flagged pages. | TexTeller + layout + OCR (table lazy on first scanned table) |
 | `Surgical` | Fast path + formula crops via TexTeller; full pipeline only for scanned pages. | TexTeller only |
 | `Always` | Every page through full layout + OCR, with hybrid formula refinement. | TexTeller + layout + OCR (table lazy) |
+
+## Device and precision (the stack vocabulary)
+
+`device` and `precision` are the same words embroider and okfgraph use, so
+one row means one thing in every package. The accepted values are exposed
+as `bobine.DEVICES` / `bobine.PRECISIONS` — read them instead of copying
+the list.
+
+```python
+cfg = bobine.ConverterConfig(device="cuda", precision="fp16")
+bobine.DEVICES     # ('auto', 'cpu', 'cuda')
+bobine.PRECISIONS  # ('auto', 'fp32', 'fp16', 'int8')
+```
+
+| `device` | layout / OCR | table / POTATR | TexTeller |
+|---|---|---|---|
+| `auto` (default) | CUDA when the library registers it | CPU-pinned (measured 2-9x slower on CUDA) | base `ort_providers` |
+| `cpu` | CPU | CPU | CPU |
+| `cuda` | CUDA + CPU fallback | CUDA + CPU fallback (the pin is a measurement, not a limit) | CUDA + CPU fallback |
+
+A per-pass provider list (`layout_ort_providers`, `table_ort_providers`, …)
+always wins over the word — it is the expert override. `precision` maps
+onto the older `model_precision` / `model_quantization` fields and wins
+when set; setting both is refused at construction. `q8` is refused by
+name: bobine has no q8 artifact, `int8` is the compact pair.
+
+`HybridConverter.describe()` reports the decision per pass, before and
+after the models load:
+
+```python
+conv.describe()
+# {'device_requested': 'auto', 'precision_requested': 'auto',
+#  'passes': {'encoder': {'providers': ['cpu'], 'policy': 'auto',
+#                         'precision': 'fp32', 'landed': False},
+#             'layout':  {'providers': None, 'policy': 'auto-cuda',
+#                         'precision': 'fp32', 'landed': False},
+#             'table':   {'providers': ['CPUExecutionProvider'],
+#                         'policy': 'cpu-pinned', 'precision': 'fp32',
+#                         'landed': False}, ...}}
+```
+
+`providers = None` means the answer depends on the loaded runtime (the
+auto-CUDA slots) and nothing has opened yet — probing would load ONNX
+Runtime just to describe a future load. Once a pass lands, its list is the
+one the session opened with, and `landed` becomes `True`.
+
 
 ## Office documents
 
@@ -151,8 +199,10 @@ import json; data = json.loads(doc.json)  # typed values, formulas kept
 | `potatr_edge_threshold` | `0.5` | Edge-link threshold for structure refinement |
 | `potatr_suppress_iou` | `0.5` | IoU at which a POTATR claim suppresses an overlapping layout region |
 | `potatr_min_text_fill` | `0.2` | Min fraction of claimed cells carrying text (textless claims fall back to region arms) |
-| `model_precision` | `Fp32` | Selects `*_fp16.onnx` when `Fp16` |
-| `model_quantization` | `Fp32` | Formula weights: `Fp32` (default) = reference output on CPU and CUDA; `Int8` = ~4x smaller RAM and ~1.9x faster on CPU, with occasional decode drift. Do not pair `Int8` with CUDA |
+| `device` | `"auto"` | Where every pass runs: `auto` (each slot's measured policy), `cpu`, or `cuda`. `cuda` overrides the table slots' measured CPU pin |
+| `precision` | `"auto"` | Weight precision: `auto`, `fp32`, `fp16`, `int8`. Maps onto `model_precision`/`model_quantization` and **is authoritative when set**; `q8` is refused by name (no such artifact) |
+| `model_precision` | `Fp32` | Legacy name for the formula weights; selects `*_fp16.onnx` when `Fp16`. Use `precision` instead |
+| `model_quantization` | `Fp32` | Legacy name for the formula weights: `Fp32` (default) = reference output on CPU and CUDA; `Int8` = ~4x smaller RAM and ~1.9x faster on CPU, with occasional decode drift. Do not pair `Int8` with CUDA. Use `precision` instead |
 | `render_dpi` | `300` | Renders for scanned-page OCR / layout |
 | `formula_dpi` | `200` | Renders for formula crops |
 | `detect_headings` | `True` | `#` headings from fast path |
