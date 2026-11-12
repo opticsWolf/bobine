@@ -798,6 +798,78 @@ fn convert_directory(
         .collect())
 }
 
+/// Locate the ONNX Runtime library once and mirror the choice into
+/// Python's own environment.
+///
+/// The search and the CUDA-DLL preparation live in Rust
+/// ([`crate::runtime::bootstrap`] over embroider's locator). This binding
+/// adds the two things that need the interpreter: *hints* (`sys.path`, so
+/// user site, `PYTHONPATH` and editable installs count) and the
+/// `os.environ` mirror — a C-level `setenv` from Rust is invisible to
+/// `os.environ`, and Python code and child processes read that.
+///
+/// Returns `{"dylib", "source", "version", "set_by", "cuda_dirs"}`. Never
+/// imports `onnxruntime`; never raises for a missing runtime (that is
+/// data: `dylib=None`, `source="os"`).
+#[cfg(feature = "extension-module")]
+#[pyfunction(name = "bootstrap_runtime")]
+#[pyo3(signature = (hints=None))]
+fn bootstrap_runtime_py<'py>(
+    py: Python<'py>,
+    hints: Option<Bound<'py, PyAny>>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let hints = collect_hints(hints);
+    let report = crate::runtime::bootstrap(&hints);
+    if report.source != "env" {
+        if let Some(dylib) = report.dylib.as_deref() {
+            let os = py.import("os")?;
+            os.getattr("environ")?
+                .set_item("ORT_DYLIB_PATH", dylib)?;
+            // Windows: let the GPU build resolve the CUDA provider DLLs
+            // that sit beside the runtime.
+            if let Ok(add) = os.getattr("add_dll_directory") {
+                if let Some(parent) = std::path::Path::new(dylib).parent() {
+                    let _ = add.call1((parent.to_string_lossy().into_owned(),));
+                }
+            }
+        }
+    }
+    report_to_py(py, report)
+}
+
+/// The runtime decision bobine made at import (`bobine.runtime_info()`).
+#[cfg(feature = "extension-module")]
+#[pyfunction(name = "runtime_info")]
+fn runtime_info_py(py: Python<'_>) -> PyResult<Bound<'_, pyo3::types::PyDict>> {
+    report_to_py(py, crate::runtime::report())
+}
+
+/// `sys.path` entries that are strings; anything else is ignored.
+#[cfg(feature = "extension-module")]
+fn collect_hints(hints: Option<Bound<'_, PyAny>>) -> Vec<String> {
+    let Some(hints) = hints else { return Vec::new() };
+    let Ok(items) = hints.try_iter() else {
+        return Vec::new();
+    };
+    items
+        .filter_map(|item| item.ok()?.extract::<String>().ok())
+        .collect()
+}
+
+#[cfg(feature = "extension-module")]
+fn report_to_py<'py>(
+    py: Python<'py>,
+    report: &crate::runtime::RuntimeReport,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("dylib", report.dylib.as_deref())?;
+    out.set_item("source", &report.source)?;
+    out.set_item("version", report.version.as_deref())?;
+    out.set_item("set_by", report.set_by)?;
+    out.set_item("cuda_dirs", &report.cuda_dirs)?;
+    Ok(out)
+}
+
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRoutingMode>()?;
@@ -816,5 +888,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ingest_document, m)?)?;
     m.add_function(wrap_pyfunction!(convert_directory, m)?)?;
     m.add_function(wrap_pyfunction!(model_status, m)?)?;
+    m.add_function(wrap_pyfunction!(bootstrap_runtime_py, m)?)?;
+    m.add_function(wrap_pyfunction!(runtime_info_py, m)?)?;
     Ok(())
 }

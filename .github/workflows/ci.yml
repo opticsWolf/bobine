@@ -78,6 +78,13 @@ jobs:
           # ort-sys build-deps on ureq/native-tls → openssl-sys needs the
           # headers inside the manylinux container (host apt won't reach it).
           before-script-linux: yum install -y openssl-devel
+      # The bindings tests (plan B2): a fresh interpreter must not import
+      # `onnxruntime` when bobine is imported, and the runtime decision
+      # must still be made. Standard library only — no pytest, no models.
+      - name: Bindings tests (runtime discovery)
+        run: |
+          python -m pip install --quiet dist/*.whl
+          python -m unittest discover -s python/tests -v
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:

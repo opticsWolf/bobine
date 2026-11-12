@@ -74,12 +74,35 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `HybridConverter.convert_jats(path, work_dir)` | Same, as a converter method |
 | `ingest_document(path, output_dir, ...)` | Staged bundle → `ConvertedDocument` (`.md_text`, `.data_files`, lint/hooks; `cache_dir=None` = standard hub cache) |
 | `model_status(cache_dir=None)` | Offline per-family cache status (TexTeller variant, layout, OCR, SLANet) — same dict keys as okfgraph's `model_info` |
+| `runtime_info()` | What bobine decided about ONNX Runtime at import: `dylib`, `source` (`env` / `pip:<dist>` / `os`), `version`, `set_by`, `cuda_dirs`. `ORT_DYLIB_PATH` is the same decision, flattened |
 | `convert_directory(source_dir, output_dir, ...)` | Batch ingest |
 | `ConverterConfig` | Tuning knobs (see table below) |
 | `RoutingMode` | `Never` / `Auto` / `Surgical` / `Always` |
 | `FormulaBackend` | `TexTeller` (only backend) |
 | `ModelPrecision` | `Fp32` / `Fp16` (`*_fp16.onnx`, shipped in the unified repo, 28-29/30 parity) |
 | `ModelQuantization` | `Fp32` (default) / `Int8` (formula weights) |
+
+## ONNX Runtime discovery
+
+`import bobine` runs embroider's locator — the same one every embroider
+model open and okfgraph use — before the first session, so the whole stack
+loads one runtime instead of one per package. It reads the installed
+`onnxruntime` dist's metadata and looks inside the package folder; it
+never imports the module (importing it would load a second copy).
+
+| Order | Wins when | `source` |
+|---|---|---|
+| 1 | `ORT_DYLIB_PATH` is already set | `env` |
+| 2 | `onnxruntime` / `onnxruntime-gpu` is installed where Python would import it (`sys.path`, user site, editable installs) | `pip:<distribution>` |
+| 3 | nothing found — `ort` would try the OS loader path, which can hold a stale copy | `os` |
+
+`runtime_info()` reports the decision (`set_by` says who chose: `env`,
+`bobine`, `none`), and the same import puts the CUDA lane's DLL folders on
+`PATH` (`cuda_dirs`), which is what keeps a GPU build from failing on
+`cudnn64_9.dll` and silently falling back to CPU. The search and the CUDA
+preparation are Rust (`src/runtime.rs` over `embroider::diag`); the Python
+layer only passes `sys.path` and mirrors the choice into `os.environ`.
+
 
 ## RoutingMode
 
@@ -312,10 +335,17 @@ CUDA probe — it never sees converter weights.
 ## Testing
 
 ```bash
-cargo test                 # 181 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
+cargo test                 # 184 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
 ORT_DYLIB_PATH=... cargo test --test test_converter   # incl. full-paper AUTO run
-maturin develop && python -c "import bobine"   # bindings smoke test
+maturin develop && python -m unittest discover -s python/tests   # bindings (stdlib, no pytest)
 ```
+
+The bindings tests cover the runtime decision end to end: a fresh
+interpreter imports bobine and `onnxruntime` stays out of `sys.modules`,
+an explicit `ORT_DYLIB_PATH` wins and is reported as `set_by="env"`, and a
+missing runtime is data (`dylib=None`, `source="os"`) rather than an
+error. The decision itself lives in Rust (`src/runtime.rs`), unit-tested
+there; Python only asks for it.
 
 Fixtures: `tests/fixtures/` — CC BY 4.0 arXiv papers (attribution in
 `SOURCES.md`) + generated scanned page + generated OOXML fixtures

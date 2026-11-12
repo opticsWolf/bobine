@@ -18,77 +18,55 @@ Heavy (ONNX) modes need an ONNX Runtime library::
 
     pip install bobine[cpu]   # or bobine[gpu] for CUDA
 
-On import, bobine points ``ORT_DYLIB_PATH`` at the pip-installed
-``onnxruntime`` library automatically (an already-set ``ORT_DYLIB_PATH``
-always wins). Without any runtime the fast Office/text paths still work.
+On import, bobine finds that library with embroider's locator — the same
+one every embroider model open and okfgraph use — and points
+``ORT_DYLIB_PATH`` at it (an already-set ``ORT_DYLIB_PATH`` always wins).
+The locator reads the installed ``onnxruntime`` dist's metadata and never
+imports the module, so a host process keeps one runtime instead of two.
+Without any runtime the fast Office/text paths still work; only ONNX-backed
+pages need it. :func:`runtime_info` reports what was found.
 """
 
-import os as _os
+import sys as _sys
+
+# Importing the native module does not load ONNX Runtime: `ort` is built
+# with `load-dynamic` and resolves the library when the first session
+# builds. So the locator can run after this import, which is what lets it
+# be the same code embroider and okfgraph run.
+from . import _native
+
+#: What bobine decided about ONNX Runtime at import: the library `ort`
+#: will load, where it came from, and the CUDA folders put on `PATH`.
+_RUNTIME = dict(_native.bootstrap_runtime(_sys.path))
+
+#: The ONNX Runtime library bobine will load, or ``None`` when nothing was
+#: found (only ONNX-backed pages need it). An already-set
+#: ``ORT_DYLIB_PATH`` always wins.
+ORT_DYLIB_PATH = _RUNTIME["dylib"]
 
 
-def _ensure_ort_dylib() -> str | None:
-    """Point ORT_DYLIB_PATH at a pip-installed onnxruntime, if needed.
+def runtime_info() -> dict:
+    """What bobine decided about ONNX Runtime, without importing it.
 
-    Returns the resolved path, or None when no runtime was found (the
-    caller keeps working — only ONNX-backed pages need it). Runs before
-    the native module is imported; ort loads lazily on first session, so
-    setting the env var here is early enough.
+    ``{"dylib", "source", "version", "set_by", "cuda_dirs"}``:
+
+    - ``dylib`` — the library ``ort`` will load, or ``None``.
+    - ``source`` — ``"env"`` (an explicit ``ORT_DYLIB_PATH`` won),
+      ``"pip:<distribution>"`` (a wheel was found), or ``"os"`` (nothing
+      found: ``ort`` would try the OS loader path, which can hold a stale
+      copy — ONNX-backed pages should refuse to open).
+    - ``version`` — that distribution's version.
+    - ``set_by`` — who chose it: ``"env"``, ``"bobine"``, or ``"none"``.
+    - ``cuda_dirs`` — CUDA folders this process prepended to ``PATH``
+      before the first session.
+
+    The search runs once, at import (see :func:`bobine._native.bootstrap_runtime`
+    and ``src/runtime.rs``); this returns that decision. For a full
+    inventory — every dist, provider DLLs, the CUDA probe — use
+    ``embroider.runtime_info()``.
     """
-    if _os.environ.get("ORT_DYLIB_PATH"):
-        return _os.environ["ORT_DYLIB_PATH"]
-    try:
-        import onnxruntime as _ort  # also provided by onnxruntime-gpu
-    except ImportError:
-        return None
-    _warm_gpu_dlls(_ort)
-    capi = _os.path.join(_os.path.dirname(_ort.__file__), "capi")
-    candidates: list[str] = []
-    if _os.name == "nt":
-        candidates = ["onnxruntime.dll"]
-    elif _os.name == "posix":
-        import glob as _glob
+    return dict(_native.runtime_info())
 
-        if __import__("sys").platform == "darwin":
-            candidates = ["libonnxruntime.dylib"]
-        else:
-            # Prefer the versioned .so (libonnxruntime.so may be absent).
-            found = sorted(_glob.glob(_os.path.join(capi, "libonnxruntime.so.*")))
-            candidates = [ _os.path.basename(p) for p in found ] + ["libonnxruntime.so"]
-    for lib in candidates:
-        path = _os.path.join(capi, lib)
-        if _os.path.isfile(path):
-            _os.environ["ORT_DYLIB_PATH"] = path
-            if _os.name == "nt":
-                # Let the GPU build resolve its CUDA DLL siblings.
-                _os.add_dll_directory(capi)
-            return path
-    return None
-
-
-def _warm_gpu_dlls(_ort) -> None:
-    """Preload NVIDIA DLLs for GPU builds so direct loads resolve.
-
-    Only for GPU builds (CUDA EP registered): CPU-only packages skip
-    silently. `import onnxruntime` alone does NOT load them — its
-    `preload_dlls()` helper runs only on explicit call — but ort loads
-    `onnxruntime.dll` directly (bypassing it), so without this the CUDA
-    EP fails at the first Conv node with `cudnn64_9.dll` not found and
-    every page silently falls back. Preloaded DLLs are process-global,
-    so ort's later LoadLibrary calls resolve. Never breaks import.
-    """
-    try:
-        providers = _ort.get_available_providers()
-    except Exception:
-        return
-    if "CUDAExecutionProvider" not in providers:
-        return
-    try:
-        _ort.preload_dlls()
-    except Exception:
-        pass
-
-
-ORT_DYLIB_PATH = _ensure_ort_dylib()
 
 from bobine._native import (
     ConverterConfig,
@@ -127,4 +105,5 @@ __all__ = [
     "convert_directory",
     "model_status",
     "ORT_DYLIB_PATH",
+    "runtime_info",
 ]

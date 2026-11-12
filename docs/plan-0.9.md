@@ -110,11 +110,11 @@ canonical one: okfgraph delegates to `embroider.locate_runtime()` since
 0.13 (its `components/embedding.py:1067`), which walks dist-info and
 never imports the module.
 
-### Change
+### Change — the logic is Rust, the Python layer wraps it
 
 - Delete `_ensure_ort_dylib` and `_warm_gpu_dlls`.
-- Bump `Cargo.toml:46` to `embroider = "0.15"` and call the canonical
-  locator before importing `bobine._native`:
+- Bump `Cargo.toml:46` to `embroider = "0.15"` and add **`src/runtime.rs`**
+  — bobine's own module over embroider's primitives:
 
   ```rust
   embroider::diag::locate_runtime(&hints, /*search_prefix=*/true, /*set_env=*/true)
@@ -125,11 +125,30 @@ never imports the module.
   pip-installed `onnxruntime` / `onnxruntime-gpu` resolved without
   importing it; `prepare_cuda_dirs` folds what `_warm_gpu_dlls` did
   (`cudnn64_9.dll` and CUDA siblings resolve for the GPU build).
+  `runtime.rs` owns the once-per-process decision (`OnceLock`), the
+  report shape, and the `set_by` classification (`env` / `bobine` /
+  `none`), with unit tests for the pure parts.
+- One binding (`bootstrap_runtime(hints)`) calls that module and does the
+  two things only the interpreter can do: hand it `sys.path` as hints
+  (user site, `PYTHONPATH`, editable installs) and **mirror the choice
+  into `os.environ`** — a C-level `setenv` from Rust is invisible to
+  `os.environ`, and Python code and child processes read that. It also
+  calls `os.add_dll_directory` on Windows. Everything else is Rust.
+- **The Python layer decides nothing**: `_RUNTIME = dict(_native.bootstrap_runtime(_sys.path))`,
+  `ORT_DYLIB_PATH = _RUNTIME["dylib"]`, and `runtime_info()` returns
+  `dict(_native.runtime_info())`.
 - Keep the public knob: **`bobine.ORT_DYLIB_PATH`** stays a module
   attribute, now reporting what the locator found (or `None`).
-- Add `bobine.runtime_info() -> {"dylib", "source", "version"}` — the
-  same shape as `embroider.runtime_info()` and okfgraph's
-  `locate_ort_runtime()`, so Silk's S5 can print one answer per process.
+- `bobine.runtime_info()` reports
+  `{"dylib", "source", "version", "set_by", "cuda_dirs"}`: the locator's
+  answer (`source` = `env` / `pip:<distribution>` / `os`), who chose it,
+  and the CUDA folders this process prepended to `PATH`. `embroider.runtime_info()`
+  remains the full inventory (every dist, provider DLLs, CUDA probe) —
+  bobine's answers the narrower "which library will bobine load".
+- Order note: the native module is imported **first**, then the locator
+  runs. That is safe because `ort` is built with `load-dynamic` and
+  resolves the library at the first session — and it is what lets bobine
+  call the same Rust locator embroider and okfgraph run.
 
 ### Verification (finding 9)
 
@@ -140,14 +159,16 @@ never imports the module.
 
 ### Tests
 
-- `import bobine` then `assert "onnxruntime" not in sys.modules` — with a
-  runtime installed, in the normal test env.
-- With no `onnxruntime` present: bobine still imports and reports
-  `dylib=None` without raising.
-- An explicit `ORT_DYLIB_PATH` wins (spoof the env var, read
-  `bobine.ORT_DYLIB_PATH` and `bobine.runtime_info()["source"]`).
+- `import bobine` then `assert "onnxruntime" not in sys.modules` — in a
+  **fresh subprocess**, because the test process may have imported it.
+- The locator still finds a runtime (skip when none is installed): the
+  path exists, `source` is `pip:<distribution>`, `set_by` is `bobine`.
+- An explicit `ORT_DYLIB_PATH` wins and is reported `source="env"`,
+  `set_by="env"`.
+- A missing runtime is data: `dylib=None`, `source="os"`, no raise.
+- The wrapper decides nothing (`ORT_DYLIB_PATH == _RUNTIME["dylib"]`).
 - One model-gated conversion still runs, proving the locator found a
-  working library.
+  working library (the existing suites cover this).
 
 ### Done when
 
@@ -362,7 +383,7 @@ Standard library only (the shape embroider's `serve` established):
 
 | Area | Where |
 |---|---|
-| Locator without `onnxruntime` imported, `ORT_DYLIB_PATH` precedence | `python/tests/test_runtime_locator.py` (new) |
+| Locator without `onnxruntime` imported, `ORT_DYLIB_PATH` precedence, `set_by` table | `python/tests/test_runtime.py` (new, stdlib `unittest`, no pytest) + `src/runtime.rs` unit tests; wired into CI's linux wheel job |
 | Vocabulary table + precedence + refusals + exposed tuples | `tests/test_config_vocabulary.rs` (new, pure Rust) + a Python assert |
 | Reuse / release / serialise / use-after-close | `python/tests/test_warm_converter.py` (new) |
 | Host routes, warm keys, queueing, idle eviction | `python/tests/test_serve.py` (new) |

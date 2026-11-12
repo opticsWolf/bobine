@@ -1,5 +1,31 @@
 # Changelog — bobine
 
+## 0.9.0 — unreleased
+
+- **One runtime locator; `import bobine` no longer imports
+  `onnxruntime`.** The old `_ensure_ort_dylib` / `_warm_gpu_dlls` pair
+  imported the Python `onnxruntime` module at import time to find
+  `capi/onnxruntime.dll` and call `preload_dlls()` — which loads a second
+  copy of the runtime into any host process (okfgraph, Silk) and made
+  bobine a second resolver in a stack that has a canonical one. The
+  decision now lives in Rust (`src/runtime.rs`) over
+  `embroider::diag::locate_runtime` + `prepare_cuda_dirs`, the same code
+  every embroider model open and okfgraph run: dist metadata instead of an
+  import, one library for the process. `bobine.ORT_DYLIB_PATH` stays, and
+  `bobine.runtime_info()` reports `{dylib, source, version, set_by,
+  cuda_dirs}` — `source` is `env` / `pip:<distribution>` / `os`, `set_by`
+  names who chose. The Python layer is a thin wrapper: it passes
+  `sys.path` and mirrors the choice into `os.environ` (a C-level
+  `setenv` is invisible to it), because Python code and child processes
+  read that.
+- **embroider 0.14 → 0.15** (`Cargo.toml` + lockfile). Zero code changes:
+  the surface bobine uses is intact, 184 lib + office/excel/golden/
+  converter suites green, no golden re-baseline.
+- New bindings tests (`python/tests/`, standard library `unittest`, no
+  pytest dependency): a fresh interpreter keeps `onnxruntime` out of
+  `sys.modules`, an explicit `ORT_DYLIB_PATH` wins and reports
+  `set_by="env"`, and a missing runtime is data rather than an error.
+
 ## 0.8.1 — 2026-11-10
 
 - **ONNX Runtime extras 1.29.0 → 1.31.1.** `bobine[cpu]` / `bobine[gpu]`
