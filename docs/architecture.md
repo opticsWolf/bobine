@@ -34,11 +34,13 @@ flows, and the non-obvious invariants.
 ```
 src/
 ├── lib.rs            crate root, re-exports
-├── config.rs         ConverterConfig (Routing/Render/Model/Text/Provider
-│                     option groups, #[serde(flatten)] — wire format unchanged),
-│                     RoutingMode, FormulaBackend, ModelPrecision,
+├── config.rs         ConverterConfig (Routing/Runtime/Render/Model/Text/
+│                     Provider groups, #[serde(flatten)] — wire format
+│                     unchanged), RoutingMode, FormulaBackend, ModelPrecision,
 │                     ModelQuantization, ImageMode (Link/EmbedBase64) +
-│                     RenderOpts.image_mode/max_embed_bytes/preserve_layout
+│                     RenderOpts.image_mode/max_embed_bytes/preserve_layout;
+│                     Device/Precision vocabulary + runtime_plan() (pure:
+│                     the CUDA state is an argument)
 ├── error.rs          BobineError enum
 ├── engine.rs         OnnxEngine — lazy model manager
 │                     (TexTeller/Layout/OCR/Table/POTATR slots + provider
@@ -77,9 +79,14 @@ src/
 │                     fallback → positional splice + gallery
 ├── assets.rs         okf-asset:// staging store for unreferenced images
 ├── documents.rs      ConvertedDocument + YAML frontmatter (ingest layer)
-├── pipeline.rs       ingest_document / convert_directory / progress hooks
+├── runtime.rs        Where ONNX Runtime comes from: bootstrap over
+│                     embroider's locator once per process, CUDA-DLL dirs,
+│                     {dylib, source, version, set_by, cuda_dirs} report
+├── pipeline.rs       ingest_document / ingest_with_converter (warm path) /
+│                     convert_directory / progress hooks
 └── py_bindings.rs    PyO3 surface: bobine._native
-python/bobine/        Python shim (__init__.py re-exports _native) + .pyi stubs
+python/bobine/        Python shim (__init__.py re-exports _native, __init__.pyi
+                      stubs) + serve.py: `python -m bobine.serve`
 legacy/               frozen pure-Python bobine v0.2.0 (reference implementation)
 ```
 
@@ -195,18 +202,29 @@ missing layout.onnx never kills a conversion. `ModelPrecision::Fp16`
 selects `*_fp16.onnx` filenames (shipped in the unified repo, 28-29/30
 parity — see §8).
 
-Provider resolution (v0.4.9+): `ConverterConfig.ort_providers` is the base
-list for TexTeller sessions. Every heavy session has a per-slot override —
-`encoder_ort_providers` / `decoder_ort_providers` (TexTeller),
-`layout_ort_providers`, `ocr_ort_providers`, `table_ort_providers`; `None`
-selects the default, which encodes the measured ledger:
+Provider resolution (0.9): `ConverterConfig::runtime_plan(cuda)` resolves
+every slot from the **device** word plus the per-slot overrides, and the
+engine reads that plan instead of the provider fields. It is pure — the
+CUDA state is an argument — so the mapping is a table test, not a debate
+(the `config.rs` unit tests).
 
-| Slot | Default resolution | Why |
-|---|---|---|
-| layout, ocr | **auto-GPU** — CUDAExecutionProvider prepended when the loaded dylib exposes a usable CUDA EP (EP-availability probe) | measured 12.3x / 3.6x on CUDA |
-| table | **CPU-pinned** | SLANet measures 2-9x slower on CUDA (graph fragments across devices) |
-| potatr | **CPU-pinned** | Same policy as the table slot (page-level DETR forward; no CUDA measurement yet) |
-| tex_teller | base `ort_providers` | Fp32 is the default tier; Int8+CUDA and Fp16-without-CUDA are guarded with warnings |
+`device` (`auto` / `cpu` / `cuda`, parsed through embroider's `DeviceReq`)
+is the coarse knob; a per-slot `*_ort_providers` list still wins as the
+expert override (`policy = "explicit"`):
+
+| Slot | `auto` (default) | `cpu` | `cuda` | Why |
+|---|---|---|---|---|
+| layout, ocr | CUDA prepended when the loaded dylib exposes a usable CUDA EP | CPU | CUDA + CPU fallback | measured 12.3x / 3.6x on CUDA |
+| table, potatr | **CPU-pinned** | CPU | CUDA + CPU fallback | SLANet measures 2-9x slower on CUDA (graph fragments across devices); the pin is a measurement, so an explicit `cuda` overrides it |
+| tex_teller (encoder, decoder) | base `ort_providers` | CPU | CUDA + CPU fallback | fp32 is the default tier; Int8+CUDA and Fp16-without-CUDA are warned about |
+
+`precision` (`auto` / `fp32` / `fp16` / `int8`) maps onto
+`model_precision` / `model_quantization` and is authoritative when set;
+`q8` is refused by name (no such artifact). `describe()` reports the plan
+per pass with `policy` (`auto-cuda`, `auto-cpu`, `cpu-pinned`, `cpu`,
+`cuda`, `explicit`), and `providers = None` for an auto-CUDA slot until a
+session lands — probing CUDA to describe a future load would load the
+runtime for nothing.
 
 Session construction runs through `engine::session_builder()`: the
 `SessionPolicy::ort_defaults()` policy from the shared **embroider** crate
@@ -220,15 +238,19 @@ every CPU box (the dylib's own commit-time fallback warning was the only
 reveal). On CPU-only ONNX Runtime builds the probe is false and every slot
 resolves to plain CPU — zero cost, no config needed either way.
 
-Ownership boundary with embroider: the policy and provider plumbing above
-are the *only* things this engine takes from the shared crate (floor
-`>=0.3, <0.4`, shared with okfgraph — this crate uses no Jina API, so any
-0.3.x serves). Model fetch
-is per-slot `hf_fetch`/explicit paths with this engine's own `hf_hub`
-clients and repo constants (§8); every session is built and run here
+Ownership boundary with embroider (floor `>=0.15, <0.16`, the crate
+version okfgraph pins): this engine takes the session policy
+(`SessionPolicy`), provider plumbing (`apply_providers`, `cuda_available`),
+the shared pin resolution and cache surface (`cache_info_files`,
+`fetch_repo_file`), and — since 0.9 — the one runtime locator
+(`diag::locate_runtime` + `diag::prepare_cuda_dirs`, wrapped by
+`runtime.rs`), so bobine, embroider and okfgraph find the same
+`onnxruntime` binary without importing the Python module. Model fetch is
+per-slot `hf_fetch`/explicit paths with this engine's own `hf_hub` clients
+and repo constants (§8); every session is built and run here
 (`session_builder` + slot code). embroider never sees converter weights
-and runs no converter inference — it is an ORT session-policy library
-that happens to also contain a Jina engine this crate never calls.
+and runs no converter inference — it is the shared ONNX plumbing crate
+that also contains the embedding/rerank/vision engines bobine never calls.
 
 ---
 
@@ -394,9 +416,10 @@ SLANet-plus, POTATR) carries a pinned hub SHA next to its repo constant
 (`*_REV`), verified present via the HF API, probe and download both
 resolve the pin through embroider's shared surface (`cache_info_files`
 + `fetch_repo_file`). Current oxide pins: `office_oxide 0.1.16`,
-`pdf_oxide 0.3.78`; the shared ONNX plumbing is `embroider 0.14`
-(0.3 → 0.12 → 0.14.1 in additive-only bumps, zero source changes:
-new model slots and APIs only, our call sites untouched)
+`pdf_oxide 0.3.78`; the shared ONNX plumbing is `embroider 0.15`
+(0.3 → 0.12 → 0.14.1 → 0.15.0 in additive-only bumps: new model slots and
+APIs only, every existing call site untouched; 0.9 additionally *adopts*
+the locator and `prepare_cuda_dirs`)
 (crates.io — same crate OKFgraph's embeddings use). The one external
 binary contract is **onnxruntime itself**: `ort` 2.0-rc requires ≥1.19; a
 stale system DLL fails at session creation with a clear `BadVersion`
@@ -407,11 +430,12 @@ error. Set `ORT_DYLIB_PATH` explicitly in CI/dev (e.g. the venv's
 
 Three layers:
 
-1. **Unit tests** (`#[cfg(test)]` modules, 181 lib tests): pure logic —
+1. **Unit tests** (`#[cfg(test)]` modules, 192 lib tests): pure logic —
    tables parsing, splice/ws_replace, math-font/unicode classifiers,
    TexTeller preprocessing shape/range, white-border trim, LetterBox,
    IoU/NMS, config serde round-trip, Excel renderers (GFM/CSV/JSON schema),
-   office splice/collect. No models, no files.
+   office splice/collect, the device/precision resolution tables and the
+   runtime-report classification. No models, no files.
 2. **Integration** (`tests/`): real fixtures, no mocks —
    `test_office` (10: generated OOXML fixtures, ordered-content + staged
    pictures + goldens), `test_excel` (6: typed values, csv round-trip,
@@ -419,8 +443,16 @@ Three layers:
    tripwire for upstream pdf_oxide changes), `test_rapid_table` (model
    load + recognize), `test_converter` (7: config, text files, error
    paths, PDF fast paths incl. the ~2 min full-paper AUTO run).
-3. **Python smoke**: `maturin develop`, then exercise `convert_excel`,
-   `convert`, and `ingest_document` end-to-end (Phase 4 protocol).
+3. **Python bindings** (`python/tests/`, standard-library `unittest`, no
+   pytest, no models): a fresh interpreter keeps `onnxruntime` out of
+   `sys.modules` and still finds the library; the device/precision words,
+   their resolution and `describe()`; the warm converter (`ingest_document`
+   across several files, `close()`/`with`, use-after-close); the host's
+   pool rules and every route against a stub converter, plus one real
+   model-free conversion through `python -m bobine.serve`; and the site
+   badge/pyproject version guard. CI runs it in the linux wheel job.
+
+   Run: `maturin develop` + `python -m unittest discover -s python/tests`.
 
 Golden policy: goldens pin *intentional* output. Regenerate only via
 `BOBINE_UPDATE_GOLDENS=1` after reviewing the diff (`tests/golden/` for
@@ -497,9 +529,18 @@ zero code changes.
 as the documented contract. Rules:
 
 - **Additive only** — new surface (`convert_excel`, `ExcelDocument`,
-  `ConvertedDocument.data_files`) extends; existing signatures never break.
-- **Thin wrappers** — no logic in bindings; every `#[pyfunction]` is a
-  direct call into `src/` plus error mapping (`PyRuntimeError`).
+  `ConvertedDocument.data_files`, 0.9's `device`/`precision`,
+  `describe()`, `ingest_document()`, `close()`, `runtime_info()`) extends;
+  existing signatures never break.
+- **Thin wrappers, logic in Rust** — every `#[pyfunction]` is a direct call
+  into `src/` plus error mapping (`PyRuntimeError`). The Python layer only
+  does what needs an interpreter: pass `sys.path` as locator hints, mirror
+  the runtime choice into `os.environ`/`add_dll_directory`, and — for the
+  host — HTTP framing and pool keying (`serve.py`). Runtime discovery, the
+  device/precision mapping and the conversion pipeline are Rust.
+- **The vocabulary is exported, not copied** — `bobine.DEVICES` /
+  `bobine.PRECISIONS` come from `config.rs`, so a consumer (okfgraph)
+  validates against the source instead of keeping a duplicate list.
 - **Flat kwargs** — `PyConverterConfig` takes the same flat field names as
   the pre-grouping Rust struct (the `#[serde(flatten)]` grouping is a
   Rust-side organization; the Python surface never moved).

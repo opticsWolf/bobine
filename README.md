@@ -171,7 +171,7 @@ GPU, including the table slots that are CPU-pinned by default.
 ```
 src/
 ├── lib.rs            crate root & re-exports
-├── config.rs         ConverterConfig · RoutingMode · ModelPrecision · ImageMode
+├── config.rs         ConverterConfig · RoutingMode · Device/Precision · runtime_plan
 ├── engine.rs         OnnxEngine (lazy model manager: TexTeller/Layout/OCR/Table/POTATR)
 ├── converter.rs      HybridConverter (core PDF/Office pipeline + binary-sniffed text fallback)
 ├── tex_teller.rs     TexTeller ONNX — ViT encoder → RoBERTa decoder
@@ -189,10 +189,11 @@ src/
 ├── office_images.rs  Office picture staging (IR walk + package fallback)
 ├── assets.rs         okf-asset://\ staging store
 ├── documents.rs      ConvertedDocument + frontmatter
-├── pipeline.rs       ingest_document / convert_directory / ProgressHooks
+├── runtime.rs        ONNX Runtime discovery (embroider's locator, once per process)
+├── pipeline.rs       ingest_document / ingest_with_converter (warm) / ProgressHooks
 ├── error.rs          BobineError
 └── py_bindings.rs    PyO3 surface (behind the extension-module feature)
-python/bobine/        Python shim + type stubs        (import bobine)
+python/bobine/        Python shim + type stubs + serve.py (import bobine / python -m bobine.serve)
 legacy/               frozen pure-Python bobine v0.2.0 (reference implementation)
 ```
 
@@ -323,7 +324,7 @@ for unreferenced figures. Office docs additionally stage pictures into
 ## Testing
 
 ```bash
-cargo test                # 181 lib tests (ORT_DYLIB_PATH required — no dylib = abort)
+cargo test                # 192 lib tests (ORT_DYLIB_PATH required — no dylib = abort)
 cargo test --test test_office --test test_excel --test test_golden   # no models needed
 ORT_DYLIB_PATH=... cargo test --test test_converter                 # incl. full-paper AUTO run
 maturin develop && python -c "import bobine"   # bindings smoke test
@@ -331,6 +332,20 @@ maturin develop && python -c "import bobine"   # bindings smoke test
 
 Fixtures: trimmed CC BY 4.0 arXiv papers + a generated scanned page +
 generated OOXML fixtures — see `tests/fixtures/SOURCES.md` for provenance.
+
+### Bindings tests
+
+`python/tests/` is standard-library `unittest` — no pytest, no models:
+
+```bash
+maturin develop
+python -m unittest discover -s python/tests
+```
+
+It covers the runtime decision (a fresh interpreter keeps `onnxruntime`
+out of `sys.modules`), the device/precision vocabulary, the warm
+converter's reuse and release, the host's pool and routes, and that the
+site's version matches `Cargo.toml`. CI runs it in the linux wheel job.
 
 ## Docs
 

@@ -15,7 +15,7 @@ maturin develop --release          # editable install into current venv
 # or build a wheel:
 maturin build --release && pip install target/wheels/bobine-*.whl
 
-# ONNX Runtime libraries (auto-located on `import bobine`):
+# ONNX Runtime libraries (located on `import bobine`, never imported):
 pip install "bobine[cpu]"   # onnxruntime == 1.31.1 (CPU)
 pip install "bobine[gpu]"   # onnxruntime-gpu + NVIDIA CUDA/cuDNN wheels
 ```
@@ -319,19 +319,21 @@ bobine.ConverterConfig(model_precision=bobine.ModelPrecision.Fp16)
 # ~1.9x faster, with occasional decode drift):
 bobine.ConverterConfig(model_quantization=bobine.ModelQuantization.Int8)
 
-# GPU (dynamic): point ORT_DYLIB_PATH at a GPU-enabled ONNX Runtime library
-# (onnxruntime-gpu >= 1.19 + matching CUDA/cuDNN). v0.4.9+ auto-enables CUDA
-# for the layout and OCR slots when the loaded library exposes a usable CUDA
-# EP (EP-availability probe, embroider since v0.5.10 — measured 12.3x / 3.6x
-# on an RTX 3090) and pins table recognition to CPU
-# (SLANet measures 2-9x slower on CUDA - its graph fragments across devices).
-# Same build, no rebuild needed; degrades gracefully to CPU otherwise.
-bobine.ConverterConfig()   # zero-config GPU defaults
+# GPU: layout and OCR auto-enable CUDA when the loaded library exposes a
+# usable CUDA EP (EP-availability probe, measured 12.3x / 3.6x on an RTX
+# 3090), while table recognition stays CPU-pinned (SLANet measures 2-9x
+# slower on CUDA - its graph fragments across devices). Same build, no
+# rebuild; degrades gracefully to CPU otherwise.
+bobine.ConverterConfig()                # zero-config: the measured policy
+bobine.ConverterConfig(device="cuda")   # every pass on CUDA, incl. tables
+bobine.ConverterConfig(device="cpu")    # every pass on CPU, no EP probing
 
 # Formula decode on GPU: fp32 is the default; route TexTeller through CUDA
 # (~2.4x faster on the short fixture, ~1.35x on long decodes - RTX 3090).
 # Int8 is CPU-oriented (quantized ops run slower on the GPU EP) - do NOT
 # combine Int8 with CUDA; bobine logs a warning when it sees that.
+bobine.ConverterConfig(
+    precision="fp32", device="cuda")     # 0.9 spelling
 bobine.ConverterConfig(
     ort_providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
 
@@ -420,24 +422,29 @@ Missing layout/OCR models degrade to the fast path per page; a missing
 table model only disables scanned-table recognition.
 
 Ownership: bobine fetches (own HF clients, own repo constants) and runs
-(own `ort` sessions) every model above. embroider contributes only the
-session policy (`SessionPolicy::ort_defaults()`), provider fallback, and
-CUDA probe — it never sees converter weights.
+(own `ort` sessions) every model above. embroider contributes the session
+policy (`SessionPolicy::ort_defaults()`), provider fallback, the CUDA
+probe, and — since 0.9 — the one runtime locator and CUDA-DLL preparation
+(`locate_runtime` + `prepare_cuda_dirs`); it never sees converter weights.
 
 ## Testing
 
 ```bash
-cargo test                 # 184 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
+cargo test                 # 192 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
 ORT_DYLIB_PATH=... cargo test --test test_converter   # incl. full-paper AUTO run
-maturin develop && python -m unittest discover -s python/tests   # bindings (stdlib, no pytest)
+maturin develop && python -m unittest discover -s python/tests   # 40 bindings tests (stdlib, no pytest)
 ```
 
-The bindings tests cover the runtime decision end to end: a fresh
-interpreter imports bobine and `onnxruntime` stays out of `sys.modules`,
-an explicit `ORT_DYLIB_PATH` wins and is reported as `set_by="env"`, and a
-missing runtime is data (`dylib=None`, `source="os"`) rather than an
-error. The decision itself lives in Rust (`src/runtime.rs`), unit-tested
-there; Python only asks for it.
+The bindings tests cover what only an interpreter can show: a fresh
+process imports bobine and `onnxruntime` stays out of `sys.modules` while
+the library is still found; an explicit `ORT_DYLIB_PATH` wins and reports
+`set_by="env"`; a missing runtime is data, not an error. Then the 0.9
+surfaces: the device/precision words and their resolution, `describe()`
+before and after sessions exist, the warm converter's reuse/`close()`/
+`with`, the host's pool rules and every route (against a stub, plus one
+real model-free conversion), and the site badge tracking `Cargo.toml`. The
+decisions themselves live in Rust (`src/runtime.rs`, `config.rs`), with
+unit tests there; Python only asks for them.
 
 Fixtures: `tests/fixtures/` — CC BY 4.0 arXiv papers (attribution in
 `SOURCES.md`) + generated scanned page + generated OOXML fixtures

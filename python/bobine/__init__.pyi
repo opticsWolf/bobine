@@ -47,8 +47,32 @@ class ModelQuantization(Enum):
     Fp32 = "fp32"
     Int8 = "int8"
 
+class Device(Enum):
+    # Each slot's measured policy (the pre-0.9 behaviour). Default.
+    Auto = "auto"
+    # Every pass on CPU.
+    Cpu = "cpu"
+    # Every pass on CUDA with CPU fallback, including the CPU-pinned table
+    # slots (their pin is a measurement, not a limit).
+    Cuda = "cuda"
+
+class Precision(Enum):
+    # The configured model_precision / model_quantization. Default.
+    Auto = "auto"
+    Fp32 = "fp32"
+    Fp16 = "fp16"
+    # The compact TexTeller pair (CPU speed tier). There is no `q8`.
+    Int8 = "int8"
+
 class ConverterConfig:
-    '''ort_providers: execution-provider priority, e.g.
+    '''Device and precision are the stack vocabulary (0.9), the same words
+    embroider and okfgraph accept; `bobine.DEVICES` / `bobine.PRECISIONS`
+    list them. `device`: "auto" keeps each slot's measured policy, "cpu"
+    pins every pass, "cuda" puts every pass on CUDA with CPU fallback.
+    `precision` maps onto model_precision / model_quantization and is
+    authoritative when set; setting both is refused.
+
+    ort_providers: execution-provider priority, e.g.
     ["CUDAExecutionProvider", "CPUExecutionProvider"]. Requires pointing
     ORT_DYLIB_PATH at a GPU-enabled ONNX Runtime library; requests degrade
     gracefully to CPU when the library lacks the provider.
@@ -99,6 +123,8 @@ class ConverterConfig:
         potatr_edge_threshold: float = 0.5,
         potatr_suppress_iou: float = 0.5,
         potatr_min_text_fill: float = 0.2,
+        device: str | None = None,
+        precision: str | None = None,
         ort_providers: list[str] | None = None,
         encoder_ort_providers: list[str] | None = None,
         decoder_ort_providers: list[str] | None = None,
@@ -155,16 +181,46 @@ class ConverterConfig:
     @property
     def routing_mode(self) -> RoutingMode: ...
     @property
+    def device(self) -> str: ...
+    @property
+    def precision(self) -> str: ...
+    @property
     def model_precision(self) -> ModelPrecision: ...
     @property
     def model_quantization(self) -> ModelQuantization: ...
 
 class HybridConverter:
+    '''One converter, many documents (0.9).
+
+    Sessions are built lazily and stay open between `ingest_document` calls
+    on the same object; `close()` (or `with`) releases them, and a closed
+    converter refuses work until a new one is built. One document at a time:
+    a concurrent call raises rather than corrupting state.
+    '''
     def __init__(self, config: ConverterConfig, cache_dir: str) -> None: ...
     def convert(self, input: str, work_dir: str) -> str: ...
     def convert_pdf(self, path: str, work_dir: str) -> str: ...
     def recognize_formula(self, image_path: str) -> Optional[str]: ...
     def convert_jats(self, path: str, work_dir: str) -> JatsDocument: ...
+    def ingest_document(
+        self,
+        path: str,
+        output_dir: str,
+        lint_callback: Optional[LintCallback] = None,
+        should_continue: Optional[Callable[[], bool]] = None,
+        on_page: Optional[Callable[[int, int], None]] = None,
+    ) -> ConvertedDocument: ...
+    def describe(self) -> Dict[str, Any]:
+        '''Per-pass plan: {"device_requested", "precision_requested",
+        "passes": {slot: {"providers" | None, "policy", "precision",
+        "landed"}}}. `providers` is None for an auto-CUDA slot until it
+        opens (probing would load the runtime to describe a future load).
+        '''
+        ...
+    def close(self) -> None: ...
+    def is_closed(self) -> bool: ...
+    def __enter__(self) -> "HybridConverter": ...
+    def __exit__(self, *exc: Any) -> bool: ...
 
 def convert_to_markdown(
     path: str,
@@ -219,9 +275,21 @@ def convert_jats(
 
 LintCallback = Callable[[str], Optional[Tuple[bool, str]]]
 
-# Resolved ONNX Runtime library path (auto-located from pip onnxruntime,
-# or None when no runtime is installed). Mirrors the ORT_DYLIB_PATH env var.
+# The accepted device / precision words (tuples), the single source of truth.
+DEVICES: Tuple[str, ...]
+PRECISIONS: Tuple[str, ...]
+
+# Resolved ONNX Runtime library path, located at import by embroider's
+# locator (dist metadata, never `import onnxruntime`), or None when nothing
+# was found. Mirrors the ORT_DYLIB_PATH env var.
 ORT_DYLIB_PATH: Optional[str]
+
+def runtime_info() -> Dict[str, Any]:
+    '''{"dylib", "source", "version", "set_by", "cuda_dirs"} — the import-time
+    decision: source is "env" / "pip:<distribution>" / "os", set_by names
+    who chose, cuda_dirs lists the CUDA folders put on PATH.
+    '''
+    ...
 
 def ingest_document(
     path: str,
