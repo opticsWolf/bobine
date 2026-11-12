@@ -108,6 +108,20 @@ class ExplicitSetting(unittest.TestCase):
 
 
 class ReportShape(unittest.TestCase):
+    def test_no_runtime_means_no_cuda_prep(self):
+        """A machine with no runtime gets no probe and no loader call.
+
+        `prepare_cuda_dirs` ends in embroider's runtime report, which probes
+        CUDA; on a box whose only onnxruntime is a stale copy on the OS
+        loader path that probe panics (caught, but it prints a banner). No
+        library means no CUDA lane to prepare, so the answer is `[]`.
+        """
+        import bobine
+
+        info = bobine.runtime_info()
+        if info["dylib"] is None:
+            self.assertEqual(info["cuda_dirs"], [])
+
     def test_python_sets_no_policy(self):
         """The wrapper decides nothing: no env writes of its own.
 

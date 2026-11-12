@@ -103,7 +103,11 @@ never imports the module (importing it would load a second copy).
 `runtime_info()` reports the decision (`set_by` says who chose: `env`,
 `bobine`, `none`), and the same import puts the CUDA lane's DLL folders on
 `PATH` (`cuda_dirs`), which is what keeps a GPU build from failing on
-`cudnn64_9.dll` and silently falling back to CPU. The search and the CUDA
+`cudnn64_9.dll` and silently falling back to CPU. When nothing is found,
+`dylib` is `None` and *nothing else happens* — no CUDA prep, no probe, no
+loader call — so a machine whose only `onnxruntime` is a stale copy on the
+OS loader path reports the fact quietly instead of panicking. Refuse to
+open an ONNX pass there; the fast Office/text paths still work. The search and the CUDA
 preparation are Rust (`src/runtime.rs` over `embroider::diag`); the Python
 layer only passes `sys.path` and mirrors the choice into `os.environ`.
 

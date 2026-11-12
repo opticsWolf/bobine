@@ -1,5 +1,16 @@
 # Changelog — bobine
 
+## 0.9.1 — unreleased
+
+- **A machine with no ONNX Runtime reports it quietly.** `runtime_info()`
+  used to call embroider's `prepare_cuda_dirs` even when the locator found
+  nothing; that call ends in a runtime report which probes CUDA, and on a
+  host whose only `onnxruntime` is a stale copy on the OS loader path the
+  probe makes ort panic (caught inside `cuda_available`, so nothing failed —
+  but a panic banner on `import bobine` reads like a bug). No library means
+  no CUDA lane to prepare, so the prep is skipped: `dylib=None`,
+  `cuda_dirs=[]`, no loader call, `onnxruntime` still out of `sys.modules`.
+
 ## 0.9.0 — 2026-11-11
 
 - **Warm converter: `HybridConverter.ingest_document`.** The pipeline

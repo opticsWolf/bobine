@@ -16,7 +16,9 @@
 //!
 //! The locator never imports `onnxruntime`; it reads dist metadata and
 //! looks for the library inside the package folder. That is the whole
-//! point of it — a host process keeps one runtime, not two.
+//! point of it — a host process keeps one runtime, not two. When nothing is
+//! found, `dylib = None` is the answer and nothing else is touched: no
+//! probe, no loader call, no CUDA prep.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -91,7 +93,21 @@ pub fn bootstrap(hints: &[String]) -> &'static RuntimeReport {
         // `set_env = true`: ort reads ORT_DYLIB_PATH when the first
         // session builds, and this runs before that.
         let located = embroider::diag::locate_runtime(&hints, true, true);
-        let cuda = embroider::diag::prepare_cuda_dirs(None);
+        // No library, no CUDA lane to prepare: `prepare_cuda_dirs` ends in
+        // embroider's runtime report, which probes CUDA, and on a machine
+        // whose only `onnxruntime` is a stale copy on the OS loader path
+        // that probe makes ort panic (caught inside `cuda_available`, but
+        // it prints a panic banner). Skipping it keeps "no runtime" quiet
+        // and costs nothing — there are no DLLs to prepend.
+        let cuda = if located.dylib.is_some() {
+            embroider::diag::prepare_cuda_dirs(None)
+        } else {
+            serde_json::json!({
+                "prepended": [],
+                "candidates": 0,
+                "dylib": serde_json::Value::Null,
+            })
+        };
         let dylib = located
             .dylib
             .as_ref()
