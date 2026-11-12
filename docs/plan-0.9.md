@@ -32,6 +32,18 @@ everyone else and to stop reloading its models per file.
 | B5. Tests per step | small | each step | — |
 | B6. CLI + harness skill (deferred) | medium | B2–B4 | a shell story; `bobine` from a skill |
 
+**Landed on `dev_silk`** (0.9.0 not yet released):
+
+| Step | Commit | What shipped |
+|---|---|---|
+| B2 | `9adc1b2` | `src/runtime.rs` over embroider's locator; `import bobine` no longer imports `onnxruntime`; `bobine.runtime_info()` |
+| B3 | `310e46f` | `device` / `precision` vocabulary, `runtime_plan` (pure, table-tested), `describe()`, `bobine.DEVICES` / `PRECISIONS` |
+| B4 | `99b4d15` | `HybridConverter.ingest_document` + `close()`/`with`; `python -m bobine.serve` with one warm converter per settings key |
+| B5 | with each | 192 lib tests, 36 stdlib unittests (`python/tests/`), wired into CI's linux wheel job |
+
+Remaining before the release: the checklist in §7 — version, CHANGELOG date,
+site badge, tag. B6 stays deferred.
+
 B2 and B3 are independent and small; B4 is the release's reason. Ship
 **0.9.0** when B2–B5 are green. B6 follows in a later release.
 
@@ -388,13 +400,17 @@ lands in Rust):
 
 ## 5. B5. Test placement (summary)
 
-| Area | Where |
+| Area | Where (as landed) |
 |---|---|
-| Locator without `onnxruntime` imported, `ORT_DYLIB_PATH` precedence, `set_by` table | `python/tests/test_runtime.py` (new, stdlib `unittest`, no pytest) + `src/runtime.rs` unit tests; wired into CI's linux wheel job |
-| Vocabulary table + precedence + refusals + exposed tuples | `tests/test_config_vocabulary.rs` (new, pure Rust) + a Python assert |
-| Reuse / release / serialise / use-after-close | `python/tests/test_warm_converter.py` (new) |
-| Host routes, warm keys, queueing, idle eviction | `python/tests/test_serve.py` (new) |
+| Locator without `onnxruntime` imported, `ORT_DYLIB_PATH` precedence, `set_by` table | `python/tests/test_runtime.py` + `src/runtime.rs` unit tests |
+| Vocabulary table, precedence, refusals | `src/config.rs` unit tests (8) + `python/tests/test_vocabulary.py` (exposed tuples, resolution, `describe()`) |
+| Reuse / release / context manager / use-after-close | `python/tests/test_warm_converter.py` |
+| Pool rules (one converter per key, idle eviction, close) and every host route | `python/tests/test_serve.py` |
 | Output unchanged | the existing golden suite, untouched |
+
+All of `python/tests/` runs under the standard library (`python -m unittest
+discover -s python/tests`) — no pytest dependency — and CI runs it in the
+linux wheel job after installing the built wheel.
 
 ---
 
