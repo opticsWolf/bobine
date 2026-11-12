@@ -1,6 +1,6 @@
 # Changelog — bobine
 
-## 0.9.0 — unreleased
+## 0.9.0 — 2026-11-11
 
 - **Warm converter: `HybridConverter.ingest_document`.** The pipeline
   body moved out of the free function and onto the converter
