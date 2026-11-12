@@ -316,19 +316,21 @@ bobine.PRECISIONS # ("auto", "fp32", "fp16", "int8")
   (it builds, uses and drops one converter) — plus a docstring note that a
   caller converting several files should hold a `HybridConverter`.
 - **Thread safety, stated:** one `HybridConverter` runs one document at a
-  time, and a second caller **waits** (an internal mutex serialises the
-  call) — it is not an error. Blocking is the safer contract of the two:
-  a raise would turn an unforeseen concurrent path (serve answering on
-  several threads) into a user-visible failure, while waiting is exactly
-  what the host below does per settings key. okfgraph's own lock then
-  becomes belt-and-braces rather than load-bearing. Document that
-  concurrency is safe but serialised, so nobody adds a thread pool
-  expecting parallelism.
+  time. A second concurrent call **raises** PyO3's borrow error rather than
+  waiting: blocking on a native mutex while holding the GIL deadlocks (the
+  thread that holds the lock cannot run Python to release it), so "wait"
+  is not available at this boundary — the earlier draft's wording was
+  wrong. Callers serialise, which they already do: okfgraph takes a
+  `threading.Lock`, the host below takes one per settings key. Say that in
+  the docstring so nobody adds a thread pool expecting parallelism.
 - `describe()` from B3 rides this object.
 
 ### Change, part 2 — `python -m bobine.serve`
 
-Standard library only (the shape embroider's `serve` established):
+Standard library only (the shape embroider's `serve` established: the work
+is native, the module is the pool-and-HTTP shell — `python/bobine/serve.py`
+is ~250 lines of framing, keying and eviction, and every conversion call
+lands in Rust):
 
 | Route | Body / answer |
 |---|---|
@@ -358,9 +360,9 @@ Standard library only (the shape embroider's `serve` established):
   `HybridConverter` → one construction; `close()` releases once and is
   idempotent; a failing file in the middle still releases; `__exit__`
   releases; a use after `close()` raises.
-- Concurrency: two threads against one converter both succeed and
-  serialise (the fake records no overlap); a second document is never
-  started while the first runs.
+- Concurrency: a second concurrent call on one converter raises rather
+  than corrupting; callers serialise by contract (the host's per-key lock
+  is tested, and it is what makes the raise unreachable there).
 - Host: `/v1/convert` over a **text file** (no models) returns NDJSON
   progress + a result; two calls with the same settings key reuse one
   converter (spy on the class); a different key builds a second; two

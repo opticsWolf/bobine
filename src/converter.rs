@@ -1286,12 +1286,14 @@ pub struct HybridConverter {
     /// read after `convert_pdf` / `convert_pdf_source` (bench harness
     /// appends them to `report.md`).
     pub gate_stats: RenderGateStats,
+    /// Set by [`HybridConverter::close`]; a closed converter refuses work.
+    closed: bool,
 }
 
 impl HybridConverter {
     pub fn new(config: ConverterConfig, cache_dir: &Path) -> Self {
         let engine = OnnxEngine::new(&config, cache_dir);
-        Self { config, engine, gate_stats: RenderGateStats::default() }
+        Self { config, engine, gate_stats: RenderGateStats::default(), closed: false }
     }
 
     /// What this converter will do, per pass (0.9 vocabulary).
@@ -1323,6 +1325,83 @@ impl HybridConverter {
                 ("potatr", pass(&plan.potatr, loaded.potatr)),
             ],
         }
+    }
+
+    /// Convert one document to markdown on this converter.
+    ///
+    /// The body of the pipeline's free function, on an object the caller
+    /// holds: dispatch by extension (`.pdf` → the ONNX slots, Office →
+    /// office_oxide, text → read as UTF-8) and reuse every session this
+    /// converter already has open. That is what makes a second file cheap
+    /// instead of a model reload.
+    pub fn convert_to_markdown_with(
+        &mut self,
+        path: &std::path::Path,
+        work_dir: &std::path::Path,
+        hooks: &ProgressHooks<'_>,
+    ) -> crate::error::Result<String> {
+        self.ensure_open()?;
+        if !path.is_file() {
+            return Err(crate::error::BobineError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Document not found: {}", path.display()),
+            )));
+        }
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        std::fs::create_dir_all(work_dir)?;
+        if ext == "pdf" {
+            return self.convert_pdf_with(path, work_dir, hooks);
+        }
+        self.convert(path, work_dir)
+    }
+
+    /// The full ingestion pipeline on this converter (0.9, plan B4).
+    ///
+    /// Convert → write `<stem>.md` → stage images into the asset store and
+    /// rewrite their links → Excel sheet siblings → optional lint hook.
+    /// Sessions opened by this call stay open, so the next document reuses
+    /// them; [`Self::close`] releases them and the caller owns that
+    /// lifetime.
+    pub fn ingest_document(
+        &mut self,
+        path: &std::path::Path,
+        output_dir: &std::path::Path,
+        lint_fn: Option<&crate::pipeline::LintFn<'_>>,
+        hooks: &ProgressHooks<'_>,
+    ) -> crate::error::Result<crate::pipeline::ConvertedDocument> {
+        self.ensure_open()?;
+        crate::pipeline::ingest_with_converter(
+            self, path, output_dir, lint_fn, hooks,
+        )
+    }
+
+    /// Whether [`Self::close`] has been called.
+    pub fn is_closed(&self) -> bool {
+        self.closed
+    }
+
+    /// Release every ONNX session this converter holds.
+    ///
+    /// Idempotent. After it, the converter refuses work: construct a new one
+    /// (a closed converter is not silently rebuilt — a caller that wanted
+    /// the sessions back would not know it paid a reload). Dropping the
+    /// object releases them too; this is the deterministic way to say so.
+    pub fn close(&mut self) {
+        self.engine.close();
+        self.closed = true;
+    }
+
+    fn ensure_open(&self) -> crate::error::Result<()> {
+        if self.closed {
+            return Err(crate::error::BobineError::Other(
+                "converter was closed; construct a new HybridConverter".to_string(),
+            ));
+        }
+        Ok(())
     }
 
     /// Render-health gate counters for the last conversion run.

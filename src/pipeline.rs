@@ -87,23 +87,8 @@ pub fn convert_to_markdown(
     cache_dir: &Path,
     hooks: &ProgressHooks<'_>,
 ) -> Result<String> {
-    if !path.is_file() {
-        return Err(BobineError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("Document not found: {}", path.display()),
-        )));
-    }
-    let ext = ext_of(path);
-    std::fs::create_dir_all(work_dir)?;
-
-    if ext == "pdf" {
-        let mut converter = HybridConverter::new(config.clone(), cache_dir);
-        return converter.convert_pdf_with(path, work_dir, hooks);
-    }
-
-    // Office + text go through HybridConverter's dispatcher (no models needed).
     let mut converter = HybridConverter::new(config.clone(), cache_dir);
-    converter.convert(path, work_dir)
+    converter.convert_to_markdown_with(path, work_dir, hooks)
 }
 
 /// Full ingestion pipeline for one document.
@@ -114,12 +99,17 @@ pub fn convert_to_markdown(
 ///
 /// `cache_dir` is the converter-model hub-cache root (`None` = the
 /// env-resolved standard cache). It is NOT derived from `output_dir`
-/// anymore (0.6.0): the old `<output>/.cache` sidecar made the default
+/// anymore (0.6.0): the old `<output>.cache` sidecar made the default
 /// temp-dir flow re-download every model per ingest and delete them
 /// after. Pass an explicit dir to pin models somewhere else.
 ///
 /// Returns a [`ConvertedDocument`]. Nothing is imported anywhere — a
 /// consumer receives the staged bundle.
+///
+/// One-shot: it builds a converter, uses it and drops it. A caller
+/// ingesting several documents should hold a
+/// [`HybridConverter`](crate::converter::HybridConverter) and call its
+/// `ingest_document` instead — the sessions stay warm (0.9, plan B4).
 pub fn ingest_document(
     path: &Path,
     output_dir: &Path,
@@ -128,13 +118,6 @@ pub fn ingest_document(
     hooks: &ProgressHooks<'_>,
     cache_dir: Option<&Path>,
 ) -> Result<ConvertedDocument> {
-    if !path.is_file() {
-        return Err(BobineError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("Document not found: {}", path.display()),
-        )));
-    }
-
     let default_cfg;
     let config = match config {
         Some(c) => c,
@@ -143,15 +126,6 @@ pub fn ingest_document(
             &default_cfg
         }
     };
-
-    std::fs::create_dir_all(output_dir)?;
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("document");
-    // Hub-cache alignment: models live in the shared hub cache, never in
-    // a per-output sidecar. `None` resolves the standard default, so the
-    // default temp-dir flow downloads once per machine, not per ingest.
     let default_cache;
     let cache_dir: &Path = match cache_dir {
         Some(d) => d,
@@ -160,8 +134,36 @@ pub fn ingest_document(
             &default_cache
         }
     };
+    let mut converter = HybridConverter::new(config.clone(), cache_dir);
+    ingest_with_converter(&mut converter, path, output_dir, lint_fn, hooks)
+}
 
-    let md = convert_to_markdown(path, config, output_dir, cache_dir, hooks)?;
+/// The pipeline body, on a converter the caller holds.
+///
+/// Shared by [`ingest_document`] (one-shot: builds and drops a converter)
+/// and [`HybridConverter::ingest_document`](crate::converter::HybridConverter::ingest_document)
+/// (warm: reuses every session already open).
+pub fn ingest_with_converter(
+    converter: &mut HybridConverter,
+    path: &Path,
+    output_dir: &Path,
+    lint_fn: Option<&LintFn<'_>>,
+    hooks: &ProgressHooks<'_>,
+) -> Result<ConvertedDocument> {
+    if !path.is_file() {
+        return Err(BobineError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("Document not found: {}", path.display()),
+        )));
+    }
+
+    std::fs::create_dir_all(output_dir)?;
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document");
+
+    let md = converter.convert_to_markdown_with(path, output_dir, hooks)?;
 
     let md_path = output_dir.join(format!("{stem}.md"));
     std::fs::write(&md_path, &md)?;

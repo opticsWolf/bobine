@@ -136,6 +136,17 @@ impl OnnxEngine {
         self.config.runtime_plan(cuda)
     }
 
+    /// Drop every open session (0.9, plan B4: the caller owns the
+    /// lifetime). Idempotent; a later pass re-opens lazily, so this is only
+    /// worth calling when the caller means it.
+    pub fn close(&mut self) {
+        self.tex_teller = None;
+        self.layout = None;
+        self.ocr = None;
+        self.table = None;
+        self.potatr = None;
+    }
+
     /// Whether any ONNX session is already open.
     pub fn any_loaded(&self) -> bool {
         self.tex_teller.is_some()

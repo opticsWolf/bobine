@@ -2,6 +2,27 @@
 
 ## 0.9.0 — unreleased
 
+- **Warm converter: `HybridConverter.ingest_document`.** The pipeline
+  body moved out of the free function and onto the converter
+  (`src/pipeline.rs` → `ingest_with_converter`), so a caller that holds one
+  `HybridConverter` runs the full convert → stage → lint pipeline on it and
+  the layout/OCR/formula sessions stay open between documents. Three files
+  in one command now build the models once, not three times. `close()` (and
+  `with`) releases them, idempotently; a closed converter refuses work
+  instead of silently reloading, so the caller always knows whether it paid
+  a reload. `bobine.ingest_document` keeps its one-shot behaviour (build,
+  use, drop) with a docstring note.
+- **`python -m bobine.serve`**, the host: one converter per canonical
+  settings key, kept warm, released after `--idle-seconds` (default 300;
+  `0` = after every conversion). Routes `GET /health`, `GET /v1/models`
+  (cache status plus warm keys with `last_used`/`documents`/`describe()`)
+  and `POST /v1/convert` (NDJSON progress per page, then the result). One
+  document per converter at a time — a second request for a busy key
+  waits. 400 for a bad request or unusable settings, and a conversion
+  failure is a final `{"error", "path"}` line — the text a consumer maps
+  onto its own conversion error. The conversion work stays native; the
+  module is the same pool-and-HTTP shell embroider's host uses.
+
 - **`device` / `precision`, the stack vocabulary.** `ConverterConfig`
   accepts `device="auto|cpu|cuda"` and `precision="auto|fp32|fp16|int8"`,
   the words embroider and okfgraph use, parsed through embroider's

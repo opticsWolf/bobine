@@ -501,6 +501,69 @@ impl PyHybridConverter {
         Ok(PyJatsDocument { inner })
     }
 
+    /// Full ingestion on this converter (0.9, plan B4).
+    ///
+    /// Same pipeline as `bobine.ingest_document`, on the sessions this
+    /// object already has open: three files through one converter build the
+    /// layout/OCR models once. One document at a time — a concurrent call
+    /// raises PyO3's borrow error rather than corrupting state, and every
+    /// caller in the stack serialises (okfgraph's lock, the host's
+    /// per-settings lock).
+    #[pyo3(signature = (path, output_dir, lint_callback=None, should_continue=None, on_page=None))]
+    fn ingest_document<'py>(
+        &mut self,
+        py: Python<'py>,
+        path: &str,
+        output_dir: &str,
+        lint_callback: Option<Bound<'py, PyAny>>,
+        should_continue: Option<Bound<'py, PyAny>>,
+        on_page: Option<Bound<'py, PyAny>>,
+    ) -> PyResult<PyConvertedDocument> {
+        let _ = py;
+        let cbs = PyCallbacks { lint: lint_callback, should_continue, on_page };
+        let lint = lint_from(&cbs);
+        let hooks = hooks_from(&cbs);
+        let doc = self
+            .inner
+            .ingest_document(
+                std::path::Path::new(path),
+                std::path::Path::new(output_dir),
+                lint.as_deref(),
+                &hooks,
+            )
+            .map_err(to_py_err)?;
+        Ok(PyConvertedDocument { inner: doc })
+    }
+
+    /// Release the ONNX sessions this converter holds.
+    ///
+    /// Idempotent. Afterwards the converter refuses work — construct a new
+    /// one (a closed converter is not silently rebuilt, so a caller always
+    /// knows whether it paid a reload). Dropping the object releases them
+    /// too; this is the deterministic way to say so.
+    fn close(&mut self) {
+        self.inner.close();
+    }
+
+    /// Whether `close()` has been called.
+    fn is_closed(&self) -> bool {
+        self.inner.is_closed()
+    }
+
+    fn __enter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __exit__(
+        &mut self,
+        _exc_type: Option<Bound<'_, PyAny>>,
+        _exc: Option<Bound<'_, PyAny>>,
+        _tb: Option<Bound<'_, PyAny>>,
+    ) -> bool {
+        self.inner.close();
+        false
+    }
+
     fn __repr__(&self) -> String {
         "HybridConverter(...)".into()
     }
@@ -682,6 +745,50 @@ struct PyCallbacks<'py> {
     on_page: Option<Bound<'py, PyAny>>,
 }
 
+/// The lint hook: a Python callable returning `None` or `(fixed, content)`.
+fn lint_from<'a>(cbs: &PyCallbacks<'a>) -> Option<Box<crate::pipeline::LintFn<'a>>> {
+    cbs.lint.as_ref().map(|f| {
+        let f = f.clone();
+        let boxed: Box<crate::pipeline::LintFn<'a>> = Box::new(move |md: &str| {
+            let res = f
+                .call1((md,))
+                .map_err(|e| crate::error::BobineError::Other(e.to_string()))?;
+            if res.is_none() {
+                return Ok(LintOutcome::default());
+            }
+            let tuple: (bool, String) = res.extract().map_err(|e| {
+                crate::error::BobineError::Other(format!(
+                    "lint callback must return None or (fixed, content): {e}"
+                ))
+            })?;
+            Ok(LintOutcome { fixed: tuple.0, content: tuple.1 })
+        });
+        boxed
+    })
+}
+
+/// The progress hooks: a per-page callback and a `should_continue` gate.
+fn hooks_from<'a>(cbs: &PyCallbacks<'a>) -> ProgressHooks<'a> {
+    ProgressHooks {
+        should_continue: match &cbs.should_continue {
+            Some(f) => {
+                let f = f.clone();
+                Box::new(move || f.call0().and_then(|b| b.extract::<bool>()).unwrap_or(true))
+            }
+            None => Box::new(|| true),
+        },
+        on_page: match &cbs.on_page {
+            Some(f) => {
+                let f = f.clone();
+                Box::new(move |i: usize, n: usize| {
+                    let _ = f.call1((i, n));
+                })
+            }
+            None => Box::new(|_, _| {}),
+        },
+    }
+}
+
 #[pyfunction]
 #[pyo3(signature = (path, output_dir, config=None, lint_callback=None, should_continue=None, on_page=None, cache_dir=None))]
 fn ingest_document<'py>(
@@ -700,48 +807,8 @@ fn ingest_document<'py>(
         on_page,
     };
 
-    let lint_fn = cbs.lint.as_ref().map(|f| {
-        let f = f.clone();
-        move |md: &str| -> crate::error::Result<LintOutcome> {
-            let res = f
-                .call1((md,))
-                .map_err(|e| crate::error::BobineError::Other(e.to_string()))?;
-            if res.is_none() {
-                return Ok(LintOutcome::default());
-            }
-            let tuple: (bool, String) = res.extract().map_err(|e| {
-                crate::error::BobineError::Other(format!(
-                    "lint callback must return None or (fixed, content): {e}"
-                ))
-            })?;
-            Ok(LintOutcome {
-                fixed: tuple.0,
-                content: tuple.1,
-            })
-        }
-    });
-
-    let hooks = ProgressHooks {
-        should_continue: match &cbs.should_continue {
-            Some(f) => {
-                let f = f.clone();
-                Box::new(move || f.call0().and_then(|b| b.extract::<bool>()).unwrap_or(true))
-            }
-            None => Box::new(|| true),
-        },
-        on_page: match &cbs.on_page {
-            Some(f) => {
-                let f = f.clone();
-                Box::new(move |i: usize, n: usize| {
-                    let _ = f.call1((i, n));
-                })
-            }
-            None => Box::new(|_, _| {}),
-        },
-    };
-
-    // LintFn is a reference type; keep the boxed closure alive in this scope.
-    let owned_lint = lint_fn;
+    let owned_lint = lint_from(&cbs);
+    let hooks = hooks_from(&cbs);
     // Hub-cache alignment: None resolves the standard hub cache (no more
     // <output>/.cache sidecar); pass a dir to pin models elsewhere.
     let default_cache;

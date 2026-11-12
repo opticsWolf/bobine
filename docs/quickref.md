@@ -66,7 +66,9 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 
 | Symbol | Purpose |
 |---|---|
-| `HybridConverter(config, cache_dir)` | Direct converter: `convert()`, `convert_pdf()`, `recognize_formula()` |
+| `HybridConverter(config, cache_dir)` | Direct converter: `convert()`, `convert_pdf()`, `recognize_formula()`, `ingest_document()`, `describe()`, `close()` |
+| `HybridConverter.ingest_document(path, out, on_page=, should_continue=)` | Full pipeline on a converter you hold: sessions stay warm across files (0.9) |
+| `HybridConverter.close()` / `with` | Release the ONNX sessions; a closed converter refuses work until you build a new one |
 | `HybridConverter.convert_office(path)` | Office → markdown (associated fn, no staging; `convert()` stages) |
 | `convert_to_markdown(path, config, work_dir, cache_dir)` | Raw markdown string, one-shot |
 | `convert_excel(path)` | Workbook → `ExcelDocument`: `.markdown`, `.sheet_names`, `.csv_by_sheet`, `.json` |
@@ -104,6 +106,46 @@ never imports the module (importing it would load a second copy).
 `cudnn64_9.dll` and silently falling back to CPU. The search and the CUDA
 preparation are Rust (`src/runtime.rs` over `embroider::diag`); the Python
 layer only passes `sys.path` and mirrors the choice into `os.environ`.
+
+
+## Warm converter and the host (0.9)
+
+One converter can ingest many documents. Sessions are built lazily on the
+first document that needs them and stay open until you release them:
+
+```python
+conv = bobine.HybridConverter(bobine.ConverterConfig(), cache_dir="~/.cache/bobine")
+for pdf in pdfs:
+    doc = conv.ingest_document(pdf, f"out/{pdf.stem}")
+conv.close()                    # or: with bobine.HybridConverter(...) as conv:
+```
+
+**The caller owns the lifetime.** Dropping the object frees the sessions
+too; `close()` is the deterministic way to say so. It is idempotent, and
+afterwards the converter refuses work rather than silently reloading
+(construct a new one). One document at a time: a concurrent call raises
+PyO3's borrow error instead of corrupting state, so callers serialise —
+okfgraph holds a lock, the host serialises per settings key.
+
+Out of process, `python -m bobine.serve` serves one converter per settings
+key and keeps it warm across requests:
+
+```
+python -m bobine.serve --port 8757 --idle-seconds 300
+```
+
+| Route | Body -> answer |
+|---|---|
+| `GET /health` | `{"status": "ok"}` |
+| `GET /v1/models` | cache status + the warm keys (`settings`, `last_used`, `documents`, `describe()`) |
+| `POST /v1/convert` | `{"path", "output_dir", "settings"?}` -> NDJSON: one `{"page", "total"}` line per page, then `{"md_path", "image_dir", "page_count", ...}` |
+
+`settings` takes `ConverterConfig` kwargs (the request fields are
+whitelisted, so a typo cannot poison the pool key). `--idle-seconds 0`
+releases the converter after every conversion. A failed conversion
+answers 200 with a final `{"error": …, "path": …}` line, the text a
+consumer maps onto its own conversion error; bad requests and unusable
+settings answer 400.
 
 
 ## RoutingMode
