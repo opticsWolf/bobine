@@ -47,27 +47,10 @@ class ModelQuantization(Enum):
     Fp32 = "fp32"
     Int8 = "int8"
 
-class Device(Enum):
-    # Each slot's measured policy (the pre-0.9 behaviour). Default.
-    Auto = "auto"
-    # Every pass on CPU.
-    Cpu = "cpu"
-    # Every pass on CUDA with CPU fallback, including the CPU-pinned table
-    # slots (their pin is a measurement, not a limit).
-    Cuda = "cuda"
-
-class Precision(Enum):
-    # The configured model_precision / model_quantization. Default.
-    Auto = "auto"
-    Fp32 = "fp32"
-    Fp16 = "fp16"
-    # The compact TexTeller pair (CPU speed tier). There is no `q8`.
-    Int8 = "int8"
-
 class ConverterConfig:
     '''Device and precision are the stack vocabulary (0.9), the same words
     embroider and okfgraph accept; `bobine.DEVICES` / `bobine.PRECISIONS`
-    list them. `device`: "auto" keeps each slot's measured policy, "cpu"
+    list them (they are strings, not enum members). `device`: "auto" keeps each slot's measured policy, "cpu"
     pins every pass, "cuda" puts every pass on CUDA with CPU fallback.
     `precision` maps onto model_precision / model_quantization and is
     authoritative when set; setting both is refused.

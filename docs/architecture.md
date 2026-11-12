@@ -449,7 +449,8 @@ Three layers:
    their resolution and `describe()`; the warm converter (`ingest_document`
    across several files, `close()`/`with`, use-after-close); the host's
    pool rules and every route against a stub converter, plus one real
-   model-free conversion through `python -m bobine.serve`; and the site
+   model-free conversion through `python -m bobine.serve`; that
+   `__init__.pyi` still describes the real object; and the site
    badge/pyproject version guard. CI runs it in the linux wheel job.
 
    Run: `maturin develop` + `python -m unittest discover -s python/tests`.

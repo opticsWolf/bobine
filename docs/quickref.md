@@ -432,7 +432,7 @@ probe, and — since 0.9 — the one runtime locator and CUDA-DLL preparation
 ```bash
 cargo test                 # 192 lib (ORT_DYLIB_PATH required) + office/excel/golden suites
 ORT_DYLIB_PATH=... cargo test --test test_converter   # incl. full-paper AUTO run
-maturin develop && python -m unittest discover -s python/tests   # 40 bindings tests (stdlib, no pytest)
+maturin develop && python -m unittest discover -s python/tests   # 44 bindings tests (stdlib, no pytest)
 ```
 
 The bindings tests cover what only an interpreter can show: a fresh
@@ -442,7 +442,8 @@ the library is still found; an explicit `ORT_DYLIB_PATH` wins and reports
 surfaces: the device/precision words and their resolution, `describe()`
 before and after sessions exist, the warm converter's reuse/`close()`/
 `with`, the host's pool rules and every route (against a stub, plus one
-real model-free conversion), and the site badge tracking `Cargo.toml`. The
+real model-free conversion), the stub matching the real object, and the
+site badge tracking `Cargo.toml`. The
 decisions themselves live in Rust (`src/runtime.rs`, `config.rs`), with
 unit tests there; Python only asks for them.
 
