@@ -1,7 +1,12 @@
 # bobine 0.9 implementation plan
 
-Status: plan, reviewed against both consumer plans 2026-11-11. Branch
-`dev_silk` at `34ea72a` (0.8.1 released). Covers items **B2–B6** of the
+Status: **released 2026-11-11** — `v0.9.0` tagged on `main` (`b006213`),
+crates.io 0.9.0 and PyPI 0.9.0 published by CI (21 files: 20 wheels +
+sdist), site live. B2–B5 shipped; B6 (CLI + skill) is deferred to a
+later release.
+
+Originally drafted on `dev_silk` at `34ea72a` (0.8.1 released), reviewed
+against both consumer plans. Covers items **B2–B6** of the
 programme plan (`weave/plugins/silk/docs/ONNX_UNIFICATION_PLAN.md` in
 Weave, §4.3) plus the follow-ups 0.8.1 left open.
 
@@ -32,7 +37,7 @@ everyone else and to stop reloading its models per file.
 | B5. Tests per step | small | each step | — |
 | B6. CLI + harness skill (deferred) | medium | B2–B4 | a shell story; `bobine` from a skill |
 
-**Landed on `dev_silk`** (0.9.0 not yet released):
+**Landed in 0.9.0** (`b006213`, tagged `v0.9.0`):
 
 | Step | Commit | What shipped |
 |---|---|---|
@@ -41,8 +46,14 @@ everyone else and to stop reloading its models per file.
 | B4 | `99b4d15` | `HybridConverter.ingest_document` + `close()`/`with`; `python -m bobine.serve` with one warm converter per settings key |
 | B5 | with each | 192 lib tests, 36 stdlib unittests (`python/tests/`), wired into CI's linux wheel job |
 
-Remaining before the release: the checklist in §7 — version, CHANGELOG date,
-site badge, tag. B6 stays deferred.
+B6 stays deferred. The release itself is done: version, CHANGELOG date, site
+badge and published-stack row all moved to 0.9.0, `python/tests/test_pages.py`
+now guards the site version against `Cargo.toml`, and the tag `v0.9.0` on
+`main` published crates.io 0.9.0 and PyPI 0.9.0 (all 22 release jobs green).
+What consumers can now rely on: `bobine.DEVICES` / `PRECISIONS`,
+`ConverterConfig(device=, precision=)`, `describe()`,
+`HybridConverter.ingest_document` + `close()`/`with`, and
+`python -m bobine.serve`.
 
 B2 and B3 are independent and small; B4 is the release's reason. Ship
 **0.9.0** when B2–B5 are green. B6 follows in a later release.
