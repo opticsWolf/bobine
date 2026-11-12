@@ -66,7 +66,7 @@ does not re-litigate them.
 | 1 | Weave §4.3 B3 lists `precision="auto\|fp32\|fp16\|q8\|int8"`; okfgraph §E lists `auto\|fp32\|fp16\|int8` (no `q8`). bobine's enums are `ModelPrecision{Fp32,Fp16}` + `ModelQuantization{Fp32,Int8}` — **there is no q8 anywhere in the stack**. | Canonical list is **`auto\|fp32\|fp16\|int8`**. `q8` is rejected by name with a message saying so. Weave's line is ahead of the artifacts; correct it there. |
 | 2 | okfgraph §E says it will read the allowed values "from bobine if it exposes them, else from a local tuple that a test checks against bobine". | **B3 exposes them**: `bobine.DEVICES`, `bobine.PRECISIONS`, so okfgraph keeps no duplicate tuple and no drift test. |
 | 3 | okfgraph §E wants `converter_status()` to report "the resolved device and precision". Its `converter_status()` calls `bobine.model_status(cache_dir=…)`, which is **cache** status. | `model_status()` stays cache-only (no signature change, no new fields). Device/precision come from **`describe()` on the converter object** — a session property, not a cache property. okfgraph reads it from the converter it holds. |
-| 4 | okfgraph §F holds a `threading.Lock` because "one bobine converter must not run two documents at once"; my first draft had the host answer **409 busy**. | The host **serialises per settings key** (queues). A 409 turns a slow PDF into a spurious client failure, and every consumer already holds its own lock. 409 removed from the route table. |
+| 4 | okfgraph §F holds a `threading.Lock` because "one bobine converter must not run two documents at once"; my first draft had the host answer **409 busy**. | Serialise, in both places: the object blocks a second caller (no error), and the host queues per settings key. A 409 — or a raise — turns a slow PDF into a spurious client failure. 409 removed from the route table. |
 | 5 | okfgraph §F defines `pdf_idle_seconds=0` as "release after every call". | Same meaning here, same words: `--idle-seconds 0` = release after every conversion, never keep one warm. |
 | 6 | okfgraph §F wants a `pdf_converter` doctor row "held or idle, and for how long"; Silk's status wants the same for its pool. | `/v1/models` reports the **warm keys** with `last_used` and `documents` converted, so neither client has to invent a lifetime view. |
 | 7 | okfgraph 0.14.0 **step D** maps bobine failures onto `CONVERSION_FAILED` by catching `RuntimeError` (bobine collapses everything into `PyRuntimeError`). A typed exception in 0.9 would silently break that mapping. | **0.9 introduces no new exception type.** If one is ever added it must subclass `RuntimeError`; recorded as a contract, not a preference. |
@@ -90,8 +90,9 @@ Rules that fall out of this table:
 - **No `onnxruntime` import, ever, at bobine import time** — both Silk
   (S5 reports one runtime for the whole app) and okfgraph (one runtime per
   process) depend on it.
-- **One converter, one document at a time**, and the *caller* owns the
-  lifetime. bobine never keeps a hidden global pool in-process.
+- **One converter, one document at a time** — concurrent callers wait,
+  they do not fail — and the *caller* owns the lifetime. bobine never
+  keeps a hidden global pool in-process.
 - **Failure stays `RuntimeError`**, so `CONVERSION_FAILED` keeps working.
 
 ---
@@ -289,9 +290,14 @@ bobine.PRECISIONS # ("auto", "fp32", "fp16", "int8")
   (it builds, uses and drops one converter) — plus a docstring note that a
   caller converting several files should hold a `HybridConverter`.
 - **Thread safety, stated:** one `HybridConverter` runs one document at a
-  time; a concurrent call raises `RuntimeError` naming the contract
-  (rather than corrupting state). Callers serialise — okfgraph takes a
-  lock; the host below serialises per settings key.
+  time, and a second caller **waits** (an internal mutex serialises the
+  call) — it is not an error. Blocking is the safer contract of the two:
+  a raise would turn an unforeseen concurrent path (serve answering on
+  several threads) into a user-visible failure, while waiting is exactly
+  what the host below does per settings key. okfgraph's own lock then
+  becomes belt-and-braces rather than load-bearing. Document that
+  concurrency is safe but serialised, so nobody adds a thread pool
+  expecting parallelism.
 - `describe()` from B3 rides this object.
 
 ### Change, part 2 — `python -m bobine.serve`
@@ -326,9 +332,9 @@ Standard library only (the shape embroider's `serve` established):
   `HybridConverter` → one construction; `close()` releases once and is
   idempotent; a failing file in the middle still releases; `__exit__`
   releases; a use after `close()` raises.
-- Concurrency: two threads against one converter serialise (the fake
-  records no overlap); a second document is not started while the first
-  runs.
+- Concurrency: two threads against one converter both succeed and
+  serialise (the fake records no overlap); a second document is never
+  started while the first runs.
 - Host: `/v1/convert` over a **text file** (no models) returns NDJSON
   progress + a result; two calls with the same settings key reuse one
   converter (spy on the class); a different key builds a second; two
