@@ -50,8 +50,9 @@ with native speed and no Python ML dependencies.
 ## Installation
 
 ```bash
-# Python package (wheels: CPython 3.10–3.14; manylinux x86_64 + aarch64,
-# windows x64, macOS arm64 — no Rust toolchain needed for these)
+# Python package (wheels: CPython 3.10–3.14; manylinux x86_64, windows x64,
+# macOS arm64 — no Rust toolchain needed for these; arm64 Linux uses the
+# sdist and needs a Rust toolchain)
 pip install bobine
 
 # Rust library (crates.io, no Python involved)

@@ -20,6 +20,11 @@
   crates.io job already had (same parse, no reliance on a `python` on PATH),
   and `actions/setup-python` moves to v6 to match `ci.yml`. A new test parses
   `requires-python` and the workflow matrix and refuses to let them drift.
+  **The Linux aarch64 wheel is cut** (15 wheels + sdist from 0.9.1 on): the
+  stack could not use it — embroider ships no aarch64 wheel, so okfgraph
+  cannot install on arm64 Linux either — and it was the only leg CI never
+  execute-tested. arm64 Linux installs from the sdist and needs a Rust
+  toolchain; 0.9.0's aarch64 wheels stay on PyPI.
 
 ## 0.9.0 — 2026-11-11
 

@@ -58,19 +58,22 @@ jobs:
   # 2. PyPI — Python wheel matrix via maturin (trusted publishing)
   # ------------------------------------------------------------------
   pypi:
-    # Full wheel matrix: cp310-cp314 x {manylinux_2_28 x86_64 + aarch64,
-    # windows x64, macos arm64} = 20 wheels + sdist (0.9.0 shipped exactly
-    # this set).
+    # Full wheel matrix: cp310-cp314 x {manylinux_2_28 x86_64, windows x64,
+    # macos arm64} = 15 wheels + sdist.
     #
-    # Coverage relative to the stack (checked 2026-11 at bobine 0.9.1):
-    # embroider's matrix is cp311-cp313 x {manylinux_2_28 x86_64, windows x64,
-    # macos arm64} and okfgraph is pure Python (any platform, >=3.11), so
-    # this matrix is a strict superset — Linux aarch64 and cp310/cp314 are
-    # bobine-only. That is deliberate: a conversion consumer should not care
-    # whether the embedding half installed first, and bobine alone (no
-    # embroider, no okfgraph) still gets wheels on arm64 servers.
+    # Coverage relative to the stack: embroider ships cp311-cp313 on the same
+    # three platforms, okfgraph is pure Python (any platform, >=3.11), so
+    # every platform in this matrix can host the whole stack. bobine still
+    # goes below embroider on the interpreter (cp310) and above it on cp314;
+    # those wheels are bobine-only and cost nothing extra.
     #
     # Deliberate skips (do not re-add blindly):
+    # - linux aarch64: cut in 0.9.1. bobine built manylinux_2_28 aarch64
+    #   through 0.9.0, but nothing in the stack could use it (embroider ships
+    #   no aarch64 wheel, so okfgraph cannot install there) and it was the
+    #   only leg with no execute-test in CI. arm64 Linux falls back to the
+    #   sdist, which needs a Rust toolchain. Re-add together with embroider's
+    #   arm leg, not before.
     # - macos x86_64: no Intel runners (retired); cross-built wheels can't
     #   be execute-tested on arm64 runners, and Intel Macs are EOL hardware.
     # - musllinux: CUT after a proven CI failure (0.7.2 dry run 40830872409).
@@ -88,10 +91,6 @@ jobs:
         platform:
           - runner: ubuntu-22.04
             target: x86_64
-            manylinux: manylinux_2_28
-            pkg: yum install -y openssl-devel
-          - runner: ubuntu-22.04-arm
-            target: aarch64
             manylinux: manylinux_2_28
             pkg: yum install -y openssl-devel
           # musl Linux leg CUT (see matrix skips below) — kept out of the

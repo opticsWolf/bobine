@@ -23,12 +23,11 @@ WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 #: (runner, target) — the platforms bobine ships wheels for.
 EXPECTED_PLATFORMS = {
     ("ubuntu-22.04", "x86_64"),
-    ("ubuntu-22.04-arm", "aarch64"),
     ("windows-latest", "x64"),
     ("macos-latest", "aarch64"),
 }
 
-#: 20 wheels for 0.9.x (cp310-cp314 x 4 platforms) + sdist.
+#: 15 wheels for 0.9.1+ (cp310-cp314 x 3 platforms) + sdist.
 EXPECTED_PYTHON = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
 
@@ -73,15 +72,24 @@ class MatrixMatchesTheClaim(unittest.TestCase):
     def test_wheel_count_matches_the_comment(self):
         py, legs = _matrix()
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("= 20 wheels + sdist", text)
-        self.assertEqual(len(py) * len(legs), 20)
+        self.assertIn("= 15 wheels + sdist", text)
+        self.assertEqual(len(py) * len(legs), 15)
 
-    def test_no_musl_leg_without_the_fix(self):
-        """musllinux was cut for a proven reason; re-adding it needs surgery."""
+    def test_cut_legs_stay_cut(self):
+        """musllinux and linux aarch64 were cut for stated reasons.
+
+        musllinux needs the before-script fix; aarch64 Linux had no consumer
+        in the stack and was the only leg CI never execute-tested. Re-adding
+        either is a decision: see the workflow comment.
+        """
         _, legs = _matrix()
         self.assertFalse(
             any("musl" in target for _, target in legs),
             "musllinux needs the before-script fix documented in the workflow",
+        )
+        self.assertFalse(
+            any("arm" in runner for runner, _ in legs),
+            "linux aarch64 returns with embroider's arm leg, not before",
         )
 
 
