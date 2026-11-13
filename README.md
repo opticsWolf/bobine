@@ -342,7 +342,7 @@ maturin develop
 python -m unittest discover -s python/tests
 ```
 
-44 tests covering the runtime decision (a fresh interpreter keeps
+50 tests covering the runtime decision (a fresh interpreter keeps
 `onnxruntime` out of `sys.modules`), the device/precision vocabulary, the
 warm converter's reuse and release, the host's pool and routes, that
 `__init__.pyi` still describes the real object, and that the site's version

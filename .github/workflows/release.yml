@@ -58,8 +58,18 @@ jobs:
   # 2. PyPI — Python wheel matrix via maturin (trusted publishing)
   # ------------------------------------------------------------------
   pypi:
-    # Full wheel matrix (0.7.2+): cp310-cp314 x
-    # {manylinux x86_64+aarch64, musllinux x86_64, windows x64, macos arm64}.
+    # Full wheel matrix: cp310-cp314 x {manylinux_2_28 x86_64 + aarch64,
+    # windows x64, macos arm64} = 20 wheels + sdist (0.9.0 shipped exactly
+    # this set).
+    #
+    # Coverage relative to the stack (checked 2026-11 at bobine 0.9.1):
+    # embroider's matrix is cp311-cp313 x {manylinux_2_28 x86_64, windows x64,
+    # macos arm64} and okfgraph is pure Python (any platform, >=3.11), so
+    # this matrix is a strict superset — Linux aarch64 and cp310/cp314 are
+    # bobine-only. That is deliberate: a conversion consumer should not care
+    # whether the embedding half installed first, and bobine alone (no
+    # embroider, no okfgraph) still gets wheels on arm64 servers.
+    #
     # Deliberate skips (do not re-add blindly):
     # - macos x86_64: no Intel runners (retired); cross-built wheels can't
     #   be execute-tested on arm64 runners, and Intel Macs are EOL hardware.
@@ -102,7 +112,7 @@ jobs:
       # uses the PATH interpreter when -i matches it). Linux legs build
       # inside the manylinux/musllinux container, which carries its own
       # interpreters — setup-python is skipped there.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         if: matrix.platform.manylinux == 'off'
         with:
           python-version: ${{ matrix.python-version }}
@@ -142,6 +152,16 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v6
+
+      - name: Tag matches pyproject version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          # Same parse as the crates.io job: no dependence on which
+          # interpreter the runner happens to expose as `python`.
+          want=$(grep -m1 '^version' pyproject.toml | sed 's/.*"\(.*\)"/\1/')
+          test "$tag" = "$want" || { echo "tag v$tag != pyproject $want"; exit 1; }
+          echo "version ok: v$tag"
 
       - name: Build sdist
         uses: PyO3/maturin-action@v1

@@ -10,6 +10,16 @@
   but a panic banner on `import bobine` reads like a bug). No library means
   no CUDA lane to prepare, so the prep is skipped: `dylib=None`,
   `cuda_dirs=[]`, no loader call, `onnxruntime` still out of `sys.modules`.
+- **Release plumbing aligns with the rest of the stack.** The wheel matrix
+  comment says what the matrix is (cp310–cp314 × manylinux_2_28 x86_64 +
+  aarch64, windows x64, macos arm64 = 20 wheels + sdist; musllinux is cut,
+  not forgotten) and records the coverage relative to embroider
+  (cp311–cp313, no Linux aarch64) and okfgraph (pure Python): bobine is a
+  strict superset on purpose, so a conversion consumer does not care which
+  half installed first. The PyPI job gains the tag-vs-`pyproject` guard the
+  crates.io job already had (same parse, no reliance on a `python` on PATH),
+  and `actions/setup-python` moves to v6 to match `ci.yml`. A new test parses
+  `requires-python` and the workflow matrix and refuses to let them drift.
 
 ## 0.9.0 — 2026-11-11
 
