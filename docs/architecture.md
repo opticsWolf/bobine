@@ -181,6 +181,42 @@ Integer-valued floats stay integers in JSON (`12`, not `12.0`);
 dates/percents render as display text; errors keep text with `null` value;
 interior empty rows are preserved (row alignment matters for formulas).
 
+### Ingest pipeline (`ingest_document` / `ingest_with_converter`)
+
+Two entry points, one body (`pipeline::ingest_with_converter`):
+
+```
+bobine.ingest_document(path, out, …)                 one-shot: build a
+                                                     converter, use it, drop it
+HybridConverter.ingest_document(path, out, …)        warm: reuse the sessions
+                                                     this object already has
+
+ingest_with_converter(converter, …):
+  convert_to_markdown_with  → markdown text, images left loose in `out`
+  write <stem>.md
+  write_excel_siblings      → <stem>.<sheet>.csv + <stem>.json   (xls/xlsx)
+  stage_images              → loose figures into `_assets/`, links rewritten
+                              to `okf-asset://<id>`, `<stem>.md` rewritten
+  page_count                → pdf_oxide, best-effort (0 on failure, warned)
+  lint_fn?(md_text)         → optional `(fixed, content)`, written back
+  ConvertedDocument { md_path, md_text, image_dir, image_count,
+                      page_count, data_files }
+```
+
+The warm entry point is why 0.9 exists: the converter is the same object
+across files, so `ensure_layout` / `ensure_ocr` / `ensure_tex_teller` find
+their slot already loaded and the per-file model build disappears.
+Sessions stay open until `close()` (or `with`, or the object is dropped);
+a closed converter refuses work rather than rebuilding, so a caller always
+knows whether it paid a reload. One document at a time — a concurrent call
+raises PyO3's borrow error instead of corrupting state, and the callers in
+the stack serialise (okfgraph's lock, the host's per-key lock).
+
+`python -m bobine.serve` is this pipeline behind HTTP: one converter per
+canonical settings key, kept warm until `--idle-seconds` elapse, with the
+page callback streamed as NDJSON (`serve.py`; the conversion itself is
+native).
+
 ---
 
 ## 4. OnnxEngine — lazy loading & degradation

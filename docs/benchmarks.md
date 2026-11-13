@@ -4,6 +4,12 @@ Measured on the reference dev machine (see [Environment](#environment) below).
 All numbers are from release builds (`cargo run --release --example …`) with
 models pre-cached in `%TEMP%/bobine_test/cache`.
 
+> **Runtime note (0.9.1):** these numbers were taken on ONNX Runtime **1.28.1**;
+> bobine now pins **1.31.1** (`bobine[cpu]` / `bobine[gpu]`, and the CI copy).
+> Read them as ratios between CPU and CUDA, quantization tiers and table
+> routing — the routing defaults they justify are unchanged — not as absolute
+> latency for a 1.31.1 install.
+
 ## Environment
 
 | Component | Value |

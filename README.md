@@ -79,7 +79,9 @@ every embroider model open and okfgraph use — reading the installed
 dist's metadata instead of importing `onnxruntime` (importing it would
 load a second runtime into the process). An already-set `ORT_DYLIB_PATH`
 always wins (e.g. a custom CUDA build), and `bobine.runtime_info()` reports
-what was found and who chose it:
+what was found and who chose it. With no runtime at all the answer is
+`dylib=None` and nothing else happens — no probe, no loader call — so the
+fast Office/text paths still work and a stale system copy is never touched:
 
 ```bash
 export ORT_DYLIB_PATH=/path/to/onnxruntime.dll   # e.g. <venv>/Lib/site-packages/onnxruntime/capi/onnxruntime.dll
@@ -105,6 +107,14 @@ conv = bobine.HybridConverter(
 
 md = conv.convert_pdf("paper.pdf", work_dir="/tmp/out")
 latex = conv.recognize_formula("crop.png")          # r"\frac{1}{2}"
+
+# Many documents on one converter (0.9): the ONNX sessions stay warm.
+for pdf in ["a.pdf", "b.pdf", "c.pdf"]:
+    doc = conv.ingest_document(pdf, "/tmp/out/" + pdf[:-4])   # .md_path, .page_count
+conv.close()                    # or: with bobine.HybridConverter(...) as conv:
+
+# Out of process, one converter per settings key stays warm:
+#   python -m bobine.serve --port 8757 --idle-seconds 300
 
 # one-shot helper
 md = bobine.convert_to_markdown(
