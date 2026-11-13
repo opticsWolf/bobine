@@ -1,6 +1,6 @@
 # Changelog — bobine
 
-## 0.9.1 — unreleased
+## 0.9.1 — 2026-11-12
 
 - **A machine with no ONNX Runtime reports it quietly.** `runtime_info()`
   used to call embroider's `prepare_cuda_dirs` even when the locator found
@@ -11,14 +11,13 @@
   no CUDA lane to prepare, so the prep is skipped: `dylib=None`,
   `cuda_dirs=[]`, no loader call, `onnxruntime` still out of `sys.modules`.
 - **Release plumbing aligns with the rest of the stack.** The wheel matrix
-  comment says what the matrix is (cp310–cp314 × manylinux_2_28 x86_64 +
-  aarch64, windows x64, macos arm64 = 20 wheels + sdist; musllinux is cut,
-  not forgotten) and records the coverage relative to embroider
-  (cp311–cp313, no Linux aarch64) and okfgraph (pure Python): bobine is a
-  strict superset on purpose, so a conversion consumer does not care which
-  half installed first. The PyPI job gains the tag-vs-`pyproject` guard the
-  crates.io job already had (same parse, no reliance on a `python` on PATH),
-  and `actions/setup-python` moves to v6 to match `ci.yml`. A new test parses
+  is now cp310–cp314 × {manylinux_2_28 x86_64, windows x64, macos arm64} —
+  the three platforms embroider builds on, so every platform that ships a
+  bobine wheel can host the whole stack — and the workflow comment records
+  why each skipped leg stays skipped (musllinux, now aarch64 Linux too).
+  The PyPI job gains the tag-vs-`pyproject` guard the crates.io job already
+  had (same parse, no reliance on a `python` on PATH), and
+  `actions/setup-python` moves to v6 to match `ci.yml`. A new test parses
   `requires-python` and the workflow matrix and refuses to let them drift.
   **The Linux aarch64 wheel is cut** (15 wheels + sdist from 0.9.1 on): the
   stack could not use it — embroider ships no aarch64 wheel, so okfgraph

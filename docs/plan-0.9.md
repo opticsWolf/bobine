@@ -5,6 +5,12 @@ crates.io 0.9.0 and PyPI 0.9.0 published by CI (21 files: 20 wheels +
 sdist), site live. B2–B5 shipped; B6 (CLI + skill) is deferred to a
 later release.
 
+0.9.1 (2026-11-12) followed as a patch: a host with no ONNX Runtime now
+reports it quietly (the CUDA prep is skipped when the locator finds nothing),
+the release matrix dropped the Linux aarch64 wheel — no consumer in the stack
+could use it and it was the one leg CI never execute-tested — and the PyPI
+job gained the tag-vs-`pyproject` guard.
+
 Originally drafted on `dev_silk` at `34ea72a` (0.8.1 released), reviewed
 against both consumer plans. Covers items **B2–B6** of the
 programme plan (`weave/plugins/silk/docs/ONNX_UNIFICATION_PLAN.md` in

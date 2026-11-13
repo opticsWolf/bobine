@@ -102,7 +102,7 @@ md = conv.<span class="syntax-link">convert_pdf</span>(<span class="syntax-muted
     <div class="prose"><p>One converter covers papers, scans, Office files, and plain text. The example below follows the standard path: install the wheel with one runtime, convert surgically, force the full pipeline only for scans, recognise a lone formula crop, and stage a document-level ingest.</p><p>Converter weights auto-download from HuggingFace on first use into the shared hub cache (`~/.cache/huggingface/hub` unless `cache_dir` points elsewhere). Office, text, and fast-path PDF work needs no models at all.</p></div>
   </div>
   <div class="setup">
-    <div><h3>Install with one runtime</h3><p>Wheels for Linux, Windows x86_64, and macOS arm64. The <code>cpu</code> and <code>gpu</code> extras are alternatives — never install both <code>onnxruntime</code> packages. <code>import bobine</code> locates the library; an already-set <code>ORT_DYLIB_PATH</code> always wins.</p><pre tabindex="0" aria-label="Installation commands"><code>pip install bobine
+    <div><h3>Install with one runtime</h3><p>Wheels for Linux x86_64, Windows x64, and macOS arm64. The <code>cpu</code> and <code>gpu</code> extras are alternatives — never install both <code>onnxruntime</code> packages. <code>import bobine</code> locates the library; an already-set <code>ORT_DYLIB_PATH</code> always wins.</p><pre tabindex="0" aria-label="Installation commands"><code>pip install bobine
 pip install "bobine[cpu]"
 # or: pip install "bobine[gpu]"  # self-contained CUDA
 
