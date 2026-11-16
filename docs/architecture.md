@@ -453,7 +453,7 @@ SLANet-plus, POTATR) carries a pinned hub SHA next to its repo constant
 resolve the pin through embroider's shared surface (`cache_info_files`
 + `fetch_repo_file`). Current oxide pins: `office_oxide 0.1.16`,
 `pdf_oxide 0.3.78`; the shared ONNX plumbing is `embroider 0.15`
-(0.3 → 0.12 → 0.14.1 → 0.15.0 in additive-only bumps: new model slots and
+(0.3 → 0.12 → 0.14.1 → 0.15.x in additive-only bumps: new model slots and
 APIs only, every existing call site untouched; 0.9 additionally *adopts*
 the locator and `prepare_cuda_dirs`)
 (crates.io — same crate OKFgraph's embeddings use). The one external
