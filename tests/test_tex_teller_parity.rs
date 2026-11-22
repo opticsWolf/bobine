@@ -36,20 +36,25 @@ fn tex_teller_fp16_parity_with_fp32() {
         eprintln!("skip: set BOBINE_TEX_PARITY=1 to run the fp16 parity gate");
         return;
     }
-    if std::env::var("ORT_DYLIB_PATH").unwrap_or_default().is_empty() {
+    if std::env::var("ORT_DYLIB_PATH")
+        .unwrap_or_default()
+        .is_empty()
+    {
         eprintln!("skip: ORT_DYLIB_PATH not set");
         return;
     }
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/texteller_eval");
     let manifest_path = dir.join("manifest.json");
     if !manifest_path.exists() {
-        eprintln!("skip: {} missing (run gen_texteller_eval first)", manifest_path.display());
+        eprintln!(
+            "skip: {} missing (run gen_texteller_eval first)",
+            manifest_path.display()
+        );
         return;
     }
-    let manifest: Manifest = serde_json::from_str(
-        &std::fs::read_to_string(&manifest_path).expect("read manifest"),
-    )
-    .expect("parse manifest");
+    let manifest: Manifest =
+        serde_json::from_str(&std::fs::read_to_string(&manifest_path).expect("read manifest"))
+            .expect("parse manifest");
     assert!(!manifest.items.is_empty(), "eval manifest has no items");
 
     let cache = std::env::var("BOBINE_BENCH_CACHE")
@@ -63,26 +68,22 @@ fn tex_teller_fp16_parity_with_fp32() {
         .collect();
 
     let repo = "opticsWolf/texteller3-onnx";
-    let mut fp32 = bobine::TexTeller::from_pretrained(
-        repo,
-        &cache,
-        bobine::ModelPrecision::Fp32,
-        &providers,
-    )
-    .expect("load fp32");
-    let mut fp16 = bobine::TexTeller::from_pretrained(
-        repo,
-        &cache,
-        bobine::ModelPrecision::Fp16,
-        &providers,
-    )
-    .expect("load fp16");
+    let mut fp32 =
+        bobine::TexTeller::from_pretrained(repo, &cache, bobine::ModelPrecision::Fp32, &providers)
+            .expect("load fp32");
+    let mut fp16 =
+        bobine::TexTeller::from_pretrained(repo, &cache, bobine::ModelPrecision::Fp16, &providers)
+            .expect("load fp16");
 
     let mut parity = 0usize;
     for item in &manifest.items {
         let img = dir.join(&item.png);
-        let a = fp32.recognize(&img).unwrap_or_else(|e| format!("<fp32 ERR {e}>"));
-        let b = fp16.recognize(&img).unwrap_or_else(|e| format!("<fp16 ERR {e}>"));
+        let a = fp32
+            .recognize(&img)
+            .unwrap_or_else(|e| format!("<fp32 ERR {e}>"));
+        let b = fp16
+            .recognize(&img)
+            .unwrap_or_else(|e| format!("<fp16 ERR {e}>"));
         if a == b {
             parity += 1;
         } else {
@@ -90,7 +91,9 @@ fn tex_teller_fp16_parity_with_fp32() {
         }
     }
     let n = manifest.items.len();
-    println!("parity fp16==fp32: {parity}/{n} (GT accuracy is the benchmark's job, not this gate's)");
+    println!(
+        "parity fp16==fp32: {parity}/{n} (GT accuracy is the benchmark's job, not this gate's)"
+    );
     assert!(
         parity >= MIN_PARITY.min(n),
         "fp16 parity {parity}/{n} below floor {MIN_PARITY}"

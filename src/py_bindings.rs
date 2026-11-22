@@ -3,9 +3,9 @@
 use pyo3::prelude::*;
 
 use crate::config::{
-    ConverterConfig, Device, FormulaBackend, ImageMode, ModelOpts, ModelPrecision,
-    ModelQuantization, Precision, RenderHealthOpts, TableBackend,
-    ProviderOpts, RenderOpts, RoutingMode, RoutingOpts, TextOpts,
+    ConverterConfig, Device, FormulaBackend, ImageMode, MathOpts, ModelOpts, ModelPrecision,
+    ModelQuantization, Precision, ProviderOpts, RenderHealthOpts, RenderOpts, RoutingMode,
+    RoutingOpts, TableBackend, TextOpts,
 };
 use crate::converter::{HybridConverter, ProgressHooks};
 
@@ -140,7 +140,7 @@ impl PyConverterConfig {
         min_figure_area_pts = 100.0f64,
         image_output_dir = "assets".to_string(),
         image_mode = PyImageMode::Link,
-        max_embed_bytes = 262144usize,
+        max_embed_bytes = 4194304usize,
         preserve_layout = false,
         detect_code_blocks = true,
         promote_headings = true,
@@ -171,6 +171,14 @@ impl PyConverterConfig {
         ocr_ort_providers = None,
         table_ort_providers = None,
         potatr_ort_providers = None,
+        prefer_structured_math = true,
+        allow_embedded_sources = true,
+        prefer_embedded_jats = false,
+        max_embedded_bytes = 16777216usize,
+        max_struct_nodes = 10000usize,
+        validate_math = false,
+        emit_provenance_comments = false,
+        max_formula_attachment_bytes = 1048576usize,
     ))]
     fn new(
         extract_images: bool,
@@ -219,6 +227,14 @@ impl PyConverterConfig {
         ocr_ort_providers: Option<Vec<String>>,
         table_ort_providers: Option<Vec<String>>,
         potatr_ort_providers: Option<Vec<String>>,
+        prefer_structured_math: bool,
+        allow_embedded_sources: bool,
+        prefer_embedded_jats: bool,
+        max_embedded_bytes: usize,
+        max_struct_nodes: usize,
+        validate_math: bool,
+        emit_provenance_comments: bool,
+        max_formula_attachment_bytes: usize,
     ) -> PyResult<Self> {
         // Execution-provider selection is resolved at runtime against the
         // loaded ONNX Runtime library (ORT_DYLIB_PATH). Requesting an
@@ -239,69 +255,79 @@ impl PyConverterConfig {
         };
 
         let inner = ConverterConfig {
-                routing: RoutingOpts {
-                    use_onnx,
-                    routing_mode: routing_mode.into(),
+            routing: RoutingOpts {
+                use_onnx,
+                routing_mode: routing_mode.into(),
+            },
+            runtime: crate::config::RuntimeOpts { device, precision },
+            models: ModelOpts {
+                formula_backend: FormulaBackend::TexTeller,
+                model_precision: match model_precision {
+                    PyModelPrecision::Fp32 => ModelPrecision::Fp32,
+                    PyModelPrecision::Fp16 => ModelPrecision::Fp16,
                 },
-                runtime: crate::config::RuntimeOpts { device, precision },
-                models: ModelOpts {
-                    formula_backend: FormulaBackend::TexTeller,
-                    model_precision: match model_precision {
-                        PyModelPrecision::Fp32 => ModelPrecision::Fp32,
-                        PyModelPrecision::Fp16 => ModelPrecision::Fp16,
-                    },
-                    model_quantization: match model_quantization {
-                        PyModelQuantization::Fp32 => ModelQuantization::Fp32,
-                        PyModelQuantization::Int8 => ModelQuantization::Int8,
-                    },
-                    ocr_lang,
-                    table_backend: table_backend.into(),
-                    potatr_node_threshold,
-                    potatr_edge_threshold,
-                    potatr_suppress_iou,
-                    potatr_min_text_fill,
+                model_quantization: match model_quantization {
+                    PyModelQuantization::Fp32 => ModelQuantization::Fp32,
+                    PyModelQuantization::Int8 => ModelQuantization::Int8,
                 },
-                providers: ProviderOpts {
-                    ort_providers,
-                    encoder_ort_providers,
-                    decoder_ort_providers,
-                    layout_ort_providers,
-                    ocr_ort_providers,
-                    table_ort_providers,
-                    potatr_ort_providers,
-                },
-                render: RenderOpts {
-                    extract_images,
-                    append_unreferenced_images,
-                    render_dpi,
-                    formula_dpi,
-                    min_figure_area_pts,
-                    image_output_dir,
-                    image_mode: image_mode.into(),
-                    max_embed_bytes,
-                    preserve_layout,
-                },
-                text: TextOpts {
-                    detect_headings,
-                    convert_html_tables,
-                    structured_tables,
-                    detect_code_blocks,
-                    promote_headings,
-                    promote_title,
-                    min_formula_math_chars,
-                    formula_inline_max_width_pts,
-                    formula_pad_pts,
-                    formula_layout_fallback,
-                    sanitize_ocr,
-                    math_char_threshold,
-                    scanned_text_threshold,
-                },
-                health: RenderHealthOpts {
-                    render_gate_enabled,
-                    render_gate_min_layer_words,
-                    render_gate_min_jaccard,
-                    render_gate_salvage_inline_math,
-                },
+                ocr_lang,
+                table_backend: table_backend.into(),
+                potatr_node_threshold,
+                potatr_edge_threshold,
+                potatr_suppress_iou,
+                potatr_min_text_fill,
+            },
+            providers: ProviderOpts {
+                ort_providers,
+                encoder_ort_providers,
+                decoder_ort_providers,
+                layout_ort_providers,
+                ocr_ort_providers,
+                table_ort_providers,
+                potatr_ort_providers,
+            },
+            render: RenderOpts {
+                extract_images,
+                append_unreferenced_images,
+                render_dpi,
+                formula_dpi,
+                min_figure_area_pts,
+                image_output_dir,
+                image_mode: image_mode.into(),
+                max_embed_bytes,
+                preserve_layout,
+            },
+            text: TextOpts {
+                detect_headings,
+                convert_html_tables,
+                structured_tables,
+                detect_code_blocks,
+                promote_headings,
+                promote_title,
+                min_formula_math_chars,
+                formula_inline_max_width_pts,
+                formula_pad_pts,
+                formula_layout_fallback,
+                sanitize_ocr,
+                math_char_threshold,
+                scanned_text_threshold,
+            },
+            health: RenderHealthOpts {
+                render_gate_enabled,
+                render_gate_min_layer_words,
+                render_gate_min_jaccard,
+                render_gate_salvage_inline_math,
+            },
+            math: MathOpts {
+                prefer_structured_math,
+                allow_embedded_sources,
+                prefer_embedded_jats,
+                max_embedded_bytes,
+                max_formula_attachment_bytes,
+                max_struct_nodes,
+                validate_math,
+                emit_provenance_comments,
+            },
         };
         inner
             .validate()
@@ -412,6 +438,39 @@ impl PyConverterConfig {
         self.inner.text.sanitize_ocr
     }
     #[getter]
+    fn prefer_structured_math(&self) -> bool {
+        self.inner.math.prefer_structured_math
+    }
+    #[getter]
+    fn allow_embedded_sources(&self) -> bool {
+        self.inner.math.allow_embedded_sources
+    }
+
+    #[getter]
+    fn prefer_embedded_jats(&self) -> bool {
+        self.inner.math.prefer_embedded_jats
+    }
+    #[getter]
+    fn max_embedded_bytes(&self) -> usize {
+        self.inner.math.max_embedded_bytes
+    }
+    #[getter]
+    fn max_formula_attachment_bytes(&self) -> usize {
+        self.inner.math.max_formula_attachment_bytes
+    }
+    #[getter]
+    fn max_struct_nodes(&self) -> usize {
+        self.inner.math.max_struct_nodes
+    }
+    #[getter]
+    fn validate_math(&self) -> bool {
+        self.inner.math.validate_math
+    }
+    #[getter]
+    fn emit_provenance_comments(&self) -> bool {
+        self.inner.math.emit_provenance_comments
+    }
+    #[getter]
     fn render_gate_enabled(&self) -> bool {
         self.inner.health.render_gate_enabled
     }
@@ -474,6 +533,31 @@ impl PyHybridConverter {
         Ok(out)
     }
 
+    /// Counts and warnings from the most recent PDF conversion.
+    fn math_source_report<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let report = self.inner.math_source_report();
+        let out = pyo3::types::PyDict::new(py);
+        out.set_item("tagged_spans", report.tagged_spans)?;
+        out.set_item("associated_file_spans", report.associated_file_spans)?;
+        out.set_item("embedded_source_spans", report.embedded_source_spans)?;
+        out.set_item("ocr_spans", report.ocr_spans)?;
+        out.set_item("text_layer_spans", report.text_layer_spans)?;
+        out.set_item("alt_only_spans", report.alt_only_spans)?;
+        out.set_item(
+            "pages_with_structured_math",
+            report.pages_with_structured_math,
+        )?;
+        out.set_item("suppressed_ocr_spans", report.suppressed_ocr_spans)?;
+        out.set_item("validation_failed", report.validation_failed)?;
+        out.set_item("validation_repaired", report.validation_repaired)?;
+        out.set_item("validation_skipped", report.validation_skipped)?;
+        out.set_item("warnings", &report.warnings)?;
+        Ok(out)
+    }
+
     fn convert(&mut self, input: &str, work_dir: &str) -> PyResult<String> {
         self.inner
             .convert(std::path::Path::new(input), std::path::Path::new(work_dir))
@@ -494,10 +578,10 @@ impl PyHybridConverter {
     }
 
     fn convert_jats(&self, path: &str, work_dir: &str) -> PyResult<PyJatsDocument> {
-        let inner = self.inner.convert_jats(
-            std::path::Path::new(path),
-            std::path::Path::new(work_dir),
-        ).map_err(to_py_err)?;
+        let inner = self
+            .inner
+            .convert_jats(std::path::Path::new(path), std::path::Path::new(work_dir))
+            .map_err(to_py_err)?;
         Ok(PyJatsDocument { inner })
     }
 
@@ -520,7 +604,11 @@ impl PyHybridConverter {
         on_page: Option<Bound<'py, PyAny>>,
     ) -> PyResult<PyConvertedDocument> {
         let _ = py;
-        let cbs = PyCallbacks { lint: lint_callback, should_continue, on_page };
+        let cbs = PyCallbacks {
+            lint: lint_callback,
+            should_continue,
+            on_page,
+        };
         let lint = lint_from(&cbs);
         let hooks = hooks_from(&cbs);
         let doc = self
@@ -677,7 +765,11 @@ impl PyConvertedDocument {
     }
     #[getter]
     fn data_files(&self) -> Vec<String> {
-        self.inner.data_files.iter().map(|p| p.display().to_string()).collect()
+        self.inner
+            .data_files
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect()
     }
 
     fn __repr__(&self) -> String {
@@ -761,7 +853,10 @@ fn lint_from<'a>(cbs: &PyCallbacks<'a>) -> Option<Box<crate::pipeline::LintFn<'a
                     "lint callback must return None or (fixed, content): {e}"
                 ))
             })?;
-            Ok(LintOutcome { fixed: tuple.0, content: tuple.1 })
+            Ok(LintOutcome {
+                fixed: tuple.0,
+                content: tuple.1,
+            })
         });
         boxed
     })
@@ -948,8 +1043,7 @@ fn bootstrap_runtime_py<'py>(
     if report.source != "env" {
         if let Some(dylib) = report.dylib.as_deref() {
             let os = py.import("os")?;
-            os.getattr("environ")?
-                .set_item("ORT_DYLIB_PATH", dylib)?;
+            os.getattr("environ")?.set_item("ORT_DYLIB_PATH", dylib)?;
             // Windows: let the GPU build resolve the CUDA provider DLLs
             // that sit beside the runtime.
             if let Ok(add) = os.getattr("add_dll_directory") {
@@ -972,7 +1066,9 @@ fn runtime_info_py(py: Python<'_>) -> PyResult<Bound<'_, pyo3::types::PyDict>> {
 /// `sys.path` entries that are strings; anything else is ignored.
 #[cfg(feature = "extension-module")]
 fn collect_hints(hints: Option<Bound<'_, PyAny>>) -> Vec<String> {
-    let Some(hints) = hints else { return Vec::new() };
+    let Some(hints) = hints else {
+        return Vec::new();
+    };
     let Ok(items) = hints.try_iter() else {
         return Vec::new();
     };
@@ -1015,7 +1111,14 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(convert_directory, m)?)?;
     m.add_function(wrap_pyfunction!(model_status, m)?)?;
     m.add("DEVICES", pyo3::types::PyTuple::new(m.py(), Device::ALL)?)?;
-    m.add("PRECISIONS", pyo3::types::PyTuple::new(m.py(), Precision::ALL)?)?;
+    m.add(
+        "MAX_INPUT_FILE_BYTES",
+        crate::input_limits::MAX_INPUT_FILE_BYTES,
+    )?;
+    m.add(
+        "PRECISIONS",
+        pyo3::types::PyTuple::new(m.py(), Precision::ALL)?,
+    )?;
     m.add_function(wrap_pyfunction!(bootstrap_runtime_py, m)?)?;
     m.add_function(wrap_pyfunction!(runtime_info_py, m)?)?;
     Ok(())

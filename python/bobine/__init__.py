@@ -71,6 +71,7 @@ def runtime_info() -> dict:
 from bobine._native import (
     DEVICES,
     PRECISIONS,
+    MAX_INPUT_FILE_BYTES,
     ConverterConfig,
     HybridConverter,
     RoutingMode,
@@ -93,6 +94,7 @@ from bobine._native import (
 __all__ = [
     "DEVICES",
     "PRECISIONS",
+    "MAX_INPUT_FILE_BYTES",
     "ConverterConfig",
     "HybridConverter",
     "RoutingMode",

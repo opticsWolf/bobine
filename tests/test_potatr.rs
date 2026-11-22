@@ -35,8 +35,8 @@ fn potatr_preprocess_matches_reference_transform() {
         .expect("fixture loads")
         .to_rgb8();
     let (w, h) = (img.width(), img.height());
-    let (arr, geo) = rapid_potatr::preprocess(&image::DynamicImage::ImageRgb8(img))
-        .expect("preprocess");
+    let (arr, geo) =
+        rapid_potatr::preprocess(&image::DynamicImage::ImageRgb8(img)).expect("preprocess");
 
     // Geometry is exact: PIL rounds each dim independently (datasets.py:134).
     let scale = 1000.0 / w.max(h) as f32;

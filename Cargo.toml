@@ -1,8 +1,8 @@
 [package]
 name = "bobine"
-version = "0.9.1"
+version = "0.10.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "PDF / Office / text → Markdown ingestion engine with ONNX formula OCR (TexTeller), layout analysis and OCR"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/opticsWolf/bobine"
@@ -28,6 +28,11 @@ default = []
 # Opt-in PyO3 bindings (`python/bobine`, maturin builds with this feature).
 # The pure-Rust crate on crates.io builds without it — no Python linking.
 extension-module = ["dep:pyo3", "pyo3/extension-module"]
+# Optional KaTeX-backed validation and export. The default Bobine build does
+# not compile the math renderer or add its dependencies. katex-rs 0.3.0 pulls
+# bon 3.10, which raises the package-wide MSRV to Rust 1.88.
+math-validate = ["dep:katex"]
+math-export = ["dep:katex"]
 
 [dependencies]
 base64 = "0.22"
@@ -80,6 +85,9 @@ regex = "1"
 
 # XML parsing (MathML in JATS; namespace-aware, zero-copy)
 roxmltree = "0.20"
+# Optional KaTeX engine. Bobine keeps a small local adapter based on
+# Mordant's math-rendering implementation without depending on its Markdown core.
+katex = { package = "katex-rs", version = "0.3.0", optional = true }
 # NFKD decomposition for Unicode math letters (ports unicodedata.normalize)
 unicode-normalization = "0.1"
 

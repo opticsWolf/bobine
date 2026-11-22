@@ -25,8 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     engine.ensure_models()?;
 
     let bytes = std::fs::read(&pdf_path)?;
-    let mut pdf = Pdf::from_bytes(bytes)
-        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let mut pdf = Pdf::from_bytes(bytes).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
     let pages: Vec<usize> = if which == "all" {
         (0..pdf.page_count()?).collect()
     } else {

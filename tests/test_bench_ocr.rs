@@ -149,7 +149,10 @@ pub fn normalize(tex: &str) -> String {
 /// Order-based pairing (both sides carry the display sequence; GT
 /// labels anchor the reporting side). Returns (ocr_idx, gt_idx) pairs
 /// plus the unmatched tails.
-pub fn align(ocr: &[DisplaySpan], gt: &[DisplaySpan]) -> (Vec<(usize, usize)>, Vec<usize>, Vec<usize>) {
+pub fn align(
+    ocr: &[DisplaySpan],
+    gt: &[DisplaySpan],
+) -> (Vec<(usize, usize)>, Vec<usize>, Vec<usize>) {
     let n = ocr.len().min(gt.len());
     let pairs: Vec<(usize, usize)> = (0..n).map(|i| (i, i)).collect();
     let missing: Vec<usize> = (n..gt.len()).collect();
@@ -192,7 +195,9 @@ pub fn score(paper: &str, ocr: &[DisplaySpan], gt: &[DisplaySpan]) -> PaperScore
 }
 
 pub fn render_table(scores: &[PaperScore]) -> String {
-    let mut s = String::from("| Paper | GT displays | OCR spans | Exact | Missing | Spurious |\n|---|---|---|---|---|---|\n");
+    let mut s = String::from(
+        "| Paper | GT displays | OCR spans | Exact | Missing | Spurious |\n|---|---|---|---|---|---|\n",
+    );
     let (mut g, mut e) = (0, 0);
     for sc in scores {
         g += sc.n_gt;
@@ -204,7 +209,13 @@ pub fn render_table(scores: &[PaperScore]) -> String {
         };
         s.push_str(&format!(
             "| {} | {} | {} | {} ({}) | {} | {} |\n",
-            sc.paper, sc.n_gt, sc.n_ocr, sc.exact, rate.trim(), sc.missing, sc.spurious
+            sc.paper,
+            sc.n_gt,
+            sc.n_ocr,
+            sc.exact,
+            rate.trim(),
+            sc.missing,
+            sc.spurious
         ));
     }
     let total_rate = if g > 0 {
@@ -212,7 +223,10 @@ pub fn render_table(scores: &[PaperScore]) -> String {
     } else {
         " —".to_string()
     };
-    s.push_str(&format!("| **Total** | {g} |  | {e} ({}) |  |  |\n", total_rate.trim()));
+    s.push_str(&format!(
+        "| **Total** | {g} |  | {e} ({}) |  |  |\n",
+        total_rate.trim()
+    ));
     s
 }
 
@@ -226,13 +240,21 @@ fn bench_root() -> PathBuf {
 
 fn papers() -> Vec<String> {
     if let Ok(list) = std::env::var("BOBINE_BENCH_PAPERS") {
-        return list.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        return list
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
     }
     let mut ids: Vec<String> = std::fs::read_dir("ikat-corpus/ground-truth")
         .expect("ikat-corpus/ground-truth missing (git-ignored fixture dir?)")
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().map(|x| x == "md").unwrap_or(false))
-        .filter_map(|e| e.path().file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .filter_map(|e| {
+            e.path()
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+        })
         .collect();
     ids.sort();
     ids
@@ -245,7 +267,10 @@ fn texsteller_accuracy_ikat_corpus() {
         eprintln!("skip: set BOBINE_BENCH_OCR=1 to run the OCR benchmark");
         return;
     }
-    if std::env::var("ORT_DYLIB_PATH").unwrap_or_default().is_empty() {
+    if std::env::var("ORT_DYLIB_PATH")
+        .unwrap_or_default()
+        .is_empty()
+    {
         eprintln!("skip: ORT_DYLIB_PATH not set (needs onnxruntime >= 1.19)");
         return;
     }
@@ -253,9 +278,18 @@ fn texsteller_accuracy_ikat_corpus() {
     // Precision tier (parity runs): fp32 (default) | int8 | fp16.
     let quant_name = std::env::var("BOBINE_BENCH_QUANT").unwrap_or_else(|_| "fp32".into());
     let (quant, precision) = match quant_name.as_str() {
-        "int8" => (bobine::ModelQuantization::Int8, bobine::ModelPrecision::Fp32),
-        "fp16" => (bobine::ModelQuantization::Fp32, bobine::ModelPrecision::Fp16),
-        _ => (bobine::ModelQuantization::Fp32, bobine::ModelPrecision::Fp32),
+        "int8" => (
+            bobine::ModelQuantization::Int8,
+            bobine::ModelPrecision::Fp32,
+        ),
+        "fp16" => (
+            bobine::ModelQuantization::Fp32,
+            bobine::ModelPrecision::Fp16,
+        ),
+        _ => (
+            bobine::ModelQuantization::Fp32,
+            bobine::ModelPrecision::Fp32,
+        ),
     };
     let root = root.join(&quant_name);
     println!("bench tier: {quant_name}");
@@ -329,7 +363,10 @@ fn texsteller_accuracy_ikat_corpus() {
     let mut dump = String::new();
     for sc in &scores {
         for (tag, g, o) in &sc.mismatches {
-            dump.push_str(&format!("## {} tag={tag:?}\nGT: {g}\nOCR: {o}\n\n", sc.paper));
+            dump.push_str(&format!(
+                "## {} tag={tag:?}\nGT: {g}\nOCR: {o}\n\n",
+                sc.paper
+            ));
         }
     }
     std::fs::write(root.join("mismatches.md"), &dump).unwrap();
@@ -372,13 +409,28 @@ mod scoring_tests {
     #[test]
     fn alignment_pairs_order_and_reports_tails() {
         let ocr = vec![
-            DisplaySpan { tag: None, tex: "a".into() },
-            DisplaySpan { tag: None, tex: "b".into() },
-            DisplaySpan { tag: None, tex: "EXTRA".into() },
+            DisplaySpan {
+                tag: None,
+                tex: "a".into(),
+            },
+            DisplaySpan {
+                tag: None,
+                tex: "b".into(),
+            },
+            DisplaySpan {
+                tag: None,
+                tex: "EXTRA".into(),
+            },
         ];
         let gt = vec![
-            DisplaySpan { tag: Some("1".into()), tex: "a".into() },
-            DisplaySpan { tag: Some("2".into()), tex: "c".into() },
+            DisplaySpan {
+                tag: Some("1".into()),
+                tex: "a".into(),
+            },
+            DisplaySpan {
+                tag: Some("2".into()),
+                tex: "c".into(),
+            },
         ];
         let sc = score("p", &ocr, &gt);
         assert_eq!(sc.exact, 1);

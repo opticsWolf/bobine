@@ -24,8 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("  bbox = {r:?}");
                     }
                     for r in t.rows.iter().take(3) {
-                        let cells: Vec<String> =
-                            r.cells.iter().map(|c| c.text.clone()).collect();
+                        let cells: Vec<String> = r.cells.iter().map(|c| c.text.clone()).collect();
                         println!("  row(hdr={}): {cells:?}", r.is_header);
                     }
                 }

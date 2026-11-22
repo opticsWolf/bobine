@@ -156,6 +156,7 @@ pub fn ingest_with_converter(
             format!("Document not found: {}", path.display()),
         )));
     }
+    crate::input_limits::ensure_input_file_size(path)?;
 
     std::fs::create_dir_all(output_dir)?;
     let stem = path
@@ -230,7 +231,10 @@ fn write_excel_siblings(path: &Path, output_dir: &Path, stem: &str) -> Vec<PathB
         }
     }
     let json_path = output_dir.join(format!("{stem}.json"));
-    match std::fs::write(&json_path, serde_json::to_string_pretty(&crate::excel::excel_to_json(&doc)).unwrap_or_default()) {
+    match std::fs::write(
+        &json_path,
+        serde_json::to_string_pretty(&crate::excel::excel_to_json(&doc)).unwrap_or_default(),
+    ) {
         Ok(()) => written.push(json_path),
         Err(e) => warn!("json sibling failed: {e}"),
     }
@@ -241,10 +245,20 @@ fn write_excel_siblings(path: &Path, output_dir: &Path, stem: &str) -> Vec<PathB
 fn sanitize_sheet(name: &str) -> String {
     let clean: String = name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let clean = clean.trim_matches('_').to_string();
-    if clean.is_empty() { "sheet".to_string() } else { clean }
+    if clean.is_empty() {
+        "sheet".to_string()
+    } else {
+        clean
+    }
 }
 
 /// Batch-convert every supported document in `source_dir` (recursive).
@@ -328,7 +342,8 @@ mod tests {
         let src = src_dir.join("My Note.txt");
         fs::write(&src, "hello\nworld\n").unwrap();
 
-        let doc = ingest_document(&src, &out_dir, None, None, &ProgressHooks::default(), None).unwrap();
+        let doc =
+            ingest_document(&src, &out_dir, None, None, &ProgressHooks::default(), None).unwrap();
         assert_eq!(doc.md_path, out_dir.join("My Note.md"));
         assert_eq!(doc.md_text, "hello\nworld\n");
         assert_eq!(doc.image_count, 0);
@@ -350,7 +365,8 @@ mod tests {
         let src = src_dir.join("note.md");
         fs::write(&src, "# T\n\n![pic](pic.png)\n").unwrap();
 
-        let doc = ingest_document(&src, &out_dir, None, None, &ProgressHooks::default(), None).unwrap();
+        let doc =
+            ingest_document(&src, &out_dir, None, None, &ProgressHooks::default(), None).unwrap();
         assert_eq!(doc.image_count, 1);
         assert!(doc.md_text.contains("okf-asset://img_"), "{}", doc.md_text);
         assert_eq!(fs::read_dir(&doc.image_dir).unwrap().count(), 1);
@@ -372,8 +388,15 @@ mod tests {
                 content: format!("{md}\n<!-- linted -->\n"),
             })
         };
-        let doc =
-            ingest_document(&src, &out_dir, None, Some(&lint), &ProgressHooks::default(), None).unwrap();
+        let doc = ingest_document(
+            &src,
+            &out_dir,
+            None,
+            Some(&lint),
+            &ProgressHooks::default(),
+            None,
+        )
+        .unwrap();
         assert!(doc.md_text.contains("<!-- linted -->"));
 
         fs::remove_dir_all(src_dir).unwrap();

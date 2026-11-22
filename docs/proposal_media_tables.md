@@ -75,7 +75,7 @@ Config additions (must be mirrored in Python — see §3 Phase 4):
 [images]
 mode = "link"            # "link" (default) | "embed_base64"
 output_dir = "assets"    # structured relative dir for mode=link
-max_embed_bytes = 262144 # cap for embed_base64; larger figures stay links
+max_embed_bytes = 4194304 # 4 MiB cap for embed_base64; larger figures stay links
 attach_captions = true
 min_figure_area_pts = 100 # drop decorations
 figure_crop_dpi = 150     # cap for render crops

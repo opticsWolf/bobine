@@ -242,11 +242,7 @@ fn rec_batch_size(providers: &[String]) -> usize {
         let l = p.to_lowercase();
         l == "cpu" || l == "cpuexecutionprovider"
     });
-    if cpu_only {
-        1
-    } else {
-        REC_BATCH
-    }
+    if cpu_only { 1 } else { REC_BATCH }
 }
 
 /// Pad a set of `[3, 48, w]` rec inputs into one `[B, 3, 48, Wmax]` batch
@@ -259,8 +255,7 @@ fn pad_rec_batch(items: &[Array3<f32>]) -> Array4<f32> {
         .max()
         .unwrap_or(32)
         .max(32);
-    let mut arr =
-        Array4::<f32>::zeros((items.len(), REC_IMG_C as usize, REC_IMG_H as usize, wmax));
+    let mut arr = Array4::<f32>::zeros((items.len(), REC_IMG_C as usize, REC_IMG_H as usize, wmax));
     for (r, a) in items.iter().enumerate() {
         let w = a.shape()[2];
         arr.slice_mut(ndarray::s![r, .., .., 0..w]).assign(a);
@@ -926,7 +921,10 @@ mod tests {
         assert_eq!(rec_batch_size(&["cpu".into()]), 1);
         // Any accelerator in the mix → full batches.
         assert_eq!(
-            rec_batch_size(&["CUDAExecutionProvider".into(), "CPUExecutionProvider".into()]),
+            rec_batch_size(&[
+                "CUDAExecutionProvider".into(),
+                "CPUExecutionProvider".into()
+            ]),
             REC_BATCH
         );
         assert_eq!(rec_batch_size(&["DirectML".into()]), REC_BATCH);

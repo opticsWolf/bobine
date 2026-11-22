@@ -77,7 +77,11 @@ impl SheetData {
             .find(|r| r.iter().any(|c| !c.is_empty()))
             .map(|r| r.iter().map(|c| c.text.clone()).collect())
             .unwrap_or_default();
-        Self { name, headers, rows }
+        Self {
+            name,
+            headers,
+            rows,
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -95,6 +99,7 @@ pub struct ExcelDocument {
 
 /// Open an `.xlsx`/`.xls` workbook into an [`ExcelDocument`].
 pub fn convert_excel(path: &std::path::Path) -> Result<ExcelDocument> {
+    crate::input_limits::ensure_input_file_size(path)?;
     use office_oxide::Document;
     let doc = Document::open(path).map_err(|e| BobineError::OfficeOxide(format!("open: {e}")))?;
     if let Some(xlsx) = doc.as_xlsx() {
@@ -209,7 +214,10 @@ fn number_json(n: f64) -> CellJson {
 }
 
 fn trim_empty_trailing_rows(rows: &mut Vec<Vec<CellData>>) {
-    while rows.last().is_some_and(|r| r.iter().all(CellData::is_empty)) {
+    while rows
+        .last()
+        .is_some_and(|r| r.iter().all(CellData::is_empty))
+    {
         rows.pop();
     }
 }
@@ -230,17 +238,22 @@ pub fn sheets_to_markdown(sheets: &[SheetData]) -> String {
         out.push_str("## ");
         out.push_str(&sheet.name);
         out.push_str("\n\n");
-        let rows: Vec<&Vec<CellData>> =
-            sheets_nonempty_rows(sheet).collect();
+        let rows: Vec<&Vec<CellData>> = sheets_nonempty_rows(sheet).collect();
         if rows.is_empty() {
             out.push_str("_(empty sheet)_\n\n");
             continue;
         }
         let width = rows.iter().map(|r| r.len()).max().unwrap_or(0).max(1);
-        out.push_str(&md_row(&rows[0].iter().map(|c| c.text.as_str()).collect::<Vec<_>>(), width));
+        out.push_str(&md_row(
+            &rows[0].iter().map(|c| c.text.as_str()).collect::<Vec<_>>(),
+            width,
+        ));
         out.push_str(&md_sep(width));
         for row in &rows[1..] {
-            out.push_str(&md_row(&row.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(), width));
+            out.push_str(&md_row(
+                &row.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(),
+                width,
+            ));
         }
         out.push('\n');
     }
@@ -249,7 +262,10 @@ pub fn sheets_to_markdown(sheets: &[SheetData]) -> String {
 
 /// Rows with at least one non-empty cell (fully-empty rows carry no signal).
 fn sheets_nonempty_rows(sheet: &SheetData) -> impl Iterator<Item = &Vec<CellData>> {
-    sheet.rows.iter().filter(|r| r.iter().any(|c| !c.is_empty()))
+    sheet
+        .rows
+        .iter()
+        .filter(|r| r.iter().any(|c| !c.is_empty()))
 }
 
 fn md_row(cells: &[&str], width: usize) -> String {
@@ -278,13 +294,15 @@ pub fn sheets_to_csv(doc: &ExcelDocument) -> Vec<(String, String)> {
             {
                 let mut w = csv::Writer::from_writer(&mut buf);
                 for row in sheets_nonempty_rows(sheet) {
-                    let record: Vec<&str> =
-                        row.iter().map(|c| c.text.as_str()).collect();
+                    let record: Vec<&str> = row.iter().map(|c| c.text.as_str()).collect();
                     w.write_record(&record).expect("csv write to vec");
                 }
                 w.flush().expect("csv flush to vec");
             }
-            (sheet.name.clone(), String::from_utf8(buf).expect("csv is utf-8"))
+            (
+                sheet.name.clone(),
+                String::from_utf8(buf).expect("csv is utf-8"),
+            )
         })
         .collect()
 }
@@ -328,7 +346,11 @@ mod tests {
     use super::*;
 
     fn cell(text: &str, value: CellJson) -> CellData {
-        CellData { text: text.into(), value, formula: None }
+        CellData {
+            text: text.into(),
+            value,
+            formula: None,
+        }
     }
 
     #[test]
@@ -360,8 +382,14 @@ mod tests {
             sheets: vec![SheetData::new(
                 "Data".into(),
                 vec![
-                    vec![cell("Item", CellJson::Text("Item".into())), cell("N", CellJson::Text("N".into()))],
-                    vec![cell("Apples", CellJson::Text("Apples".into())), cell("12", CellJson::Integer(12))],
+                    vec![
+                        cell("Item", CellJson::Text("Item".into())),
+                        cell("N", CellJson::Text("N".into())),
+                    ],
+                    vec![
+                        cell("Apples", CellJson::Text("Apples".into())),
+                        cell("12", CellJson::Integer(12)),
+                    ],
                 ],
             )],
             markdown: String::new(),
@@ -411,6 +439,9 @@ mod tests {
         assert_eq!(v["sheets"][0]["rows"][0][0]["formula"], "=SUM(A1:A2)");
         assert!(v["sheets"][0]["rows"][0][0].get("formula").is_some());
         assert!(v["sheets"][0]["rows"][0][1].get("formula").is_none());
-        assert_eq!(v["sheets"][0]["rows"][0][1]["value"], serde_json::Value::Null);
+        assert_eq!(
+            v["sheets"][0]["rows"][0][1]["value"],
+            serde_json::Value::Null
+        );
     }
 }

@@ -57,17 +57,118 @@ pub fn sanitize_latex(raw: &str) -> Option<SanitizeOutcome> {
 /// values matching `\\[a-zA-Z]+`): LaTeX base + amsmath + amssymb.
 /// Sorted for binary search; `mml.rs` asserts its derived set equals this.
 static KNOWN_CMDS: &[&str] = &[
-    "Delta", "Gamma", "Lambda", "Omega", "Phi", "Pi", "Psi", "Re", "Rightarrow", "Sigma",
-    "Theta", "Vert", "Xi", "aleph", "alpha", "angle", "approx", "arg", "ast", "beta",
-    "bigcap", "bigcup", "bigvee", "bigwedge", "cap", "cdot", "cdots", "chi", "circ", "cong",
-    "cos", "cup", "ddots", "deg", "delta", "det", "dim", "div", "ell", "emptyset", "epsilon",
-    "equiv", "eta", "exists", "exp", "forall", "gamma", "geq", "hbar", "in", "inf", "infty",
-    "int", "iota", "kappa", "ker", "lambda", "langle", "leftarrow", "leq", "lim", "ln",
-    "log", "max", "min", "mu", "nabla", "neg", "neq", "ni", "notin", "nu", "omega", "oplus",
-    "otimes", "partial", "perp", "phi", "pi", "pm", "prod", "propto", "psi", "quad",
-    "rangle", "rho", "sigma", "sim", "simeq", "sin", "subset", "subseteq", "sum", "sup",
-    "supset", "supseteq", "tan", "tau", "theta", "times", "to", "upsilon", "varepsilon",
-    "varphi", "varpi", "varsigma", "vartheta", "vdots", "vee", "wedge", "wp", "xi",
+    "Delta",
+    "Gamma",
+    "Lambda",
+    "Omega",
+    "Phi",
+    "Pi",
+    "Psi",
+    "Re",
+    "Rightarrow",
+    "Sigma",
+    "Theta",
+    "Vert",
+    "Xi",
+    "aleph",
+    "alpha",
+    "angle",
+    "approx",
+    "arg",
+    "ast",
+    "beta",
+    "bigcap",
+    "bigcup",
+    "bigvee",
+    "bigwedge",
+    "cap",
+    "cdot",
+    "cdots",
+    "chi",
+    "circ",
+    "cong",
+    "cos",
+    "cup",
+    "ddots",
+    "deg",
+    "delta",
+    "det",
+    "dim",
+    "div",
+    "ell",
+    "emptyset",
+    "epsilon",
+    "equiv",
+    "eta",
+    "exists",
+    "exp",
+    "forall",
+    "gamma",
+    "geq",
+    "hbar",
+    "in",
+    "inf",
+    "infty",
+    "int",
+    "iota",
+    "kappa",
+    "ker",
+    "lambda",
+    "langle",
+    "leftarrow",
+    "leq",
+    "lim",
+    "ln",
+    "log",
+    "max",
+    "min",
+    "mu",
+    "nabla",
+    "neg",
+    "neq",
+    "ni",
+    "notin",
+    "nu",
+    "omega",
+    "oplus",
+    "otimes",
+    "partial",
+    "perp",
+    "phi",
+    "pi",
+    "pm",
+    "prod",
+    "propto",
+    "psi",
+    "quad",
+    "rangle",
+    "rho",
+    "sigma",
+    "sim",
+    "simeq",
+    "sin",
+    "subset",
+    "subseteq",
+    "sum",
+    "sup",
+    "supset",
+    "supseteq",
+    "tan",
+    "tau",
+    "theta",
+    "times",
+    "to",
+    "upsilon",
+    "varepsilon",
+    "varphi",
+    "varpi",
+    "varsigma",
+    "vartheta",
+    "vdots",
+    "vee",
+    "wedge",
+    "wp",
+    "xi",
 ];
 
 fn is_known_cmd(name: &str) -> bool {
@@ -87,9 +188,8 @@ pub fn split_cmds(tex: &str) -> String {
     let mut out = String::with_capacity(tex.len() + 8);
     let mut i = 0;
     while i < n {
-        let is_cmd_start = bytes[i] == b'\\'
-            && i + 1 < n
-            && (bytes[i + 1] as char).is_ascii_alphabetic();
+        let is_cmd_start =
+            bytes[i] == b'\\' && i + 1 < n && (bytes[i + 1] as char).is_ascii_alphabetic();
         if !is_cmd_start {
             // Copy one UTF-8 char (backslash escapes like `\{` stay intact).
             let ch = tex[i..].chars().next().unwrap();
@@ -170,8 +270,24 @@ pub fn fix_unclosed_fences(tex: &str) -> (String, usize) {
 fn is_nucleus_boundary(ch: char) -> bool {
     matches!(
         ch,
-        '+' | '-' | '=' | '<' | '>' | '(' | ')' | '[' | ']' | ',' | ';' | '|' | '/' | '&'
-            | ' ' | '\t' | '\n' | '\r' | '$'
+        '+' | '-'
+            | '='
+            | '<'
+            | '>'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | ','
+            | ';'
+            | '|'
+            | '/'
+            | '&'
+            | ' '
+            | '\t'
+            | '\n'
+            | '\r'
+            | '$'
     )
 }
 
@@ -296,9 +412,18 @@ mod tests {
 
     #[test]
     fn script_separation_splits_same_level_only() {
-        assert_eq!(separate_consecutive_scripts("x^a^b"), Some(("x^a{}^b".into(), 1)));
-        assert_eq!(separate_consecutive_scripts("x_a_b"), Some(("x_a{}_b".into(), 1)));
-        assert_eq!(separate_consecutive_scripts("x^a_b"), Some(("x^a_b".into(), 0)));
+        assert_eq!(
+            separate_consecutive_scripts("x^a^b"),
+            Some(("x^a{}^b".into(), 1))
+        );
+        assert_eq!(
+            separate_consecutive_scripts("x_a_b"),
+            Some(("x_a{}_b".into(), 1))
+        );
+        assert_eq!(
+            separate_consecutive_scripts("x^a_b"),
+            Some(("x^a_b".into(), 0))
+        );
         assert_eq!(
             separate_consecutive_scripts("x^{a}^{b}"),
             Some(("x^{a}{}^{b}".into(), 1))
@@ -307,8 +432,14 @@ mod tests {
             separate_consecutive_scripts(r"\frac{a^1}{b^2}"),
             Some((r"\frac{a^1}{b^2}".into(), 0))
         );
-        assert_eq!(separate_consecutive_scripts("(x^a)^b"), Some(("(x^a)^b".into(), 0)));
-        assert_eq!(separate_consecutive_scripts("x^a_b^c"), Some(("x^a_b{}^c".into(), 1)));
+        assert_eq!(
+            separate_consecutive_scripts("(x^a)^b"),
+            Some(("(x^a)^b".into(), 0))
+        );
+        assert_eq!(
+            separate_consecutive_scripts("x^a_b^c"),
+            Some(("x^a_b{}^c".into(), 1))
+        );
     }
 
     #[test]

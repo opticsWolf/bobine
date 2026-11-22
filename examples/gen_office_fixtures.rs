@@ -8,11 +8,11 @@
 //! doc/xls/ppt have no creation API — see IMPLEMENTATION_PLAN_office.md.
 
 use office_oxide::DocumentFormat;
-use office_oxide::ir::{
-    DocumentIR, Element, FootnoteRef, Heading, Image, ImageFormat, InlineContent, List,
-    ListItem, Metadata, Note, Paragraph, Section, Table, TableCell, TableRow, TextSpan,
-};
 use office_oxide::create::create_from_ir;
+use office_oxide::ir::{
+    DocumentIR, Element, FootnoteRef, Heading, Image, ImageFormat, InlineContent, List, ListItem,
+    Metadata, Note, Paragraph, Section, Table, TableCell, TableRow, TextSpan,
+};
 use office_oxide::xlsx::write::{CellData, CellStyle, NumberFormat, XlsxWriter};
 
 fn span(text: &str) -> InlineContent {
@@ -152,7 +152,10 @@ fn gen_docx(dir: &std::path::Path, png: &[u8]) {
     let footnote_mark = Element::Paragraph(Paragraph {
         content: vec![
             span("A claim needing citation"),
-            InlineContent::FootnoteRef(FootnoteRef { note_id: 1, marker: None }),
+            InlineContent::FootnoteRef(FootnoteRef {
+                note_id: 1,
+                marker: None,
+            }),
             span("."),
         ],
         ..Default::default()
@@ -201,7 +204,12 @@ fn gen_docx(dir: &std::path::Path, png: &[u8]) {
 fn gen_xlsx(dir: &std::path::Path, png: &[u8]) {
     let mut wb = XlsxWriter::new();
     let data = wb.add_sheet_get_index("Data");
-    wb.sheet_set_cell(data, 0, 0, CellData::String("Inventory — merged header".to_string()));
+    wb.sheet_set_cell(
+        data,
+        0,
+        0,
+        CellData::String("Inventory — merged header".to_string()),
+    );
     wb.sheet_merge_cells(data, 0, 0, 1, 4);
     for (c, h) in ["Item", "Count", "Price", "In stock"].iter().enumerate() {
         wb.sheet_set_cell(data, 1, c, CellData::String(h.to_string()));
@@ -215,12 +223,7 @@ fn gen_xlsx(dir: &std::path::Path, png: &[u8]) {
     wb.sheet_set_cell(data, 3, 2, CellData::Number(2.25));
     wb.sheet_set_cell(data, 3, 3, CellData::Boolean(false));
     // row 4 left fully empty (sparse-row handling)
-    wb.sheet_set_cell(
-        data,
-        5,
-        0,
-        CellData::String("Total".to_string()),
-    );
+    wb.sheet_set_cell(data, 5, 0, CellData::String("Total".to_string()));
     wb.sheet_set_cell(data, 5, 1, CellData::Formula("SUM(B3:B4)".to_string()));
     wb.sheet_set_cell_styled(
         data,

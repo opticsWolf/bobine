@@ -70,7 +70,10 @@ fn potatr_port_matches_torch_on_chem_p5() {
         eprintln!("skip: set BOBINE_POTATR_PARITY=1 to run the POTATR parity gate");
         return;
     }
-    if std::env::var("ORT_DYLIB_PATH").unwrap_or_default().is_empty() {
+    if std::env::var("ORT_DYLIB_PATH")
+        .unwrap_or_default()
+        .is_empty()
+    {
         eprintln!("skip: ORT_DYLIB_PATH not set");
         return;
     }
@@ -173,7 +176,10 @@ fn potatr_routing_matches_golden_on_clean_table() {
         eprintln!("skip: set BOBINE_POTATR_PARITY=1 to run the POTATR e2e gate");
         return;
     }
-    if std::env::var("ORT_DYLIB_PATH").unwrap_or_default().is_empty() {
+    if std::env::var("ORT_DYLIB_PATH")
+        .unwrap_or_default()
+        .is_empty()
+    {
         eprintln!("skip: ORT_DYLIB_PATH not set");
         return;
     }

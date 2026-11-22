@@ -135,7 +135,10 @@ mod tests {
     #[test]
     fn set_by_names_the_chooser() {
         assert_eq!(set_by("env", Some("/lib/onnxruntime.so")), "env");
-        assert_eq!(set_by("pip:onnxruntime-gpu", Some("/lib/onnxruntime.so")), "bobine");
+        assert_eq!(
+            set_by("pip:onnxruntime-gpu", Some("/lib/onnxruntime.so")),
+            "bobine"
+        );
         assert_eq!(set_by("os", None), "none");
         // A locator that reports `os` but somehow has a path is still
         // "bobine": the library is there, bobine is what found it.
@@ -149,7 +152,10 @@ mod tests {
             "candidates": 2,
             "dylib": serde_json::Value::Null,
         });
-        assert_eq!(cuda_dirs_from(&report), vec!["/a".to_string(), "/b".to_string()]);
+        assert_eq!(
+            cuda_dirs_from(&report),
+            vec!["/a".to_string(), "/b".to_string()]
+        );
         assert!(cuda_dirs_from(&serde_json::json!({})).is_empty());
         assert!(cuda_dirs_from(&serde_json::json!({"prepended": [1, 2]})).is_empty());
     }

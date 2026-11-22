@@ -23,6 +23,15 @@ pub enum BobineError {
     #[error("Unsupported file format: {0}")]
     UnsupportedFormat(String),
 
+    #[error(
+        "input file exceeds Bobine's size limit: {input} is {size_bytes} bytes; limit is {limit_bytes} bytes (256 MiB)"
+    )]
+    InputFileTooLarge {
+        input: String,
+        size_bytes: u64,
+        limit_bytes: u64,
+    },
+
     #[error("JATS error: {0}")]
     Jats(String),
 

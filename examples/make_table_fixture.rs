@@ -109,10 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if let Some(b) = t.bbox {
                             println!(
                                 "  bbox = ({:.0},{:.0} {:.0}x{:.0})",
-                                b.x,
-                                b.y,
-                                b.width,
-                                b.height
+                                b.x, b.y, b.width, b.height
                             );
                         }
                         for r in &t.rows {

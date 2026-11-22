@@ -86,5 +86,9 @@ fn chem_olive_golden_stable() {
     // Normalize CRLF: Windows checkouts (core.autocrlf) materialize the LF
     // blob with \r\n, while the converter emits \n. Compare the text.
     let norm = |s: &str| s.replace("\r\n", "\n");
-    assert_eq!(norm(&out.markdown), norm(&golden), "golden drift — inspect before blasting");
+    assert_eq!(
+        norm(&out.markdown),
+        norm(&golden),
+        "golden drift — inspect before blasting"
+    );
 }

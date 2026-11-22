@@ -88,24 +88,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if p.exists() {
             Some(p)
         } else {
-            eprintln!("warning: ${var}={} missing, falling back to hub lookup", p.display());
+            eprintln!(
+                "warning: ${var}={} missing, falling back to hub lookup",
+                p.display()
+            );
             None
         }
     }
     let layout_explicit = explicit("BOB_LAYOUT_PATH");
     let layout_path = layout_explicit.clone().unwrap_or_else(|| {
-        hub_file(&cache, "models--opticsWolf--pp-doclayout-plus-l-onnx", "pp_doclayout_plus_l.onnx")
+        hub_file(
+            &cache,
+            "models--opticsWolf--pp-doclayout-plus-l-onnx",
+            "pp_doclayout_plus_l.onnx",
+        )
     });
-    let det_path = std::env::var_os("BOB_DET_PATH").map(std::path::PathBuf::from).unwrap_or_else(|| {
-        hub_file(&cache, "models--opticsWolf--rapidocr-ppocrv5-onnx", "ppocrv5_det_infer.onnx")
-    });
-    let rec_path = std::env::var_os("BOB_REC_PATH").map(std::path::PathBuf::from).unwrap_or_else(|| {
-        hub_file(&cache, "models--opticsWolf--rapidocr-ppocrv5-onnx", "ppocrv5_rec_infer.onnx")
-    });
-    let dict_path = std::env::var_os("BOB_DICT_PATH").map(std::path::PathBuf::from).or_else(|| {
-        let p = hub_file(&cache, "models--opticsWolf--rapidocr-ppocrv5-onnx", "ppocrv5_dict.txt");
-        p.exists().then_some(p)
-    });
+    let det_path = std::env::var_os("BOB_DET_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            hub_file(
+                &cache,
+                "models--opticsWolf--rapidocr-ppocrv5-onnx",
+                "ppocrv5_det_infer.onnx",
+            )
+        });
+    let rec_path = std::env::var_os("BOB_REC_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            hub_file(
+                &cache,
+                "models--opticsWolf--rapidocr-ppocrv5-onnx",
+                "ppocrv5_rec_infer.onnx",
+            )
+        });
+    let dict_path = std::env::var_os("BOB_DICT_PATH")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            let p = hub_file(
+                &cache,
+                "models--opticsWolf--rapidocr-ppocrv5-onnx",
+                "ppocrv5_dict.txt",
+            );
+            p.exists().then_some(p)
+        });
     // Hub labels only pair with hub models: an explicit model path with
     // no explicit labels falls back to the model's own metadata (a
     // labels.txt from another serving repo must never leak across).
@@ -113,13 +138,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if layout_explicit.is_some() {
             None
         } else {
-            let p = hub_file(&cache, "models--opticsWolf--pp-doclayout-plus-l-onnx", "labels.txt");
+            let p = hub_file(
+                &cache,
+                "models--opticsWolf--pp-doclayout-plus-l-onnx",
+                "labels.txt",
+            );
             p.exists().then_some(p)
         }
     });
-    let table_path = std::env::var_os("BOB_TABLE_PATH").map(std::path::PathBuf::from).unwrap_or_else(|| {
-        hub_file(&cache, "models--opticsWolf--slanet-plus-onnx", "slanet-plus.onnx")
-    });
+    let table_path = std::env::var_os("BOB_TABLE_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            hub_file(
+                &cache,
+                "models--opticsWolf--slanet-plus-onnx",
+                "slanet-plus.onnx",
+            )
+        });
 
     let providers: Vec<String> = std::env::var("BOB_ORT_PROVIDERS")
         .unwrap_or_else(|_| "cpu".into())
@@ -173,7 +208,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if det_path.exists() && rec_path.exists() {
         let t0 = Instant::now();
         let mut m = RapidOcr::load(&det_path, &rec_path, dict_path.as_deref(), "en", &providers)?;
-        println!("ocr load: {:?} (dict: {})", t0.elapsed(), dict_path.is_some());
+        println!(
+            "ocr load: {:?} (dict: {})",
+            t0.elapsed(),
+            dict_path.is_some()
+        );
         let _ = m.detect_and_recognize(&page)?; // warmup
         let t0 = Instant::now();
         let lines = m.detect_and_recognize(&page)?;

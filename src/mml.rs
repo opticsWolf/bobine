@@ -175,19 +175,8 @@ static FUNC_NAMES: &[(&str, &str)] = &[
     ("deg", "\\deg"),
 ];
 static LIMIT_OPS: &[&str] = &[
-    "\\bigcap",
-    "\\bigcup",
-    "\\iint",
-    "\\inf",
-    "\\int",
-    "\\lim",
-    "\\liminf",
-    "\\limsup",
-    "\\max",
-    "\\min",
-    "\\prod",
-    "\\sum",
-    "\\sup",
+    "\\bigcap", "\\bigcup", "\\iint", "\\inf", "\\int", "\\lim", "\\liminf", "\\limsup", "\\max",
+    "\\min", "\\prod", "\\sum", "\\sup",
 ];
 static ACCENTS: &[(&str, &str)] = &[
     ("^", "hat"),
@@ -322,7 +311,12 @@ fn mi_text(text: &str, variant: &str, stats: &mut MmlStats) -> String {
             if decomp.chars().count() == 1 {
                 if let Some(cmd) = lookup(GREEK, &decomp) {
                     cmd.to_string()
-                } else if decomp.chars().next().map(|c| (c as u32) < 128 && c.is_alphanumeric()).unwrap_or(false) {
+                } else if decomp
+                    .chars()
+                    .next()
+                    .map(|c| (c as u32) < 128 && c.is_alphanumeric())
+                    .unwrap_or(false)
+                {
                     decomp
                 } else if (ch as u32) < 128 && ch.is_alphanumeric() {
                     s
@@ -580,26 +574,44 @@ fn tex<'a, 'input>(node: Node<'a, 'input>, stats: &mut MmlStats) -> String {
         "mfrac" => {
             let kids = element_kids(node);
             if kids.len() >= 2 {
-                return format!("\\frac{{{}}}{{{}}}", tex(kids[0], stats), tex(kids[1], stats));
+                return format!(
+                    "\\frac{{{}}}{{{}}}",
+                    tex(kids[0], stats),
+                    tex(kids[1], stats)
+                );
             }
             stats.mml_short_frac += 1;
             join(kids.into_iter().map(|c| tex(c, stats)))
         }
         "msqrt" => {
             let kids = element_kids(node);
-            format!("\\sqrt{{{}}}", join(kids.into_iter().map(|c| tex(c, stats))))
+            format!(
+                "\\sqrt{{{}}}",
+                join(kids.into_iter().map(|c| tex(c, stats)))
+            )
         }
         "mroot" => {
             let kids = element_kids(node);
             if kids.len() >= 2 {
                 return format!("\\sqrt[{}]{{{}}}", tex(kids[1], stats), tex(kids[0], stats));
             }
-            format!("\\sqrt{{{}}}", join(kids.into_iter().map(|c| tex(c, stats))))
+            format!(
+                "\\sqrt{{{}}}",
+                join(kids.into_iter().map(|c| tex(c, stats)))
+            )
         }
         "msub" | "msup" | "msubsup" => {
             let kids = element_kids(node);
-            let base = if !kids.is_empty() { tex(kids[0], stats) } else { String::new() };
-            let sub = if kids.len() > 1 { tex(kids[1], stats) } else { String::new() };
+            let base = if !kids.is_empty() {
+                tex(kids[0], stats)
+            } else {
+                String::new()
+            };
+            let sub = if kids.len() > 1 {
+                tex(kids[1], stats)
+            } else {
+                String::new()
+            };
             let mut sup = if t == "msubsup" && kids.len() > 2 {
                 tex(kids[2], stats)
             } else {
@@ -617,10 +629,13 @@ fn tex<'a, 'input>(node: Node<'a, 'input>, stats: &mut MmlStats) -> String {
             }
             // A bare multi-letter base would misattach the script. Single
             // atoms (one char, one command, delimited) stay bare.
-            let single = base.chars().count() == 1
-                || is_single_command(&base);
+            let single = base.chars().count() == 1 || is_single_command(&base);
             let mut base = base;
-            if !single && !base.starts_with("\\left") && !base.starts_with('(') && !base.starts_with('[') {
+            if !single
+                && !base.starts_with("\\left")
+                && !base.starts_with('(')
+                && !base.starts_with('[')
+            {
                 base = format!("{{{base}}}");
             }
             // Same-level nesting (prescript coded as msup-on-msup): TeX
@@ -643,8 +658,16 @@ fn tex<'a, 'input>(node: Node<'a, 'input>, stats: &mut MmlStats) -> String {
         }
         "munder" | "mover" | "munderover" => {
             let kids = element_kids(node);
-            let base = if !kids.is_empty() { tex(kids[0], stats) } else { String::new() };
-            let under = if kids.len() > 1 { tex(kids[1], stats) } else { String::new() };
+            let base = if !kids.is_empty() {
+                tex(kids[0], stats)
+            } else {
+                String::new()
+            };
+            let under = if kids.len() > 1 {
+                tex(kids[1], stats)
+            } else {
+                String::new()
+            };
             let mut over = if t == "munderover" && kids.len() > 2 {
                 tex(kids[2], stats)
             } else {
@@ -687,9 +710,7 @@ fn tex<'a, 'input>(node: Node<'a, 'input>, stats: &mut MmlStats) -> String {
                 let mut cells = Vec::new();
                 for td in element_kids(tr) {
                     if local_name(td) == "mtd" {
-                        cells.push(join(
-                            element_kids(td).into_iter().map(|x| tex(x, stats)),
-                        ));
+                        cells.push(join(element_kids(td).into_iter().map(|x| tex(x, stats))));
                     }
                 }
                 rows.push(cells.join(" & "));
@@ -701,8 +722,10 @@ fn tex<'a, 'input>(node: Node<'a, 'input>, stats: &mut MmlStats) -> String {
             let o = node.attribute("open").unwrap_or("(");
             let c = node.attribute("close").unwrap_or(")");
             let sep = node.attribute("separators").unwrap_or(",");
-            let parts: Vec<String> =
-                element_kids(node).into_iter().map(|k| tex(k, stats)).collect();
+            let parts: Vec<String> = element_kids(node)
+                .into_iter()
+                .map(|k| tex(k, stats))
+                .collect();
             format!("{o}{}{c}", parts.join(&format!(" {sep} ")))
         }
         "annotation" => String::new(),
@@ -785,9 +808,12 @@ mod tests {
     fn known_set_matches_sanitize() {
         // The splitter table must equal the GREEK/OPS/FUNC_NAMES derivation
         // or mml.rs and sanitize.rs diverge.
-        for v in GREEK.iter().map(|(_, v)| *v).chain(OPS.iter().map(|(_, v)| *v)).chain(
-            FUNC_NAMES.iter().map(|(_, v)| *v),
-        ) {
+        for v in GREEK
+            .iter()
+            .map(|(_, v)| *v)
+            .chain(OPS.iter().map(|(_, v)| *v))
+            .chain(FUNC_NAMES.iter().map(|(_, v)| *v))
+        {
             if v.starts_with('\\') && v[1..].chars().all(|c| c.is_ascii_alphabetic()) {
                 assert!(
                     crate::sanitize::split_cmds(&format!("{v}L")) != format!("{v}L"),
@@ -801,10 +827,16 @@ mod tests {
     fn mi_variants() {
         assert_eq!(convert("<mi>x</mi>"), "x");
         assert_eq!(convert("<mi>\u{03b1}</mi>"), "\\alpha");
-        assert_eq!(convert("<mi mathvariant=\"normal\">\u{03b1}</mi>"), "\\alpha");
+        assert_eq!(
+            convert("<mi mathvariant=\"normal\">\u{03b1}</mi>"),
+            "\\alpha"
+        );
         assert_eq!(convert("<mi mathvariant=\"normal\">E</mi>"), "\\mathrm{E}");
         assert_eq!(convert("<mi mathvariant=\"bold\">H</mi>"), "\\mathbf{H}");
-        assert_eq!(convert("<mi mathvariant=\"bold\">\u{03b1}</mi>"), "\\boldsymbol{\\alpha}");
+        assert_eq!(
+            convert("<mi mathvariant=\"bold\">\u{03b1}</mi>"),
+            "\\boldsymbol{\\alpha}"
+        );
         assert_eq!(convert("<mi>sin</mi>"), "\\sin");
         assert_eq!(convert("<mi>xyz</mi>"), "\\mathit{xyz}");
     }
@@ -818,7 +850,10 @@ mod tests {
         assert_eq!(convert("<mo stretchy=\"true\">(</mo>"), "\\left( \\right."); // lone stretchy opens close
         assert_eq!(convert("<mo>(</mo>"), "(");
         assert_eq!(convert("<mo>\u{2208}</mo>"), "\\in");
-        assert_eq!(convert("<mtext>hello {world}</mtext>"), "\\text{hello \\{world\\}}");
+        assert_eq!(
+            convert("<mtext>hello {world}</mtext>"),
+            "\\text{hello \\{world\\}}"
+        );
         assert_eq!(convert("<mspace width=\"1em\"/>"), "\\quad");
         assert_eq!(convert("<mspace width=\"0.3em\"/>"), "\\;");
         assert_eq!(convert("<mspace width=\"2px\"/>"), "\\,");
@@ -826,21 +861,33 @@ mod tests {
 
     #[test]
     fn structural_transparency() {
-        assert_eq!(convert("<mrow><mi>x</mi><mo>+</mo><mi>y</mi></mrow>"), "x+y");
+        assert_eq!(
+            convert("<mrow><mi>x</mi><mo>+</mo><mi>y</mi></mrow>"),
+            "x+y"
+        );
         assert_eq!(
             convert("<semantics><mi>x</mi><annotation>note</annotation></semantics>"),
             "x"
         );
-        assert_eq!(convert("<mfrac><mn>1</mn><mn>2</mn></mfrac>"), "\\frac{1}{2}");
+        assert_eq!(
+            convert("<mfrac><mn>1</mn><mn>2</mn></mfrac>"),
+            "\\frac{1}{2}"
+        );
         assert_eq!(convert("<msqrt><mi>x</mi></msqrt>"), "\\sqrt{x}");
-        assert_eq!(convert("<mroot><mi>x</mi><mn>3</mn></mroot>"), "\\sqrt[3]{x}");
+        assert_eq!(
+            convert("<mroot><mi>x</mi><mn>3</mn></mroot>"),
+            "\\sqrt[3]{x}"
+        );
     }
 
     #[test]
     fn scripts_prescript_and_separation() {
         assert_eq!(convert("<msup><mi>x</mi><mi>a</mi></msup>"), "x^{a}");
         // Multi-letter bare base gets braced (after \mathit shaping).
-        assert_eq!(convert("<msup><mi>xy</mi><mi>a</mi></msup>"), "{\\mathit{xy}}^{a}");
+        assert_eq!(
+            convert("<msup><mi>xy</mi><mi>a</mi></msup>"),
+            "{\\mathit{xy}}^{a}"
+        );
         // Same-level nesting: braced base resets the script context
         // (trailing_scripts sees the outer group, not the inner ^).
         assert_eq!(
@@ -867,9 +914,7 @@ mod tests {
     #[test]
     fn tables_fences_unknown() {
         assert_eq!(
-            convert(
-                "<mtable><mtr><mtd><mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr></mtable>"
-            ),
+            convert("<mtable><mtr><mtd><mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr></mtable>"),
             "\\begin{matrix} a & b \\end{matrix}"
         );
         assert_eq!(

@@ -285,7 +285,9 @@ fn flush_para(buf: &str, out: &mut Vec<String>, ctx: &JatsCtx) -> Result<()> {
 /// carry math — raw itertext would flatten it to glyph soup). Stray
 /// display placeholders degrade to inline spans.
 fn rich_child<'a, 'input>(node: Node<'a, 'input>, name: &str, ctx: &mut JatsCtx) -> String {
-    let el = node.children().find(|c| c.is_element() && local(*c) == name);
+    let el = node
+        .children()
+        .find(|c| c.is_element() && local(*c) == name);
     match el {
         Some(el) => {
             let fused = merge_math(&rich_text(el, ctx));
@@ -371,7 +373,11 @@ fn fig_block<'a, 'input>(fig: Node<'a, 'input>, ctx: &mut JatsCtx) -> Vec<String
         .to_string();
     if href.is_empty() {
         // Imageless float stays prose (honest, weave-safe).
-        let head = if label.is_empty() { "Figure".to_string() } else { label };
+        let head = if label.is_empty() {
+            "Figure".to_string()
+        } else {
+            label
+        };
         return vec![format!("**{head}.** {cap} (figure image not in JATS).")];
     }
     vec![format!("![{}]({href})", alt_text(&label, &cap))]
@@ -397,8 +403,7 @@ fn table_block<'a, 'input>(tw: Node<'a, 'input>, ctx: &mut JatsCtx) -> Vec<Strin
             if t != "td" && t != "th" {
                 continue;
             }
-            let mut cell = collapse(&rich_text(c, ctx))
-                .replace('|', " / ");
+            let mut cell = collapse(&rich_text(c, ctx)).replace('|', " / ");
             // Display placeholders cannot live in cells: inline fallback.
             cell = inline_displays(&cell, ctx);
             if cell.trim_start().starts_with('[') {
@@ -467,12 +472,21 @@ fn inline_displays(s: &str, ctx: &JatsCtx) -> String {
 }
 
 /// Single block-level element -> output lines.
-fn block_node<'a, 'input>(node: Node<'a, 'input>, depth: usize, ctx: &mut JatsCtx, out: &mut Vec<String>) -> Result<()> {
+fn block_node<'a, 'input>(
+    node: Node<'a, 'input>,
+    depth: usize,
+    ctx: &mut JatsCtx,
+    out: &mut Vec<String>,
+) -> Result<()> {
     match local(node) {
         "title" => {}
         "sec" => {
             let stitle = rich_child(node, "title", ctx);
-            let title = if stitle.is_empty() { "Section".to_string() } else { stitle };
+            let title = if stitle.is_empty() {
+                "Section".to_string()
+            } else {
+                stitle
+            };
             match depth {
                 0 => out.push(format!("## {title}\n")),
                 1 => out.push(format!("### {title}\n")),
@@ -543,7 +557,12 @@ fn block_node<'a, 'input>(node: Node<'a, 'input>, depth: usize, ctx: &mut JatsCt
     Ok(())
 }
 
-fn blocks_in<'a, 'input>(sec: Node<'a, 'input>, depth: usize, ctx: &mut JatsCtx, out: &mut Vec<String>) -> Result<()> {
+fn blocks_in<'a, 'input>(
+    sec: Node<'a, 'input>,
+    depth: usize,
+    ctx: &mut JatsCtx,
+    out: &mut Vec<String>,
+) -> Result<()> {
     for child in sec.children().filter(|n| n.is_element()) {
         block_node(child, depth, ctx, out)?;
     }
@@ -586,6 +605,7 @@ fn strip_doctype(xml: &str) -> String {
 
 /// Pure JATS XML -> markdown conversion (no I/O; unit-testable).
 pub fn convert_jats_str(xml: &str) -> Result<JatsOutput> {
+    crate::input_limits::ensure_input_bytes_size("in-memory JATS XML", xml.len() as u64)?;
     let xml = strip_doctype(xml);
     let doc = roxmltree::Document::parse(&xml)
         .map_err(|e| BobineError::Jats(format!("XML parse: {e}")))?;
@@ -645,7 +665,10 @@ pub fn convert_jats_str(xml: &str) -> Result<JatsOutput> {
             .find(|c| c.is_element() && local(*c) == "abstract")
         {
             out.push("## Abstract\n".to_string());
-            for p in abs.children().filter(|n| n.is_element() && local(*n) == "p") {
+            for p in abs
+                .children()
+                .filter(|n| n.is_element() && local(*n) == "p")
+            {
                 let txt = rich_text(p, &mut ctx);
                 if !txt.trim().is_empty() {
                     flush_para(&txt, &mut out, &ctx)?;
@@ -661,7 +684,14 @@ pub fn convert_jats_str(xml: &str) -> Result<JatsOutput> {
         for child in body.children().filter(|n| n.is_element()) {
             if local(child) == "sec" {
                 let stitle = rich_child(child, "title", &mut ctx);
-                out.push(format!("## {}\n", if stitle.is_empty() { "Section".to_string() } else { stitle }));
+                out.push(format!(
+                    "## {}\n",
+                    if stitle.is_empty() {
+                        "Section".to_string()
+                    } else {
+                        stitle
+                    }
+                ));
                 blocks_in(child, 1, &mut ctx, &mut out)?;
             } else {
                 block_node(child, 1, &mut ctx, &mut out)?;
@@ -739,6 +769,7 @@ impl HybridConverter {
     /// (`mml.rs`); figures as `![alt](href)` links (remote URLs preserved);
     /// real JATS tables as GFM. No ONNX engine needed.
     pub fn convert_jats(&self, path: &Path, work_dir: &Path) -> Result<JatsDocument> {
+        crate::input_limits::ensure_input_file_size(path)?;
         let xml = std::fs::read_to_string(path)?;
         let out = convert_jats_str(&xml)?;
         std::fs::create_dir_all(work_dir)?;
@@ -803,7 +834,11 @@ mod tests {
             <abstract><p>Abs <inline-formula><mml:math xmlns:mml=\"http://www.w3.org/1998/Math/MathML\"><mml:mn>2</mml:mn></mml:math></inline-formula>.</p></abstract></article-meta></front>\
             <body><sec><title>Intro</title><p>Hi <disp-formula><mml:math xmlns:mml=\"http://www.w3.org/1998/Math/MathML\"><mml:msup><mml:mi>x</mml:mi><mml:mn>2</mml:mn></mml:msup></mml:math><label>(1)</label></disp-formula> end.</p></sec></body></article>";
         let out = convert_jats_str(xml).unwrap();
-        assert!(out.markdown.starts_with("# Test $\\alpha$\n"), "title: {}", &out.markdown[..60]);
+        assert!(
+            out.markdown.starts_with("# Test $\\alpha$\n"),
+            "title: {}",
+            &out.markdown[..60]
+        );
         assert!(out.markdown.contains("## Abstract\n"));
         assert!(out.markdown.contains("## Intro\n"));
         assert!(out.markdown.contains("$$x^{2} \\tag{1}$$"));
@@ -821,4 +856,3 @@ mod tests {
         assert!(out.markdown.starts_with("# \n") || out.markdown.starts_with("#\n"));
     }
 }
-

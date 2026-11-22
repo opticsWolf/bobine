@@ -5,7 +5,7 @@ fn default_image_mode() -> ImageMode {
 }
 
 fn default_max_embed_bytes() -> usize {
-    262_144
+    4 * 1024 * 1024
 }
 
 fn default_table_backend() -> TableBackend {
@@ -34,6 +34,18 @@ fn default_render_gate_min_layer_words() -> usize {
 
 fn default_render_gate_min_jaccard() -> f32 {
     0.35
+}
+
+fn default_max_embedded_bytes() -> usize {
+    16 * 1024 * 1024
+}
+
+fn default_max_formula_attachment_bytes() -> usize {
+    1_048_576
+}
+
+fn default_max_struct_nodes() -> usize {
+    10_000
 }
 
 /// Controls how pages are routed between fast (pdf_oxide) and ONNX paths.
@@ -291,7 +303,10 @@ pub struct RuntimeOpts {
 
 impl Default for RuntimeOpts {
     fn default() -> Self {
-        Self { device: Device::Auto, precision: Precision::Auto }
+        Self {
+            device: Device::Auto,
+            precision: Precision::Auto,
+        }
     }
 }
 
@@ -337,7 +352,7 @@ pub struct RenderOpts {
     pub image_mode: ImageMode,
 
     /// Cap for `ImageMode::EmbedBase64`: figures whose file is larger
-    /// stay links (data URIs bloat/diff badly). Default 256 KiB.
+    /// stay links (data URIs bloat/diff badly). Default 4 MiB.
     #[serde(default = "default_max_embed_bytes")]
     pub max_embed_bytes: usize,
 
@@ -499,6 +514,39 @@ pub struct TextOpts {
     pub scanned_text_threshold: usize,
 }
 
+/// Structured formula and embedded-source extraction controls.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MathOpts {
+    /// Read tagged PDF formulas before invoking OCR.
+    #[serde(default = "default_true")]
+    pub prefer_structured_math: bool,
+    /// Convert embedded MathML/XML files from the PDF catalog name tree.
+    #[serde(default = "default_true")]
+    pub allow_embedded_sources: bool,
+    /// Use an embedded JATS article as the whole-document source. Disabled
+    /// by default so incidental attachments cannot replace the PDF content.
+    #[serde(default)]
+    pub prefer_embedded_jats: bool,
+    /// Maximum decoded size of one document-level embedded source passed to
+    /// downstream parsing. `pdf_oxide 0.3.78` decodes first, so this does not
+    /// bound backend decompression memory.
+    #[serde(default = "default_max_embedded_bytes")]
+    pub max_embedded_bytes: usize,
+    /// Maximum decoded size of one formula-associated `/AF` attachment passed
+    /// to MathML parsing. The backend decodes before Bobine can inspect it.
+    #[serde(default = "default_max_formula_attachment_bytes")]
+    pub max_formula_attachment_bytes: usize,
+    /// Maximum number of parsed structure nodes Bobine will traverse.
+    #[serde(default = "default_max_struct_nodes")]
+    pub max_struct_nodes: usize,
+    /// Render-validate LaTeX with the optional `katex-rs` engine.
+    #[serde(default)]
+    pub validate_math: bool,
+    /// Emit an HTML comment describing each structured formula's origin.
+    #[serde(default)]
+    pub emit_provenance_comments: bool,
+}
+
 /// Tunable knobs for the HybridConverter pipeline.
 ///
 /// Grouped into sub-structs by concern; `#[serde(flatten)]` keeps the
@@ -527,6 +575,9 @@ pub struct ConverterConfig {
     /// Text-layer / markdown-shaping knobs.
     #[serde(flatten)]
     pub text: TextOpts,
+    /// Structured math and embedded-source knobs.
+    #[serde(flatten)]
+    pub math: MathOpts,
 }
 
 impl Default for RoutingOpts {
@@ -562,7 +613,7 @@ impl Default for RenderOpts {
             min_figure_area_pts: 100.0,
             image_output_dir: "assets".to_string(),
             image_mode: ImageMode::Link,
-            max_embed_bytes: 262_144,
+            max_embed_bytes: default_max_embed_bytes(),
             preserve_layout: false,
         }
     }
@@ -716,13 +767,23 @@ impl ConverterConfig {
     /// it, else the base list" (layout 12.3x, OCR 3.6x).
     fn auto_gpu_plan(&self, override_list: &Option<Vec<String>>, cuda: Option<bool>) -> PassPlan {
         if let Some(list) = override_list {
-            return PassPlan { providers: Some(list.clone()), policy: "explicit", precision: "fp32" };
+            return PassPlan {
+                providers: Some(list.clone()),
+                policy: "explicit",
+                precision: "fp32",
+            };
         }
         match self.runtime.device {
-            Device::Cpu => PassPlan { providers: Some(cpu_only()), policy: "cpu", precision: "fp32" },
-            Device::Cuda => {
-                PassPlan { providers: Some(cuda_then_cpu()), policy: "cuda", precision: "fp32" }
-            }
+            Device::Cpu => PassPlan {
+                providers: Some(cpu_only()),
+                policy: "cpu",
+                precision: "fp32",
+            },
+            Device::Cuda => PassPlan {
+                providers: Some(cuda_then_cpu()),
+                policy: "cuda",
+                precision: "fp32",
+            },
             Device::Auto => match cuda {
                 Some(true) => PassPlan {
                     providers: Some(cuda_then_cpu()),
@@ -734,7 +795,11 @@ impl ConverterConfig {
                     policy: "auto-cpu",
                     precision: "fp32",
                 },
-                None => PassPlan { providers: None, policy: "auto-cuda", precision: "fp32" },
+                None => PassPlan {
+                    providers: None,
+                    policy: "auto-cuda",
+                    precision: "fp32",
+                },
             },
         }
     }
@@ -744,13 +809,23 @@ impl ConverterConfig {
     /// the caller asked for every pass on the GPU.
     fn cpu_pinned_plan(&self, override_list: &Option<Vec<String>>) -> PassPlan {
         if let Some(list) = override_list {
-            return PassPlan { providers: Some(list.clone()), policy: "explicit", precision: "fp32" };
+            return PassPlan {
+                providers: Some(list.clone()),
+                policy: "explicit",
+                precision: "fp32",
+            };
         }
         match self.runtime.device {
-            Device::Cuda => {
-                PassPlan { providers: Some(cuda_then_cpu()), policy: "cuda", precision: "fp32" }
-            }
-            _ => PassPlan { providers: Some(cpu_only()), policy: "cpu-pinned", precision: "fp32" },
+            Device::Cuda => PassPlan {
+                providers: Some(cuda_then_cpu()),
+                policy: "cuda",
+                precision: "fp32",
+            },
+            _ => PassPlan {
+                providers: Some(cpu_only()),
+                policy: "cpu-pinned",
+                precision: "fp32",
+            },
         }
     }
 
@@ -800,6 +875,22 @@ impl Default for ConverterConfig {
             health: RenderHealthOpts::default(),
             models: ModelOpts::default(),
             text: TextOpts::default(),
+            math: MathOpts::default(),
+        }
+    }
+}
+
+impl Default for MathOpts {
+    fn default() -> Self {
+        Self {
+            prefer_structured_math: true,
+            allow_embedded_sources: true,
+            prefer_embedded_jats: false,
+            max_embedded_bytes: default_max_embedded_bytes(),
+            max_formula_attachment_bytes: default_max_formula_attachment_bytes(),
+            max_struct_nodes: default_max_struct_nodes(),
+            validate_math: false,
+            emit_provenance_comments: false,
         }
     }
 }
@@ -859,7 +950,15 @@ mod tests {
         ] {
             assert!(v.get(key).is_some(), "missing flat key {key}");
         }
-        for group in ["routing", "providers", "render", "models", "text", "health", "runtime"] {
+        for group in [
+            "routing",
+            "providers",
+            "render",
+            "models",
+            "text",
+            "health",
+            "runtime",
+        ] {
             assert!(v.get(group).is_none(), "nested group {group} leaked");
         }
         let back: ConverterConfig = serde_json::from_value(v).unwrap();
@@ -902,15 +1001,24 @@ mod tests {
         );
 
         c.runtime.precision = Precision::Fp16;
-        assert_eq!(c.formula_variant(), (ModelPrecision::Fp16, ModelQuantization::Fp32));
+        assert_eq!(
+            c.formula_variant(),
+            (ModelPrecision::Fp16, ModelQuantization::Fp32)
+        );
         assert_eq!(c.formula_precision_label(), "fp16");
 
         c.runtime.precision = Precision::Int8;
-        assert_eq!(c.formula_variant(), (ModelPrecision::Fp32, ModelQuantization::Int8));
+        assert_eq!(
+            c.formula_variant(),
+            (ModelPrecision::Fp32, ModelQuantization::Int8)
+        );
         assert_eq!(c.formula_precision_label(), "int8");
 
         c.runtime.precision = Precision::Fp32;
-        assert_eq!(c.formula_variant(), (ModelPrecision::Fp32, ModelQuantization::Fp32));
+        assert_eq!(
+            c.formula_variant(),
+            (ModelPrecision::Fp32, ModelQuantization::Fp32)
+        );
         assert_eq!(c.formula_precision_label(), "fp32");
     }
 
@@ -920,7 +1028,10 @@ mod tests {
         c.models.model_quantization = ModelQuantization::Int8;
         c.runtime.precision = Precision::Fp16;
         // The vocabulary is authoritative when set...
-        assert_eq!(c.formula_variant(), (ModelPrecision::Fp16, ModelQuantization::Fp32));
+        assert_eq!(
+            c.formula_variant(),
+            (ModelPrecision::Fp16, ModelQuantization::Fp32)
+        );
         // ...and setting both is a caller error the binding surfaces.
         assert!(c.validate().is_err());
 
@@ -981,10 +1092,19 @@ mod tests {
         c.providers.ocr_ort_providers = Some(vec!["CPUExecutionProvider".into()]);
         c.providers.table_ort_providers = Some(vec!["CPUExecutionProvider".into()]);
         let plan = c.runtime_plan(Some(true));
-        assert_eq!(plan.ocr.providers.as_deref().unwrap(), vec!["CPUExecutionProvider"]);
+        assert_eq!(
+            plan.ocr.providers.as_deref().unwrap(),
+            vec!["CPUExecutionProvider"]
+        );
         assert_eq!(plan.ocr.policy, "explicit");
-        assert_eq!(plan.table.providers.as_deref().unwrap(), vec!["CPUExecutionProvider"]);
-        assert_eq!(plan.layout.providers.as_deref().unwrap()[0], "CUDAExecutionProvider");
+        assert_eq!(
+            plan.table.providers.as_deref().unwrap(),
+            vec!["CPUExecutionProvider"]
+        );
+        assert_eq!(
+            plan.layout.providers.as_deref().unwrap()[0],
+            "CUDAExecutionProvider"
+        );
     }
 
     #[test]
@@ -998,7 +1118,10 @@ mod tests {
         // Unknown CUDA state: the auto slots report the policy, not a guess.
         let plan = c.runtime_plan(None);
         assert!(plan.layout.providers.is_none());
-        assert_eq!(plan.table.policy, "cpu-pinned", "a pinned slot is known either way");
+        assert_eq!(
+            plan.table.policy, "cpu-pinned",
+            "a pinned slot is known either way"
+        );
         assert!(plan.table.providers.is_some());
     }
 

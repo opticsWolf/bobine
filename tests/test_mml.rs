@@ -21,10 +21,8 @@ fn fixture_dir() -> PathBuf {
 #[test]
 fn mml_matches_python_reference_on_all_fixtures() {
     let dir = fixture_dir();
-    let manifest =
-        std::fs::read_to_string(dir.join("manifest.json")).expect("mml manifest.json");
-    let manifest: serde_json::Value =
-        serde_json::from_str(&manifest).expect("manifest parses");
+    let manifest = std::fs::read_to_string(dir.join("manifest.json")).expect("mml manifest.json");
+    let manifest: serde_json::Value = serde_json::from_str(&manifest).expect("manifest parses");
     let count = manifest["count"].as_u64().expect("count") as usize;
     assert!(count > 0, "no fixtures");
     assert_eq!(
@@ -41,8 +39,7 @@ fn mml_matches_python_reference_on_all_fixtures() {
             .unwrap_or_else(|_| panic!("missing {name}.mml"));
         let expected = std::fs::read_to_string(dir.join(format!("{name}.tex")))
             .unwrap_or_else(|_| panic!("missing {name}.tex"));
-        let doc =
-            roxmltree::Document::parse(&xml).unwrap_or_else(|_| panic!("{name}.mml parses"));
+        let doc = roxmltree::Document::parse(&xml).unwrap_or_else(|_| panic!("{name}.mml parses"));
         let got = bobine::mml_to_tex(doc.root_element(), &mut stats);
         assert_eq!(got, expected, "byte-parity on {name}");
         compared += 1;
@@ -63,14 +60,22 @@ fn mml_matches_python_reference_on_all_fixtures() {
     );
     assert_eq!(
         stats.mml_lost,
-        vec!["U+01BB".to_string(), "U+0277".to_string(), "U+049F".to_string()],
+        vec![
+            "U+01BB".to_string(),
+            "U+0277".to_string(),
+            "U+049F".to_string()
+        ],
         "shimmed glyphs must land in mml_lost"
     );
     let mut mathify_lost = stats.mathify_lost.clone();
     mathify_lost.sort();
     assert_eq!(
         mathify_lost,
-        vec!["U+2010".to_string(), "U+2254".to_string(), "U+25C7".to_string()],
+        vec![
+            "U+2010".to_string(),
+            "U+2254".to_string(),
+            "U+25C7".to_string()
+        ],
         "mathify losses drift"
     );
 }

@@ -7,7 +7,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{path}: lines={} rects={}", lines.len(), rects.len());
     let prim_lines: Vec<_> = lines.iter().filter(|p| p.is_table_primitive()).collect();
     let prim_rects: Vec<_> = rects.iter().filter(|p| p.is_table_primitive()).collect();
-    println!("table primitives: lines={} rects={}", prim_lines.len(), prim_rects.len());
+    println!(
+        "table primitives: lines={} rects={}",
+        prim_lines.len(),
+        prim_rects.len()
+    );
     for p in prim_lines.iter().take(8) {
         println!("  line bbox {:?}", p.bbox);
     }

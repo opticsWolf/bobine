@@ -29,8 +29,7 @@ use crate::tex_teller::TexTeller;
 pub(crate) fn session_builder(
     providers: &[String],
 ) -> Result<ort::session::builder::SessionBuilder> {
-    let builder =
-        ort::session::Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?;
+    let builder = ort::session::Session::builder().map_err(|e| BobineError::Ort(e.to_string()))?;
     let tuned = vision_policy()
         .apply(builder)
         .map_err(|e| BobineError::Ort(e.to_string()))?;
@@ -132,7 +131,11 @@ impl OnnxEngine {
     /// ONNX pass has opened yet (probing CUDA would load the runtime just
     /// to answer a question about a future load).
     fn plan(&self) -> crate::config::RuntimePlan {
-        let cuda = if self.any_loaded() { Some(embroider::cuda_available()) } else { None };
+        let cuda = if self.any_loaded() {
+            Some(embroider::cuda_available())
+        } else {
+            None
+        };
         self.config.runtime_plan(cuda)
     }
 
@@ -326,7 +329,11 @@ impl OnnxEngine {
         )?);
         out.push(probe(
             &format!("{}/{}", OCR_REPO.0, OCR_REPO.1),
-            &[(OCR_DET_FILENAME, true), (OCR_REC_FILENAME, true), (OCR_DICT_FILENAME, false)],
+            &[
+                (OCR_DET_FILENAME, true),
+                (OCR_REC_FILENAME, true),
+                (OCR_DICT_FILENAME, false),
+            ],
             Some(OCR_REV),
         )?);
         out.push(probe(
@@ -450,10 +457,7 @@ impl OnnxEngine {
         img: &image::DynamicImage,
     ) -> Result<crate::rapid_potatr::PotatrOutputs> {
         self.ensure_potatr()?;
-        self.potatr
-            .as_mut()
-            .expect("ensured")
-            .forward(img)
+        self.potatr.as_mut().expect("ensured").forward(img)
     }
 
     /// Recognize a table crop using OCR lines; returns full HTML or None.
@@ -573,7 +577,13 @@ impl OnnxEngine {
                 det.display(),
                 rec.display()
             );
-            let ocr = RapidOcr::load(&det, &rec, dict.as_deref(), &self.config.models.ocr_lang, &providers)?;
+            let ocr = RapidOcr::load(
+                &det,
+                &rec,
+                dict.as_deref(),
+                &self.config.models.ocr_lang,
+                &providers,
+            )?;
             self.ocr = Some(ocr);
         }
         Ok(())
@@ -592,6 +602,7 @@ impl OnnxEngine {
     // ------------------------------------------------------------------
 
     pub fn convert_pdf(&mut self, path: &Path, _work_dir: &Path) -> Result<String> {
+        crate::input_limits::ensure_input_file_size(path)?;
         self.ensure_models()?;
 
         let pdf_bytes = std::fs::read(path)?;
@@ -647,10 +658,7 @@ mod tests {
             eprintln!("skipped: ORT_DYLIB_PATH not set");
             return;
         }
-        let result = session_builder(&[
-            "CUDAExecutionProvider".to_string(),
-            "cpu".to_string(),
-        ]);
+        let result = session_builder(&["CUDAExecutionProvider".to_string(), "cpu".to_string()]);
         assert!(
             result.is_ok(),
             "cuda request must fall back to cpu: {}",
@@ -668,10 +676,8 @@ mod tests {
             eprintln!("skipped: ORT_DYLIB_PATH not set");
             return;
         }
-        let result = session_builder(&[
-            "warp-drive".to_string(),
-            "CPUExecutionProvider".to_string(),
-        ]);
+        let result =
+            session_builder(&["warp-drive".to_string(), "CPUExecutionProvider".to_string()]);
         assert!(result.is_ok());
     }
 
@@ -689,9 +695,15 @@ mod tests {
             ..Default::default()
         };
         let plan = cfg.runtime_plan(Some(true));
-        assert_eq!(plan.table.providers.as_deref().unwrap(), vec!["CPUExecutionProvider"]);
+        assert_eq!(
+            plan.table.providers.as_deref().unwrap(),
+            vec!["CPUExecutionProvider"]
+        );
         assert_eq!(plan.table.policy, "cpu-pinned");
-        assert_eq!(plan.potatr.providers.as_deref().unwrap(), vec!["CPUExecutionProvider"]);
+        assert_eq!(
+            plan.potatr.providers.as_deref().unwrap(),
+            vec!["CPUExecutionProvider"]
+        );
 
         // An explicit override is honored, even against the default policy.
         let cfg = ConverterConfig {
@@ -702,7 +714,10 @@ mod tests {
             ..Default::default()
         };
         let plan = cfg.runtime_plan(Some(true));
-        assert_eq!(plan.table.providers.as_deref().unwrap(), vec!["CUDAExecutionProvider"]);
+        assert_eq!(
+            plan.table.providers.as_deref().unwrap(),
+            vec!["CUDAExecutionProvider"]
+        );
         assert_eq!(plan.table.policy, "explicit");
     }
 
@@ -713,12 +728,18 @@ mod tests {
         let plan = cfg.runtime_plan(Some(true));
         assert_eq!(
             plan.layout.providers.as_deref().unwrap(),
-            vec!["CUDAExecutionProvider".to_string(), "CPUExecutionProvider".to_string()]
+            vec![
+                "CUDAExecutionProvider".to_string(),
+                "CPUExecutionProvider".to_string()
+            ]
         );
         assert_eq!(plan.layout.policy, "auto-cuda");
         // Without it, the base list is untouched.
         let plan = cfg.runtime_plan(Some(false));
-        assert_eq!(plan.layout.providers.as_deref().unwrap(), vec!["CPUExecutionProvider"]);
+        assert_eq!(
+            plan.layout.providers.as_deref().unwrap(),
+            vec!["CPUExecutionProvider"]
+        );
         assert_eq!(plan.layout.policy, "auto-cpu");
         // Before any session the answer is the policy, not a list.
         let plan = cfg.runtime_plan(None);
@@ -734,7 +755,10 @@ mod tests {
             ..Default::default()
         };
         let plan = cfg.runtime_plan(Some(true));
-        assert_eq!(plan.ocr.providers.as_deref().unwrap(), vec!["CPUExecutionProvider"]);
+        assert_eq!(
+            plan.ocr.providers.as_deref().unwrap(),
+            vec!["CPUExecutionProvider"]
+        );
         assert_eq!(plan.ocr.policy, "explicit");
     }
 
@@ -746,7 +770,9 @@ mod tests {
         // endpoint would fail any accidental request loudly anyway.
         let saved = std::env::var("HF_ENDPOINT").ok();
         // SAFETY: test-only; no other thread reads HF_ENDPOINT here.
-        unsafe { std::env::set_var("HF_ENDPOINT", "http://127.0.0.1:1"); }
+        unsafe {
+            std::env::set_var("HF_ENDPOINT", "http://127.0.0.1:1");
+        }
 
         let dir = std::env::temp_dir().join(format!("bobine-status-empty-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -826,9 +852,11 @@ mod tests {
         assert!(ocr.files.contains_key(OCR_DET_FILENAME));
         assert!(ocr.files.contains_key(OCR_REC_FILENAME));
         let table = &reps[3];
-        assert!(table
-            .files
-            .contains_key(crate::rapid_table::SLANET_PLUS_FILENAME));
+        assert!(
+            table
+                .files
+                .contains_key(crate::rapid_table::SLANET_PLUS_FILENAME)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

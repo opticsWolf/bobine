@@ -6,13 +6,14 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
 use image::DynamicImage;
-use pdf_oxide::{api::Pdf, geometry::Rect};
+use pdf_oxide::geometry::Rect;
 use tracing::{info, warn};
 
 use crate::config::{ConverterConfig, ImageMode, RoutingMode, TableBackend};
 use crate::engine::OnnxEngine;
 use crate::error::{BobineError, Result};
-use crate::pdf_source::{PdfSource, SourceChar};
+use crate::math_source::{EmbeddedFile, MathOrigin, MathSourceReport, MathSpan};
+use crate::pdf_source::{PdfDocumentSource, PdfSource, SourceChar};
 use crate::rapid_layout::LayoutRegion;
 use crate::render_gate::{
     GateAction, RenderGateStats, gate_tokens, render_gate_decision, version_in_scope, word_jaccard,
@@ -885,6 +886,7 @@ fn math_blocks(
     bbox: Rect,
     block_no: usize,
     page_math_boxes: &mut Vec<Rect>,
+    ocr_spans: &mut usize,
 ) -> Result<Vec<String>> {
     let lines = &ctx.region_lines[ri];
     let region = &ctx.sorted[ri];
@@ -1016,6 +1018,7 @@ fn math_blocks(
                             if let Some((first, rest)) = cluster.members.split_first() {
                                 let needle = region_text(pdf, page_index, *first);
                                 reps.push((needle, format!("$$\n{}\n$$", latex)));
+                                *ocr_spans += 1;
                                 for m in rest {
                                     reps.push((region_text(pdf, page_index, *m), String::new()));
                                 }
@@ -1072,6 +1075,7 @@ fn math_blocks(
                     if let Some(latex) = engine.recognize_formula_capped(&p, budget)? {
                         if let Some(latex) = sanitize_ocr_latex(ctx.config, &latex) {
                             out.push(format!("$$\n{}\n$$", latex));
+                            *ocr_spans += 1;
                             return Ok(out);
                         }
                     }
@@ -1289,6 +1293,8 @@ pub struct HybridConverter {
     /// read after `convert_pdf` / `convert_pdf_source` (bench harness
     /// appends them to `report.md`).
     pub gate_stats: RenderGateStats,
+    /// Provenance and validation counters from the most recent PDF pass.
+    math_source_report: MathSourceReport,
     /// Set by [`HybridConverter::close`]; a closed converter refuses work.
     closed: bool,
 }
@@ -1300,6 +1306,7 @@ impl HybridConverter {
             config,
             engine,
             gate_stats: RenderGateStats::default(),
+            math_source_report: MathSourceReport::default(),
             closed: false,
         }
     }
@@ -1359,6 +1366,7 @@ impl HybridConverter {
                 format!("Document not found: {}", path.display()),
             )));
         }
+        crate::input_limits::ensure_input_file_size(path)?;
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
@@ -1419,11 +1427,17 @@ impl HybridConverter {
         &self.gate_stats
     }
 
+    /// Source counts and validation warnings from the most recent PDF pass.
+    pub fn math_source_report(&self) -> &MathSourceReport {
+        &self.math_source_report
+    }
+
     // ==================================================================
     // Top-level dispatch
     // ==================================================================
 
     pub fn convert(&mut self, input: &Path, work_dir: &Path) -> Result<String> {
+        crate::input_limits::ensure_input_file_size(input)?;
         let ext = input
             .extension()
             .and_then(|e| e.to_str())
@@ -1445,22 +1459,12 @@ impl HybridConverter {
         }
     }
 
-    /// Text fallback for extensions without a dedicated parser: read as
-    /// UTF-8, but only after a binary/text sniff. A binary file that slips
-    /// in under a text-ish extension (or none) fails fast with a clear
-    /// error instead of a raw "invalid UTF-8" I/O message or mojibake.
-    /// Content-based only (`is_binary_string`): the extension already had
-    /// its say in the dispatch above — the bytes get the final verdict.
+    /// Text fallback for extensions without a dedicated parser. It rejects known
+    /// binary extensions and content classified as binary before reading the full
+    /// file as UTF-8.
     pub fn convert_text(&mut self, input: &Path) -> Result<String> {
-        use std::io::Read;
-        let mut chunk = Vec::new();
-        std::fs::File::open(input)
-            .and_then(|mut f| {
-                f.take(binaryornot_rs::check::CHUNK_SIZE as u64)
-                    .read_to_end(&mut chunk)
-            })
-            .map_err(BobineError::Io)?;
-        if binaryornot_rs::check::is_binary_string(&chunk) {
+        crate::input_limits::ensure_input_file_size(input)?;
+        if binaryornot_rs::check::is_binary(input, true).map_err(BobineError::Io)? {
             return Err(BobineError::UnsupportedFormat(format!(
                 "binary file, not text: {}",
                 input.display()
@@ -1484,20 +1488,34 @@ impl HybridConverter {
         work_dir: &Path,
         hooks: &ProgressHooks<'_>,
     ) -> Result<String> {
-        let mut pdf = Pdf::open(path).map_err(|e| BobineError::PdfOxide(format!("open: {e}")))?;
+        let mut pdf = PdfDocumentSource::open(path)?;
         self.convert_pdf_source(&mut pdf, work_dir, hooks)
     }
 
     /// Convert an already-opened document. Generic over any [`PdfSource`] —
-    /// pass a real `pdf_oxide::api::Pdf`, or a custom source for testing /
-    /// alternative PDF backends.
+    /// pass a `PdfDocumentSource`, or a custom source for testing / alternative
+    /// PDF backends. The source trait remains backend-neutral.
     pub fn convert_pdf_source<S: PdfSource>(
         &mut self,
         pdf: &mut S,
         work_dir: &Path,
         hooks: &ProgressHooks<'_>,
     ) -> Result<String> {
+        self.math_source_report = MathSourceReport::default();
         let n_pages = pdf.page_count()?;
+
+        let (attached_jats, embedded_math) = if self.config.math.allow_embedded_sources {
+            self.extract_embedded_math_sources(pdf)
+        } else {
+            (None, Vec::new())
+        };
+        if let Some(markdown) = attached_jats {
+            return Ok(if self.config.text.promote_title {
+                promote_document_title(&markdown)
+            } else {
+                markdown
+            });
+        }
 
         std::fs::create_dir_all(work_dir)?;
         let mut blocks: Vec<String> = Vec::with_capacity(n_pages);
@@ -1551,12 +1569,236 @@ impl HybridConverter {
             blocks.push(final_md);
         }
 
-        let joined = blocks.join("\n\n---\n\n");
+        let mut joined = blocks.join("\n\n---\n\n");
+        if !embedded_math.is_empty() {
+            if !joined.trim().is_empty() {
+                joined.push_str("\n\n");
+            }
+            joined.push_str(&embedded_math.join("\n\n"));
+        }
         Ok(if self.config.text.promote_title {
             promote_document_title(&joined)
         } else {
             joined
         })
+    }
+
+    fn extract_embedded_math_sources<S: PdfSource>(
+        &mut self,
+        pdf: &mut S,
+    ) -> (Option<String>, Vec<String>) {
+        let associated_formula_files = if self.config.math.prefer_structured_math {
+            match pdf.associated_formula_files_with_limit(self.config.math.max_struct_nodes) {
+                Ok(files) => files,
+                Err(error) => {
+                    self.math_source_report.warnings.push(format!(
+                        "formula-associated file lookup failed; document-level MathML may include duplicates: {error}"
+                    ));
+                    std::collections::HashSet::new()
+                }
+            }
+        } else {
+            std::collections::HashSet::new()
+        };
+        let files = match pdf.embedded_files() {
+            Ok(files) => files,
+            Err(error) => {
+                self.math_source_report.validation_skipped += 1;
+                self.math_source_report
+                    .warnings
+                    .push(format!("embedded file extraction failed: {error}"));
+                return (None, Vec::new());
+            }
+        };
+        if files.is_empty() {
+            return (None, Vec::new());
+        }
+        self.math_source_report.warnings.push(
+            "pdf_oxide decodes embedded-file streams before Bobine applies max_embedded_bytes; the configured cap limits downstream parsing, not peak decompression memory".to_string(),
+        );
+
+        let mut markdown = Vec::new();
+        for file in files {
+            if associated_formula_files.contains(&file.filename) {
+                continue;
+            }
+            if file.bytes.len() > self.config.math.max_embedded_bytes {
+                self.math_source_report.validation_skipped += 1;
+                self.math_source_report.warnings.push(format!(
+                    "embedded source {} is {} bytes and exceeds max_embedded_bytes ({})",
+                    file.filename,
+                    file.bytes.len(),
+                    self.config.math.max_embedded_bytes
+                ));
+                continue;
+            }
+            let extension = Path::new(&file.filename)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if extension == "jats" {
+                if self.config.math.prefer_embedded_jats {
+                    if let Some(jats) = self.embedded_jats(&file) {
+                        return (Some(jats), Vec::new());
+                    }
+                }
+                continue;
+            }
+            if !matches!(extension.as_str(), "mml" | "mathml" | "xml") {
+                // `.tex` and unrecognized files remain available through
+                // PdfSource::embedded_files(), but are never executed.
+                continue;
+            }
+            let Ok(xml) = std::str::from_utf8(&file.bytes) else {
+                self.math_source_report.validation_failed += 1;
+                self.math_source_report
+                    .warnings
+                    .push(format!("embedded MathML {} is not UTF-8", file.filename));
+                continue;
+            };
+            if extension == "xml" && !looks_like_jats_article(xml) {
+                // Generic XML is only a formula source when it contains
+                // MathML; other XML attachments do not alter PDF output.
+                if !xml.contains("<math") && !xml.contains(":math") {
+                    continue;
+                }
+            } else if extension == "xml" && looks_like_jats_article(xml) {
+                if self.config.math.prefer_embedded_jats {
+                    if let Some(jats) = self.embedded_jats(&file) {
+                        return (Some(jats), Vec::new());
+                    }
+                }
+                continue;
+            }
+            match roxmltree::Document::parse(xml) {
+                Ok(document) => {
+                    for math in document
+                        .descendants()
+                        .filter(|node| node.is_element() && node.tag_name().name() == "math")
+                    {
+                        match crate::math_source::math_node_to_latex(math) {
+                            Ok(latex) => {
+                                let display = math.attribute("display") == Some("block")
+                                    || math.ancestors().any(|ancestor| {
+                                        matches!(
+                                            ancestor.tag_name().name(),
+                                            "disp-formula" | "display-formula"
+                                        )
+                                    });
+                                if let Some(latex) = self.prepare_math_latex(
+                                    &file.filename,
+                                    latex,
+                                    display,
+                                    MathOrigin::EmbeddedSource,
+                                ) {
+                                    self.math_source_report.embedded_source_spans += 1;
+                                    markdown.push(format_math_block(
+                                        &latex,
+                                        display,
+                                        self.config.math.emit_provenance_comments,
+                                        MathOrigin::EmbeddedSource,
+                                    ));
+                                }
+                            }
+                            Err(reason) => {
+                                self.math_source_report.validation_failed += 1;
+                                self.math_source_report
+                                    .warnings
+                                    .push(format!("embedded MathML {}: {reason}", file.filename));
+                            }
+                        }
+                    }
+                }
+                Err(error) => {
+                    self.math_source_report.validation_failed += 1;
+                    self.math_source_report.warnings.push(format!(
+                        "embedded MathML {} parse failed: {error}",
+                        file.filename
+                    ));
+                }
+            }
+        }
+        (None, markdown)
+    }
+
+    fn embedded_jats(&mut self, file: &EmbeddedFile) -> Option<String> {
+        let xml = match std::str::from_utf8(&file.bytes) {
+            Ok(xml) => xml,
+            Err(error) => {
+                self.math_source_report.validation_failed += 1;
+                self.math_source_report.warnings.push(format!(
+                    "embedded JATS {} is not UTF-8: {error}",
+                    file.filename
+                ));
+                return None;
+            }
+        };
+        match crate::jats::convert_jats_str(xml) {
+            Ok(converted) if !converted.markdown.trim().is_empty() => {
+                self.math_source_report.embedded_source_spans += converted.n_formulas;
+                if self.config.math.validate_math && converted.n_formulas > 0 {
+                    self.math_source_report.validation_skipped += converted.n_formulas;
+                    self.math_source_report.warnings.push(
+                        "KaTeX validation is not applied to formulas converted inside an embedded JATS document".to_string(),
+                    );
+                }
+                Some(converted.markdown)
+            }
+            Ok(_) => None,
+            Err(error) => {
+                self.math_source_report.validation_failed += 1;
+                self.math_source_report
+                    .warnings
+                    .push(format!("embedded JATS {} failed: {error}", file.filename));
+                None
+            }
+        }
+    }
+
+    fn prepare_math_latex(
+        &mut self,
+        source: &str,
+        latex: String,
+        display: bool,
+        origin: MathOrigin,
+    ) -> Option<String> {
+        let sanitized = match crate::sanitize::sanitize_latex(&latex) {
+            Some(out) => {
+                if out.latex != latex {
+                    self.math_source_report.validation_repaired += 1;
+                }
+                out.latex
+            }
+            None => {
+                self.math_source_report.validation_failed += 1;
+                self.math_source_report.warnings.push(format!(
+                    "{source}: LaTeX sanitizer rejected an unbalanced formula"
+                ));
+                return None;
+            }
+        };
+        if self.config.math.validate_math {
+            #[cfg(feature = "math-validate")]
+            {
+                if let Err(error) = crate::math_render::validate_latex(&sanitized, display) {
+                    self.math_source_report.validation_failed += 1;
+                    self.math_source_report.warnings.push(format!(
+                        "{source}: KaTeX could not render {origin:?} LaTeX: {error}"
+                    ));
+                    return None;
+                }
+            }
+            #[cfg(not(feature = "math-validate"))]
+            {
+                let _ = (display, origin);
+                self.math_source_report.validation_skipped += 1;
+                self.math_source_report.warnings.push(
+                    "validate_math is enabled but bobine was built without the math-validate feature".to_string(),
+                );
+            }
+        }
+        Some(sanitized)
     }
 
     // ==================================================================
@@ -1597,17 +1839,19 @@ impl HybridConverter {
         work_dir: &Path,
         assets: &[EmbeddedAsset],
     ) -> Result<String> {
+        let structured = self.structured_math_for_page(pdf, index);
         if !self.config.routing.use_onnx || self.config.routing.routing_mode == RoutingMode::Never {
-            return self.fast_markdown_placed(pdf, index, work_dir, assets);
+            let md = self.fast_markdown_placed(pdf, index, work_dir, assets)?;
+            return Ok(self.merge_structured_math(pdf, index, md, &structured));
         }
 
         if self.config.routing.routing_mode == RoutingMode::Surgical {
             if is_scanned(pdf, index, self.config.text.scanned_text_threshold) {
                 self.engine.ensure_models()?;
-                match self.full_structure_page_markdown(pdf, index, work_dir, assets) {
+                match self.full_structure_page_markdown(pdf, index, work_dir, assets, &structured) {
                     Ok(Some(md)) if !md.trim().is_empty() => {
                         info!("page {}: scanned → ONNX layout+OCR", index + 1);
-                        return Ok(md);
+                        return Ok(self.merge_structured_math(pdf, index, md, &structured));
                     }
                     Err(e) => warn!(
                         "page {}: ONNX full-structure failed ({}); falling back to fast path",
@@ -1616,25 +1860,20 @@ impl HybridConverter {
                     ),
                     _ => {}
                 }
-                return self.fast_markdown_placed(pdf, index, work_dir, assets);
+                let md = self.fast_markdown_placed(pdf, index, work_dir, assets)?;
+                return Ok(self.merge_structured_math(pdf, index, md, &structured));
             }
-            let md = self.surgical_page_markdown(pdf, index, work_dir)?;
-            return Ok(interleave_images(
-                pdf,
-                index,
-                &self.config.render,
-                &md,
-                work_dir,
-                assets,
-            ));
+            let md = self.surgical_page_markdown(pdf, index, work_dir, &structured)?;
+            let md = interleave_images(pdf, index, &self.config.render, &md, work_dir, assets);
+            return Ok(self.merge_structured_math(pdf, index, md, &structured));
         }
 
         // AUTO / ALWAYS
         if needs_onnx(pdf, index, &self.config) {
-            match self.full_structure_page_markdown(pdf, index, work_dir, assets) {
+            match self.full_structure_page_markdown(pdf, index, work_dir, assets, &structured) {
                 Ok(Some(md)) if !md.trim().is_empty() => {
                     info!("page {} → ONNX layout+OCR", index + 1);
-                    return Ok(md);
+                    return Ok(self.merge_structured_math(pdf, index, md, &structured));
                 }
                 Err(e) => tracing::warn!(
                     "page {}: ONNX full-structure failed ({}); falling back to fast path",
@@ -1645,7 +1884,132 @@ impl HybridConverter {
             }
         }
 
-        self.fast_markdown_placed(pdf, index, work_dir, assets)
+        let md = self.fast_markdown_placed(pdf, index, work_dir, assets)?;
+        Ok(self.merge_structured_math(pdf, index, md, &structured))
+    }
+
+    fn structured_math_for_page(&mut self, pdf: &mut dyn PdfSource, index: usize) -> Vec<MathSpan> {
+        if !self.config.math.prefer_structured_math {
+            return Vec::new();
+        }
+        let mut spans = match pdf.structured_math_with_limits(
+            index,
+            self.config.math.max_struct_nodes,
+            self.config.math.max_formula_attachment_bytes,
+        ) {
+            Ok(spans) => spans,
+            Err(error) => {
+                self.math_source_report.validation_skipped += 1;
+                self.math_source_report.warnings.push(format!(
+                    "page {} tagged math could not be read: {error}",
+                    index + 1
+                ));
+                return Vec::new();
+            }
+        };
+        let mut accepted = Vec::with_capacity(spans.len());
+        for mut span in spans.drain(..) {
+            if span.page != index {
+                self.math_source_report.warnings.push(format!(
+                    "structured math source returned page {} while reading page {}",
+                    span.page, index
+                ));
+                continue;
+            }
+            for warning in &span.warnings {
+                let warning = format!("page {} structured math: {warning}", index + 1);
+                if !self.math_source_report.warnings.contains(&warning) {
+                    self.math_source_report.warnings.push(warning);
+                }
+            }
+            match span.origin {
+                MathOrigin::TaggedMathMl => self.math_source_report.tagged_spans += 1,
+                MathOrigin::AssociatedFile => self.math_source_report.associated_file_spans += 1,
+                MathOrigin::EmbeddedSource => self.math_source_report.embedded_source_spans += 1,
+                MathOrigin::OcrTexTeller => self.math_source_report.ocr_spans += 1,
+                MathOrigin::TextLayer => self.math_source_report.text_layer_spans += 1,
+                MathOrigin::AltDescription => {
+                    self.math_source_report.alt_only_spans += 1;
+                    continue;
+                }
+            }
+            if span.latex.trim().is_empty() {
+                self.math_source_report.validation_failed += 1;
+                continue;
+            }
+            let Some(latex) = self.prepare_math_latex(
+                "tagged PDF formula",
+                span.latex.clone(),
+                span.display,
+                span.origin,
+            ) else {
+                continue;
+            };
+            if latex != span.latex {
+                span.confidence *= 0.95;
+                span.warnings
+                    .push("LaTeX sanitizer repaired the formula".into());
+            }
+            span.latex = latex;
+            accepted.push(span);
+        }
+        if !accepted.is_empty() {
+            self.math_source_report.pages_with_structured_math += 1;
+        }
+        accepted
+    }
+
+    fn merge_structured_math(
+        &self,
+        pdf: &mut dyn PdfSource,
+        index: usize,
+        markdown: String,
+        spans: &[MathSpan],
+    ) -> String {
+        let mut replacements = Vec::new();
+        let mut unplaced = Vec::new();
+        for span in spans {
+            if span.origin == MathOrigin::AltDescription || span.latex.trim().is_empty() {
+                continue;
+            }
+            let block = format_math_block(
+                &span.latex,
+                span.display,
+                self.config.math.emit_provenance_comments,
+                span.origin,
+            );
+            if let Some(bbox) = span.bbox {
+                let needle = region_text(pdf, index, bbox);
+                if needle.trim().is_empty() {
+                    unplaced.push(block);
+                } else {
+                    replacements.push((needle, block));
+                }
+            } else {
+                unplaced.push(block);
+            }
+        }
+        let mut merged = splice(&markdown, &replacements);
+        if !unplaced.is_empty() {
+            if !merged.trim().is_empty() {
+                merged.push_str("\n\n");
+            }
+            merged.push_str(&unplaced.join("\n\n"));
+        }
+        merged
+    }
+
+    fn suppress_structured_ocr_boxes(&mut self, boxes: &mut Vec<Rect>, spans: &[MathSpan]) {
+        let before = boxes.len();
+        boxes.retain(|bbox| {
+            !spans.iter().any(|span| {
+                span.origin != MathOrigin::AltDescription
+                    && span.bbox.map_or(false, |math_bbox| {
+                        overlap_of_smaller_rect(bbox, &math_bbox) >= 0.35
+                    })
+            })
+        });
+        self.math_source_report.suppressed_ocr_spans += before.saturating_sub(boxes.len());
     }
 
     /// Fast-path markdown with embedded figures interleaved at their visual
@@ -1682,6 +2046,7 @@ impl HybridConverter {
         pdf: &mut dyn PdfSource,
         index: usize,
         work_dir: &Path,
+        structured: &[MathSpan],
     ) -> Result<String> {
         let fast_md = fast_page_markdown(pdf, index)?;
 
@@ -1718,6 +2083,7 @@ impl HybridConverter {
                 }
             }
         }
+        self.suppress_structured_ocr_boxes(&mut boxes, structured);
         if boxes.is_empty() {
             return Ok(fast_md);
         }
@@ -1779,6 +2145,7 @@ impl HybridConverter {
                 };
                 if let Some((first, rest)) = cluster.members.split_first() {
                     replacements.push((region_text(pdf, index, *first), wrapped));
+                    self.math_source_report.ocr_spans += 1;
                     // Absorbed members' text is covered by the merged
                     // decode — delete it so it isn't duplicated.
                     for m in rest {
@@ -1816,6 +2183,7 @@ impl HybridConverter {
     /// (the extension dispatcher) to stage pictures into the work dir and
     /// rewrite links to staged files.
     pub fn convert_office(path: &Path) -> Result<String> {
+        crate::input_limits::ensure_input_file_size(path)?;
         use office_oxide::Document;
         let doc =
             Document::open(path).map_err(|e| BobineError::OfficeOxide(format!("open: {e}")))?;
@@ -2772,6 +3140,21 @@ fn rect_iou(a: &Rect, b: &Rect) -> f32 {
     if union <= 0.0 { 0.0 } else { inter / union }
 }
 
+fn overlap_of_smaller_rect(a: &Rect, b: &Rect) -> f32 {
+    let ix = (a.x + a.width).min(b.x + b.width) - a.x.max(b.x);
+    let iy = (a.y + a.height).min(b.y + b.height) - a.y.max(b.y);
+    if ix <= 0.0 || iy <= 0.0 {
+        return 0.0;
+    }
+    let intersection = ix * iy;
+    let area = (a.width * a.height).min(b.width * b.height);
+    if area <= 0.0 {
+        0.0
+    } else {
+        intersection / area
+    }
+}
+
 /// The embedded raster best covered by `region`, if any.
 ///
 /// Uses COVERAGE (intersection / raster area) rather than symmetric IoU:
@@ -3063,6 +3446,45 @@ fn splice(md: &str, replacements: &[(String, String)]) -> String {
     result
 }
 
+fn looks_like_jats_article(xml: &str) -> bool {
+    roxmltree::Document::parse(xml)
+        .ok()
+        .map(|document| document.root_element().tag_name().name() == "article")
+        .unwrap_or(false)
+}
+
+fn math_origin_name(origin: MathOrigin) -> &'static str {
+    match origin {
+        MathOrigin::TaggedMathMl => "tagged_math_ml",
+        MathOrigin::AssociatedFile => "associated_file",
+        MathOrigin::EmbeddedSource => "embedded_source",
+        MathOrigin::OcrTexTeller => "ocr_texteller",
+        MathOrigin::TextLayer => "text_layer",
+        MathOrigin::AltDescription => "alt_description",
+    }
+}
+
+fn format_math_block(
+    latex: &str,
+    display: bool,
+    emit_provenance_comment: bool,
+    origin: MathOrigin,
+) -> String {
+    let math = if display {
+        format!("$$\n{latex}\n$$")
+    } else {
+        format!("${latex}$")
+    };
+    if emit_provenance_comment {
+        format!(
+            "<!-- bobine math source: {} -->\n{math}",
+            math_origin_name(origin)
+        )
+    } else {
+        math
+    }
+}
+
 // ======================================================================
 // Full ONNX structure page (AUTO / ALWAYS modes)
 // ======================================================================
@@ -3167,6 +3589,7 @@ impl HybridConverter {
         index: usize,
         work_dir: &Path,
         assets: &[EmbeddedAsset],
+        structured: &[MathSpan],
     ) -> Result<Option<String>> {
         let dpi = self.config.render.render_dpi;
         let img = match render_page_image(pdf, index, dpi) {
@@ -3191,6 +3614,7 @@ impl HybridConverter {
             2.5,
             0.9,
         );
+        self.suppress_structured_ocr_boxes(&mut page_math_boxes, structured);
         let line_height = estimate_line_height(pdf, index, page_h);
 
         // One chars() pass for the whole page (glyph-exact region
@@ -3361,6 +3785,7 @@ impl HybridConverter {
                     bbox,
                     blocks.len(),
                     &mut page_math_boxes,
+                    &mut self.math_source_report.ocr_spans,
                 )?);
             } else if lab.contains("figure") || lab.contains("image") {
                 if let Some(link) = figure_block(&ctx, bbox, blocks.len()) {
@@ -3473,6 +3898,52 @@ mod tests {
             }
             other => panic!("expected UnsupportedFormat, got {other}"),
         }
+    }
+
+    #[test]
+    fn tagged_and_ocr_math_candidates_remain_local_to_their_boxes() {
+        let mut conv =
+            HybridConverter::new(ConverterConfig::default(), &temp_dir("tagged_ocr_math"));
+        let tagged = MathSpan {
+            page: 0,
+            bbox: Some(Rect::new(0.0, 700.0, 48.0, 16.0)),
+            latex: "x=1".to_string(),
+            display: true,
+            origin: MathOrigin::TaggedMathMl,
+            confidence: 0.98,
+            tag: Some("Formula".to_string()),
+            warnings: Vec::new(),
+            description: None,
+            structure_namespace: None,
+            structure_attributes: None,
+            associated_filename: None,
+            associated_relationship: None,
+            associated_mime_type: None,
+        };
+        let mut candidates = vec![
+            Rect::new(0.0, 700.0, 48.0, 16.0),
+            Rect::new(200.0, 700.0, 48.0, 16.0),
+        ];
+        conv.suppress_structured_ocr_boxes(&mut candidates, std::slice::from_ref(&tagged));
+        assert_eq!(candidates, vec![Rect::new(200.0, 700.0, 48.0, 16.0)]);
+        assert_eq!(conv.math_source_report().suppressed_ocr_spans, 1);
+
+        let mut pdf = FakePdf::new(vec![
+            FakePage::from_text("TAGGED_FORMULA OCR_CANDIDATE", "Helvetica")
+                .with_region(Rect::new(0.0, 700.0, 48.0, 16.0), "TAGGED_FORMULA"),
+        ]);
+        let merged = conv.merge_structured_math(
+            &mut pdf,
+            0,
+            "TAGGED_FORMULA OCR_CANDIDATE".to_string(),
+            std::slice::from_ref(&tagged),
+        );
+        let output = splice(
+            &merged,
+            &[("OCR_CANDIDATE".to_string(), "$$y=2$$".to_string())],
+        );
+        assert!(output.contains("x=1"), "{output}");
+        assert!(output.contains("y=2"), "{output}");
     }
 
     #[test]
@@ -4357,7 +4828,7 @@ Second paragraph text."
     fn figure_src_link_mode_passes_through() {
         let r = crate::config::RenderOpts::default();
         assert_eq!(r.image_mode, crate::config::ImageMode::Link);
-        assert_eq!(r.max_embed_bytes, 262_144);
+        assert_eq!(r.max_embed_bytes, 4 * 1024 * 1024);
         assert!(!r.preserve_layout);
         assert_eq!(
             figure_src(Path::new("/work"), "assets/p0/img0.png", &r),

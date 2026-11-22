@@ -20,7 +20,9 @@ pub fn html_tables_to_gfm(md: &str) -> String {
     });
     let open = Regex::new(r"(?is)<html\b[^>]*>").unwrap();
     let close = Regex::new(r"(?is)</html\s*>").unwrap();
-    close.replace_all(&open.replace_all(&converted, ""), "").to_string()
+    close
+        .replace_all(&open.replace_all(&converted, ""), "")
+        .to_string()
 }
 
 fn one_table_to_gfm(html: &str) -> Option<String> {
@@ -295,8 +297,7 @@ fn source_table_to_gfm(table: &SourceTable) -> String {
         .unwrap_or(0)
         .max(table.col_count);
     let cell = |c: Option<&crate::pdf_source::SourceTableCell>| {
-        c.map(|c| gfm_escape(c.text.trim()))
-            .unwrap_or_default()
+        c.map(|c| gfm_escape(c.text.trim())).unwrap_or_default()
     };
 
     // Header row: first explicitly-flagged header row, else the first row.
@@ -361,9 +362,7 @@ fn push_html_cell(out: &mut String, c: &crate::pdf_source::SourceTableCell, tag:
     } else {
         String::new()
     };
-    out.push_str(&format!(
-        "<{tag}{colspan}{rowspan}>{esc}</{tag}>\n",
-    ));
+    out.push_str(&format!("<{tag}{colspan}{rowspan}>{esc}</{tag}>\n",));
 }
 
 #[cfg(test)]
@@ -465,7 +464,7 @@ mod tests {
     // source_table_markdown (structured tables from the text layer)
     // ==================================================================
 
-    use crate::pdf_source::{SourceTableCell, SourceTable};
+    use crate::pdf_source::{SourceTable, SourceTableCell};
 
     fn cell(text: &str) -> SourceTableCell {
         SourceTableCell {
@@ -578,12 +577,7 @@ mod tests {
         // Symptom: body rows collapsed into one concatenated cell.
         let mut t = simple_table();
         t.rows.push(crate::pdf_source::SourceTableRow {
-            cells: vec![
-                cell("A-10112.43.5188.2"),
-                cell(""),
-                cell(""),
-                cell(""),
-            ],
+            cells: vec![cell("A-10112.43.5188.2"), cell(""), cell(""), cell("")],
             is_header: false,
         });
         assert!(!is_plausible_table(&t));

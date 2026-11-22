@@ -28,7 +28,7 @@ them; verified live (pip ORT 1.30.0 + RTX 3090: scanned page OCR 28 → 883
 chars). Never install both `onnxruntime` and `onnxruntime-gpu` (same module
 name).
 
-Requirements: Rust toolchain (1.85+, edition 2024), maturin ≥1.7, and a
+Requirements: Rust toolchain (1.88+, edition 2024), maturin ≥1.7, and a
 modern onnxruntime (≥1.19) discoverable by `ort`. Python 3.10+
 (prebuilt wheels for CPython 3.10–3.14 on manylinux x86_64, Windows x64
 and macOS arm64 — other platforms, arm64 Linux included, fall back to the
@@ -144,6 +144,10 @@ python -m bobine.serve --port 8757 --idle-seconds 300
 | `GET /v1/models` | cache status + the warm keys (`settings`, `last_used`, `documents`, `describe()`) |
 | `POST /v1/convert` | `{"path", "output_dir", "settings"?}` -> NDJSON: one `{"page", "total"}` line per page, then `{"md_path", "image_dir", "page_count", ...}` |
 
+The JSON request body is limited to 256 MiB. It contains a path to the input
+document; Bobine separately enforces the same 256 MiB limit on the referenced
+file before parsing it.
+
 `settings` takes `ConverterConfig` kwargs (the request fields are
 whitelisted, so a typo cannot poison the pool key). `--idle-seconds 0`
 releases the converter after every conversion. A failed conversion
@@ -256,7 +260,7 @@ import json; data = json.loads(doc.json)  # typed values, formulas kept
 | `min_figure_area_pts` | `100.0` | Smaller embedded images count as decoration |
 | `image_output_dir` | `"assets"` | Asset tree root: `<dir>/p{page}/img{k}.{ext}` |
 | `image_mode` | `Link` | `Link` (default) or `EmbedBase64` (data URIs ≤ cap) |
-| `max_embed_bytes` | `262144` | Cap for `EmbedBase64`; larger figures stay links |
+| `max_embed_bytes` | `4194304` | 4 MiB cap for `EmbedBase64`; larger figures stay links |
 | `preserve_layout` | `False` | Fast path: strict visual order, no reflow (ONNX paths ignore it) |
 | `promote_headings` | `True` | Scholarly section patterns (`I.`, `3.1`, `A.`) → markdown headings |
 | `promote_title` | `True` | Document title → `# ` (first short block or top title-like heading) |
@@ -273,6 +277,31 @@ import json; data = json.loads(doc.json)  # typed values, formulas kept
 | `render_gate_min_layer_words` | `30` | Min text-layer words for the gate to judge a page (below = scanned/thin, gate passes) |
 | `render_gate_min_jaccard` | `0.35` | Fire when OCR↔layer word-Jaccard is strictly below this (page falls back to fast path, math suppressed) |
 | `render_gate_salvage_inline_math` | `False` | Salvage inline-only formula boxes from the text layer as `$…$` on fired pages instead of dropping all math |
+| `prefer_structured_math` | `True` | Use tagged PDF Formula/MathML before formula OCR |
+| `allow_embedded_sources` | `True` | Read supported MathML/XML files from the PDF attachment name tree |
+| `prefer_embedded_jats` | `False` | Replace the PDF with an attached JATS article as the whole-document source |
+| `max_embedded_bytes` | `16777216` | 16 MiB maximum decoded size per document-level embedded source passed to parsing; pdf_oxide decodes before Bobine can enforce this cap |
+| `max_struct_nodes` | `10000` | Maximum structure nodes Bobine traverses per page |
+| `validate_math` | `False` | Validate extracted LaTeX with KaTeX; available in builds with `math-validate` (included in Python wheels) |
+| `emit_provenance_comments` | `False` | Add an HTML comment with the source for each emitted structured formula |
+| `max_formula_attachment_bytes` | `1048576` | 1 MiB maximum decoded size per formula-associated `/AF` attachment passed to MathML parsing; checked after decoding |
+
+Bobine enforces a global 256 MiB (268435456-byte) limit on path-based PDF,
+Office, JATS/XML, and plain-text inputs before parsing. The limit is also
+exported as `bobine.MAX_INPUT_FILE_BYTES` and `bobine::MAX_INPUT_FILE_BYTES`.
+It caps source-file bytes; it does not cap decoded PDF streams or ZIP contents.
+The attachment thresholds above remain downstream parsing limits after
+`pdf_oxide` decodes the attached streams.
+
+`HybridConverter.math_source_report()` returns source counts and warnings for
+the latest PDF conversion. Bobine checks formula-level `/AF` through a bounded
+raw-object lookup aligned with `pdf_oxide`'s parsed structure tree. It reuses
+decoded attachments from `/Names /EmbeddedFiles` only for a unique filename
+match; ambiguous or unlisted associated files are skipped. `/A` and `/NS` are
+retained on the Rust `MathSpan` result as normalized metadata; `/Alt` is decoded
+as a description and never treated as LaTeX. The document-source and formula-
+attachment byte caps apply before Bobine parses attachment content, after
+`pdf_oxide` has decoded the stream.
 
 ## Structured sources: JATS (v0.7.0)
 

@@ -1,5 +1,26 @@
 # Changelog — bobine
 
+## 0.10.0 — 2026-11-22
+
+- **Tagged PDF math and provenance.** Read `/Formula` structure elements,
+  MathML text, raw formula attributes, `/Alt` descriptions, and associated
+  MathML files through `pdf_oxide`. Structured formulas are inserted by page
+  position and suppress only overlapping OCR candidates; provenance and
+  source warnings are available to Rust and Python callers. KaTeX-backed
+  validation and HTML/MathML export remain opt-in features.
+- **Explicit input and body limits.** Reject input files larger than 256 MiB
+  across conversion entry points, raise embedded-source and inline-image
+  budgets to 16 MiB and 4 MiB, and enforce the 256 MiB HTTP request-body cap.
+  Formula-associated attachments retain their 1 MiB per-file cap. The PDF
+  backend still decodes catalog attachments before Bobine can apply parsed
+  byte limits; the extraction code records this as a follow-up resource-limit
+  item.
+- **Binary text fallback detection.** Use `binaryornot-rs` when deciding
+  whether unrecognized or text-suffixed inputs can safely take the text
+  fallback.
+- **PPTX slide image ordering.** Keep pictures with the slide content they
+  belong to during conversion.
+
 ## 0.9.1 — 2026-11-12
 
 - **A machine with no ONNX Runtime reports it quietly.** `runtime_info()`

@@ -58,14 +58,9 @@ pub(crate) fn hub_fetch(
     ) {
         Ok(rep) if rep.cached => {
             // The map is filename → Option<path>; flatten the double Option.
-            let path = rep
-                .files
-                .get(filename)
-                .cloned()
-                .flatten()
-                .ok_or_else(|| {
-                    BobineError::Ort(format!("cache probe hit but {filename} has no path"))
-                })?;
+            let path = rep.files.get(filename).cloned().flatten().ok_or_else(|| {
+                BobineError::Ort(format!("cache probe hit but {filename} has no path"))
+            })?;
             info!("{what}: using cached {}", path.display());
             return Ok(path);
         }
@@ -76,13 +71,9 @@ pub(crate) fn hub_fetch(
     // root, same hf-hub mechanics — including HF_ENDPOINT handling, so
     // the endpoint-guard tests below still exercise the failure path).
     // The wrap keeps the old contract: the error names what was fetched.
-    let path = embroider::fetch_repo_file(
-        &repo_id,
-        filename,
-        revision,
-        Some(cache_dir.to_path_buf()),
-    )
-    .map_err(|e| BobineError::Ort(format!("download {what}: {e}")))?;
+    let path =
+        embroider::fetch_repo_file(&repo_id, filename, revision, Some(cache_dir.to_path_buf()))
+            .map_err(|e| BobineError::Ort(format!("download {what}: {e}")))?;
     Ok(path)
 }
 
@@ -95,7 +86,9 @@ mod tests {
     fn endpoint_guard() -> Option<String> {
         let saved = std::env::var("HF_ENDPOINT").ok();
         // SAFETY: test-only; no other thread reads HF_ENDPOINT here.
-        unsafe { std::env::set_var("HF_ENDPOINT", "http://127.0.0.1:1"); }
+        unsafe {
+            std::env::set_var("HF_ENDPOINT", "http://127.0.0.1:1");
+        }
         saved
     }
 
@@ -125,8 +118,7 @@ mod tests {
     #[test]
     fn hub_fetch_serves_seeded_cache_with_zero_network() {
         let saved = endpoint_guard();
-        let root =
-            std::env::temp_dir().join(format!("bobine-hub-hit-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("bobine-hub-hit-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let snap = seed_repo(&root, "models--org--probe", "w.onnx", &[3u8; 48]);
 
@@ -150,8 +142,7 @@ mod tests {
     #[test]
     fn hub_fetch_miss_surfaces_the_download_error() {
         let saved = endpoint_guard();
-        let root =
-            std::env::temp_dir().join(format!("bobine-hub-miss-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("bobine-hub-miss-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
 

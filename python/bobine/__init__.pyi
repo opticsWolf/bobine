@@ -3,6 +3,8 @@
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+MAX_INPUT_FILE_BYTES: int
+
 class RoutingMode(Enum):
     # Fast path only (pdf_oxide). No ONNX models loaded.
     Never = "never"
@@ -88,7 +90,7 @@ class ConverterConfig:
         detect_code_blocks: bool = True,
         min_formula_math_chars: int = 5,
         image_mode: ImageMode = ImageMode.Link,
-        max_embed_bytes: int = 262144,
+        max_embed_bytes: int = 4194304,
         preserve_layout: bool = False,
         formula_inline_max_width_pts: float = 220.0,
         formula_pad_pts: float = 4.0,
@@ -115,6 +117,14 @@ class ConverterConfig:
         ocr_ort_providers: list[str] | None = None,
         table_ort_providers: list[str] | None = None,
         potatr_ort_providers: list[str] | None = None,
+        prefer_structured_math: bool = True,
+        allow_embedded_sources: bool = True,
+        prefer_embedded_jats: bool = False,
+        max_embedded_bytes: int = 16777216,
+        max_struct_nodes: int = 10000,
+        validate_math: bool = False,
+        emit_provenance_comments: bool = False,
+        max_formula_attachment_bytes: int = 1048576,
     ) -> None: ...
     @property
     def ort_providers(self) -> list[str]: ...
@@ -158,6 +168,22 @@ class ConverterConfig:
     @property
     def preserve_layout(self) -> bool: ...
     @property
+    def prefer_structured_math(self) -> bool: ...
+    @property
+    def allow_embedded_sources(self) -> bool: ...
+    @property
+    def prefer_embedded_jats(self) -> bool: ...
+    @property
+    def max_embedded_bytes(self) -> int: ...
+    @property
+    def max_formula_attachment_bytes(self) -> int: ...
+    @property
+    def max_struct_nodes(self) -> int: ...
+    @property
+    def validate_math(self) -> bool: ...
+    @property
+    def emit_provenance_comments(self) -> bool: ...
+    @property
     def extract_images(self) -> bool: ...
     @property
     def ocr_lang(self) -> str: ...
@@ -200,6 +226,7 @@ class HybridConverter:
         opens (probing would load the runtime to describe a future load).
         '''
         ...
+    def math_source_report(self) -> Dict[str, Any]: ...
     def close(self) -> None: ...
     def is_closed(self) -> bool: ...
     def __enter__(self) -> "HybridConverter": ...

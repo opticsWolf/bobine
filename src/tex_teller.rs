@@ -49,10 +49,7 @@ fn argmax_next_token(last: ndarray::ArrayView1<'_, f32>, fallback: i64) -> i64 {
 fn harvest_kv(
     outputs: &ort::session::SessionOutputs<'_>,
     scope: &str,
-    cache: &mut Vec<(
-        String,
-        ort::value::Value<ort::value::TensorValueType<f32>>,
-    )>,
+    cache: &mut Vec<(String, ort::value::Value<ort::value::TensorValueType<f32>>)>,
 ) -> Result<()> {
     use ort::value::Tensor;
     for i in 0..LAYERS {
@@ -62,8 +59,8 @@ fn harvest_kv(
                 .try_extract_array::<f32>()
                 .map_err(|e| BobineError::Ort(format!("{name}: {e}")))?
                 .to_owned();
-            let val = Tensor::from_array(arr)
-                .map_err(|e| BobineError::Ort(format!("{name}: {e}")))?;
+            let val =
+                Tensor::from_array(arr).map_err(|e| BobineError::Ort(format!("{name}: {e}")))?;
             cache.push((format!("past_key_values.{i}.{scope}.{kv}"), val));
         }
     }
@@ -162,8 +159,8 @@ impl TexTeller {
         encoder_providers: Option<&[String]>,
         decoder_providers: &[String],
     ) -> Result<Self> {
-        let (owner, name) = embroider::parse_owner_name(repo)
-            .map_err(|e| BobineError::Ort(e.to_string()))?;
+        let (owner, name) =
+            embroider::parse_owner_name(repo).map_err(|e| BobineError::Ort(e.to_string()))?;
 
         // Cache-mode fetch through the shared hub cache (no local_dir
         // side-copies, no destination probes): a cached file returns its
@@ -587,10 +584,8 @@ impl TexTeller {
                             .map_err(|e| {
                                 BobineError::Ort(format!("build empty past cache: {e}"))
                             })?;
-                            inputs.push((
-                                format!("past_key_values.{i}.{scope}.{kv}"),
-                                empty.into(),
-                            ));
+                            inputs
+                                .push((format!("past_key_values.{i}.{scope}.{kv}"), empty.into()));
                         }
                     }
                 }
@@ -709,10 +704,7 @@ mod tests {
     #[test]
     fn argmax_next_token_picks_max_or_fallback() {
         let logits = ndarray::arr2(&[[0.1f32, 2.0, 0.5]]);
-        assert_eq!(
-            argmax_next_token(logits.slice(ndarray::s![0, ..]), -1),
-            1
-        );
+        assert_eq!(argmax_next_token(logits.slice(ndarray::s![0, ..]), -1), 1);
         let empty = ndarray::Array1::<f32>::zeros(0);
         assert_eq!(argmax_next_token(empty.view(), 7), 7);
     }
@@ -731,13 +723,8 @@ mod tests {
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| hf_hub::resolve_cache_dir());
         let cpu = vec!["CPUExecutionProvider".to_string()];
-        let tt = TexTeller::from_pretrained(
-            TEX_TELLER_REPO,
-            &cache,
-            ModelPrecision::Fp32,
-            &cpu,
-        )
-        .expect("fp32 trio loads from the unified repo");
+        let tt = TexTeller::from_pretrained(TEX_TELLER_REPO, &cache, ModelPrecision::Fp32, &cpu)
+            .expect("fp32 trio loads from the unified repo");
         // Construction succeeded (sessions built, tokenizer loaded):
         // the serving path is intact.
         assert!(tt.max_tokens > 0);

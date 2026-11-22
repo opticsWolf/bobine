@@ -70,7 +70,11 @@ fn excel_markdown_has_sheet_sections() {
     let doc = bobine::convert_excel(&fixture()).expect("convert types.xlsx");
     assert!(doc.markdown.contains("## Data"), "{}", doc.markdown);
     assert!(doc.markdown.contains("## Summary"), "{}", doc.markdown);
-    assert!(doc.markdown.contains("| Item | Count | Price | In stock |"), "{}", doc.markdown);
+    assert!(
+        doc.markdown.contains("| Item | Count | Price | In stock |"),
+        "{}",
+        doc.markdown
+    );
     // Image-only sheet has no rows: noted, not a phantom table.
     assert!(doc.markdown.contains("## Pic"), "{}", doc.markdown);
     assert!(doc.markdown.contains("_(empty sheet)_"), "{}", doc.markdown);
@@ -78,7 +82,9 @@ fn excel_markdown_has_sheet_sections() {
 
 #[test]
 fn ingest_writes_excel_sibling_files() {
-    let out = std::env::temp_dir().join("bobine_test").join("excel_ingest");
+    let out = std::env::temp_dir()
+        .join("bobine_test")
+        .join("excel_ingest");
     let _ = std::fs::remove_dir_all(&out);
     let doc = bobine::pipeline::ingest_document(
         &fixture(),

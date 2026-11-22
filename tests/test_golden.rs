@@ -103,7 +103,10 @@ fn check_fixture(
         } else {
             normalized.clone()
         };
-        mismatches.push(format!("{name}: {}\n--- actual ---\n{shown}", first_diff(&expected, &normalized)));
+        mismatches.push(format!(
+            "{name}: {}\n--- actual ---\n{shown}",
+            first_diff(&expected, &normalized)
+        ));
     }
 }
 

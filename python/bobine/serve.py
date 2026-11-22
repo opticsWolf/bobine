@@ -49,8 +49,13 @@ if sys.path and os.path.abspath(sys.path[0] or ".") == os.path.dirname(
 
 import bobine  # noqa: E402
 
-#: Largest request body accepted, in bytes.
-MAX_BODY = 1 * 1024 * 1024
+#: Largest JSON request body accepted, in bytes. Requests carry file paths;
+#: Bobine independently checks the referenced document against its 256 MiB cap.
+MAX_BODY = 256 * 1024 * 1024
+
+
+class RequestBodyTooLarge(ValueError):
+    """Raised when a request exceeds MAX_BODY."""
 
 #: Settings a request may pass (the rest stay at their defaults, so the
 #: canonical key cannot be poisoned by typos).
@@ -184,6 +189,10 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0:
             return {}
+        if length > MAX_BODY:
+            raise RequestBodyTooLarge(
+                f"request body is {length} bytes; maximum is {MAX_BODY}"
+            )
         raw = self.rfile.read(length)
         return json.loads(raw.decode("utf-8"))
 
@@ -214,6 +223,10 @@ class Handler(BaseHTTPRequestHandler):
             path = request["path"]
             output_dir = request["output_dir"]
             settings = request.get("settings") or {}
+        except RequestBodyTooLarge as exc:
+            self.close_connection = True
+            self._reply(413, {"error": str(exc)})
+            return
         except KeyError as exc:
             self._reply(400, {"error": f"missing field {exc}"})
             return

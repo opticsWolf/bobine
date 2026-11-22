@@ -65,10 +65,26 @@ enum Backend {
 /// `label_list`, index = class id). Fallback when neither a labels file
 /// nor model metadata provides names.
 const PLUS_L_LABELS: &[&str] = &[
-    "paragraph_title", "image", "text", "number", "abstract",
-    "content", "figure_title", "formula", "table", "reference",
-    "doc_title", "footnote", "header", "algorithm", "footer",
-    "seal", "chart", "formula_number", "aside_text", "reference_content",
+    "paragraph_title",
+    "image",
+    "text",
+    "number",
+    "abstract",
+    "content",
+    "figure_title",
+    "formula",
+    "table",
+    "reference",
+    "doc_title",
+    "footnote",
+    "header",
+    "algorithm",
+    "footer",
+    "seal",
+    "chart",
+    "formula_number",
+    "aside_text",
+    "reference_content",
 ];
 
 /// Returns (scale, pad_w, pad_h, canvas_w, canvas_h).
@@ -95,7 +111,11 @@ impl RapidLayout {
     /// label per line, index = class id) wins; then model metadata;
     /// then the backend default list. Backend (YOLO vs Paddle DETR) is
     /// detected from the model's input signature.
-    pub fn load(model_path: &Path, labels_path: Option<&Path>, providers: &[String]) -> Result<Self> {
+    pub fn load(
+        model_path: &Path,
+        labels_path: Option<&Path>,
+        providers: &[String],
+    ) -> Result<Self> {
         info!("Loading RapidLayout from {}", model_path.display());
         let session = crate::engine::session_builder(providers)?
             .commit_from_file(model_path)

@@ -264,11 +264,7 @@ pub const CLASS_IDX2NAME: [&str; 17] = [
 /// and stay fixed for fidelity; `potatr_node_threshold` (config) filters the
 /// *final table claims* in P2 routing instead.
 fn class_threshold(label: &str) -> f32 {
-    if label == "no object" {
-        10.0
-    } else {
-        0.8
-    }
+    if label == "no object" { 10.0 } else { 0.8 }
 }
 
 /// A detected object, word token, or table structure. Python dicts with
@@ -303,7 +299,13 @@ pub struct PotatrObject {
 
 impl PotatrObject {
     /// A page word token (`ikat_grits_gate.page_words` shape).
-    pub fn token(text: &str, text_bbox: BBox, block_num: i64, line_num: i64, span_num: i64) -> Self {
+    pub fn token(
+        text: &str,
+        text_bbox: BBox,
+        block_num: i64,
+        line_num: i64,
+        span_num: i64,
+    ) -> Self {
         Self {
             idx: usize::MAX,
             text: text.to_string(),
@@ -357,7 +359,12 @@ fn bbox_area(b: &BBox) -> f32 {
 }
 
 fn bbox_intersect(a: &BBox, b: &BBox) -> BBox {
-    [a[0].max(b[0]), a[1].max(b[1]), a[2].min(b[2]), a[3].min(b[3])]
+    [
+        a[0].max(b[0]),
+        a[1].max(b[1]),
+        a[2].min(b[2]),
+        a[3].min(b[3]),
+    ]
 }
 
 /// Union accumulator with `None` as identity (`_bbox_include`).
@@ -365,17 +372,18 @@ fn bbox_intersect(a: &BBox, b: &BBox) -> BBox {
 pub(crate) fn rect_iou(a: &BBox, b: &BBox) -> f32 {
     let inter = bbox_area(&bbox_intersect(a, b));
     let union = bbox_area(a) + bbox_area(b) - inter;
-    if union > 0.0 {
-        inter / union
-    } else {
-        0.0
-    }
+    if union > 0.0 { inter / union } else { 0.0 }
 }
 
 fn bbox_include(current: Option<BBox>, b: &BBox) -> BBox {
     match current {
         None => *b,
-        Some(c) => [c[0].min(b[0]), c[1].min(b[1]), c[2].max(b[2]), c[3].max(b[3])],
+        Some(c) => [
+            c[0].min(b[0]),
+            c[1].min(b[1]),
+            c[2].max(b[2]),
+            c[3].max(b[3]),
+        ],
     }
 }
 
@@ -438,11 +446,7 @@ fn sort_top_to_bottom(objects: &mut [PotatrObject]) {
 
 /// Reduce the spans to those at least `threshold`-inside `bbox`
 /// (`get_bbox_span_subset`).
-fn get_bbox_span_subset(
-    spans: &[PotatrObject],
-    bbox: &BBox,
-    threshold: f32,
-) -> Vec<PotatrObject> {
+fn get_bbox_span_subset(spans: &[PotatrObject], bbox: &BBox, threshold: f32) -> Vec<PotatrObject> {
     spans
         .iter()
         .filter(|s| overlaps(&s.bbox, bbox, threshold))
@@ -491,10 +495,7 @@ fn extract_text_from_spans(spans: &[PotatrObject], join_with_space: bool) -> Str
 }
 
 /// Text inside a bbox plus the spans it came from (`extract_text_inside_bbox`).
-fn extract_text_inside_bbox(
-    spans: &[PotatrObject],
-    bbox: &BBox,
-) -> (String, Vec<PotatrObject>) {
+fn extract_text_inside_bbox(spans: &[PotatrObject], bbox: &BBox) -> (String, Vec<PotatrObject>) {
     let subset = get_bbox_span_subset(spans, bbox, 0.5);
     let text = extract_text_from_spans(&subset, true);
     (text, subset)
@@ -518,8 +519,7 @@ fn slot_into_containers(
     unique_assignment: bool,
     forced_assignment: bool,
 ) -> (Vec<Vec<usize>>, Vec<Vec<usize>>, Vec<f32>) {
-    let mut by_container: Vec<Vec<usize>> =
-        (0..containers.len()).map(|_| Vec::new()).collect();
+    let mut by_container: Vec<Vec<usize>> = (0..containers.len()).map(|_| Vec::new()).collect();
     let mut by_package: Vec<Vec<usize>> = (0..packages.len()).map(|_| Vec::new()).collect();
     let mut best_scores: Vec<f32> = Vec::new();
     if containers.is_empty() || packages.is_empty() {
@@ -533,7 +533,14 @@ fn slot_into_containers(
             .enumerate()
             .map(|(ci, c)| {
                 let inter = bbox_area(&bbox_intersect(&c.bbox, &package.bbox));
-                (ci, if package_area > 0.0 { inter / package_area } else { 0.0 })
+                (
+                    ci,
+                    if package_area > 0.0 {
+                        inter / package_area
+                    } else {
+                        0.0
+                    },
+                )
             })
             .collect();
         // Reference sorts dicts by score desc (stable); index tiebreak keeps
@@ -571,13 +578,8 @@ fn nms_by_containment(
 ) -> Vec<PotatrObject> {
     let mut sorted: Vec<PotatrObject> = containers.to_vec();
     sort_by_score_desc(&mut sorted);
-    let (by_container, _, _) = slot_into_containers(
-        &sorted,
-        packages,
-        overlap_threshold,
-        true,
-        false,
-    );
+    let (by_container, _, _) =
+        slot_into_containers(&sorted, packages, overlap_threshold, true, false);
     let n = sorted.len();
     let mut suppressed = vec![false; n];
     for o2 in 1..n {
@@ -589,8 +591,7 @@ fn nms_by_containment(
             if suppressed[o1] {
                 continue;
             }
-            let set1: std::collections::HashSet<usize> =
-                by_container[o1].iter().copied().collect();
+            let set1: std::collections::HashSet<usize> = by_container[o1].iter().copied().collect();
             if !set1.is_disjoint(&set2) {
                 suppressed[o2] = true;
             }
@@ -755,8 +756,8 @@ fn align_supercells(
         for (row_num, row) in rows.iter().enumerate() {
             let row_h = row.bbox[3] - row.bbox[1];
             let sc_h = supercell.bbox[3] - supercell.bbox[1];
-            let oh = (row.bbox[3].min(supercell.bbox[3]) - row.bbox[1].max(supercell.bbox[1]))
-                .max(0.0);
+            let oh =
+                (row.bbox[3].min(supercell.bbox[3]) - row.bbox[1].max(supercell.bbox[1])).max(0.0);
             // Reference divides unguarded; zero heights crash it. Rust guards
             // (documented delta: degenerate inputs keep the supercell instead
             // of raising). In practice model boxes have positive area.
@@ -801,8 +802,8 @@ fn align_supercells(
         for (col_num, col) in columns.iter().enumerate() {
             let col_w = col.bbox[2] - col.bbox[0];
             let sc_w = supercell.bbox[2] - supercell.bbox[0];
-            let ow = (col.bbox[2].min(supercell.bbox[2]) - col.bbox[0].max(supercell.bbox[0]))
-                .max(0.0);
+            let ow =
+                (col.bbox[2].min(supercell.bbox[2]) - col.bbox[0].max(supercell.bbox[0])).max(0.0);
             let frac = if supercell.is_span {
                 let a = if col_w > 0.0 { ow / col_w } else { 0.0 };
                 let b = if sc_w > 0.0 { ow / sc_w } else { 0.0 };
@@ -848,7 +849,10 @@ fn align_supercells(
                         cols.iter().map(|b| b[0]).fold(f32::INFINITY, f32::min),
                         rows_sel.iter().map(|b| b[1]).fold(f32::INFINITY, f32::min),
                         cols.iter().map(|b| b[2]).fold(f32::NEG_INFINITY, f32::max),
-                        rows_sel.iter().map(|b| b[3]).fold(f32::NEG_INFINITY, f32::max),
+                        rows_sel
+                            .iter()
+                            .map(|b| b[3])
+                            .fold(f32::NEG_INFINITY, f32::max),
                     ];
                     aligned.push(PotatrObject {
                         row_numbers: vec![rn],
@@ -901,10 +905,9 @@ fn remove_supercell_overlap(s1: &PotatrObject, s2: &mut PotatrObject) {
                 common_cols.clear();
             }
         } else {
-            let (Some(&min_r), Some(&max_r)) = (
-                s2.row_numbers.iter().min(),
-                s2.row_numbers.iter().max(),
-            ) else {
+            let (Some(&min_r), Some(&max_r)) =
+                (s2.row_numbers.iter().min(), s2.row_numbers.iter().max())
+            else {
                 break;
             };
             if common_rows.remove(&max_r) {
@@ -950,11 +953,7 @@ fn nms_supercells(supercells: &[PotatrObject]) -> Vec<PotatrObject> {
 /// Remove header supercells that break the header tree (`header_supercell_tree`):
 /// each must sit below exactly one ancestor covering its columns in every row above.
 fn header_supercell_tree(supercells: &mut Vec<PotatrObject>) {
-    let header: Vec<PotatrObject> = supercells
-        .iter()
-        .filter(|s| s.header)
-        .cloned()
-        .collect();
+    let header: Vec<PotatrObject> = supercells.iter().filter(|s| s.header).cloned().collect();
     let mut ordered = header;
     sort_by_score_desc(&mut ordered);
     let mut drop_idx: Vec<usize> = Vec::new();
@@ -1098,7 +1097,8 @@ fn refine_table_structures(mut structs: TableStructures) -> TableStructures {
         .cloned()
         .collect();
     supercells = apply_threshold(&supercells, class_threshold("table spanning cell"));
-    let mut subheaders = apply_threshold(&subheaders, class_threshold("table projected row header"));
+    let mut subheaders =
+        apply_threshold(&subheaders, class_threshold("table projected row header"));
     supercells.append(&mut subheaders);
     supercells = align_supercells(&supercells, &structs.rows, &structs.columns);
     supercells = nms_supercells(&supercells);
@@ -1156,9 +1156,7 @@ fn table_structure_to_cells(
         let mut header = true;
         for sub in &subcells {
             let sub_area = bbox_area(&sub.bbox);
-            if sub_area > 0.0
-                && bbox_area(&bbox_intersect(&sub.bbox, &sc.bbox)) / sub_area > 0.5
-            {
+            if sub_area > 0.0 && bbox_area(&bbox_intersect(&sub.bbox, &sc.bbox)) / sub_area > 0.5 {
                 sc_rect = Some(bbox_include(sc_rect, &sub.bbox));
                 cell_rows.extend(sub.row_nums.iter().copied());
                 cell_cols.extend(sub.column_nums.iter().copied());
@@ -1177,13 +1175,8 @@ fn table_structure_to_cells(
         }
     }
     // Confidence from word slotting.
-    let (_, _, match_scores) = slot_into_containers(
-        &cells_as_objects(&cells),
-        table_spans,
-        0.5,
-        true,
-        false,
-    );
+    let (_, _, match_scores) =
+        slot_into_containers(&cells_as_objects(&cells), table_spans, 0.5, true, false);
     let confidence = if match_scores.is_empty() {
         0.0
     } else {
@@ -1209,13 +1202,8 @@ fn table_structure_to_cells(
             &row_rect.expect("cell row"),
         );
     }
-    let (by_cell, _, _) = slot_into_containers(
-        &cells_as_objects(&cells),
-        table_spans,
-        0.001,
-        true,
-        false,
-    );
+    let (by_cell, _, _) =
+        slot_into_containers(&cells_as_objects(&cells), table_spans, 0.001, true, false);
     for (cell, span_nums) in cells.iter_mut().zip(by_cell.iter()) {
         cell.spans = span_nums.iter().map(|&n| table_spans[n].clone()).collect();
         cell.cell_text = extract_text_from_spans(&cell.spans, true);
@@ -1247,7 +1235,9 @@ fn table_structure_to_cells(
             row.bbox[0] = min_x_by_col[0].iter().fold(f32::INFINITY, |a, &b| a.min(b));
         }
         if !min_y_by_row[row_num].is_empty() {
-            row.bbox[1] = min_y_by_row[row_num].iter().fold(f32::INFINITY, |a, &b| a.min(b));
+            row.bbox[1] = min_y_by_row[row_num]
+                .iter()
+                .fold(f32::INFINITY, |a, &b| a.min(b));
         }
         if !max_x_by_col[num_columns - 1].is_empty() {
             row.bbox[2] = max_x_by_col[num_columns - 1]
@@ -1255,18 +1245,24 @@ fn table_structure_to_cells(
                 .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
         }
         if !max_y_by_row[row_num].is_empty() {
-            row.bbox[3] = max_y_by_row[row_num].iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+            row.bbox[3] = max_y_by_row[row_num]
+                .iter()
+                .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
         }
     }
     for (col_num, col) in dilated_columns.iter_mut().enumerate() {
         if !min_x_by_col[col_num].is_empty() {
-            col.bbox[0] = min_x_by_col[col_num].iter().fold(f32::INFINITY, |a, &b| a.min(b));
+            col.bbox[0] = min_x_by_col[col_num]
+                .iter()
+                .fold(f32::INFINITY, |a, &b| a.min(b));
         }
         if !min_y_by_row[0].is_empty() {
             col.bbox[1] = min_y_by_row[0].iter().fold(f32::INFINITY, |a, &b| a.min(b));
         }
         if !max_x_by_col[col_num].is_empty() {
-            col.bbox[2] = max_x_by_col[col_num].iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+            col.bbox[2] = max_x_by_col[col_num]
+                .iter()
+                .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
         }
         if !max_y_by_row[num_rows - 1].is_empty() {
             col.bbox[3] = max_y_by_row[num_rows - 1]
@@ -1724,10 +1720,22 @@ pub fn tables_from_outputs(
         .into_iter()
         .zip(tables_cells)
         .map(|(table, cells)| {
-            let caption_parts =
-                linked_text_parts(table, &objects, &edge_probs, tokens, &captions, edge_threshold);
-            let footer_parts =
-                linked_text_parts(table, &objects, &edge_probs, tokens, &footers, edge_threshold);
+            let caption_parts = linked_text_parts(
+                table,
+                &objects,
+                &edge_probs,
+                tokens,
+                &captions,
+                edge_threshold,
+            );
+            let footer_parts = linked_text_parts(
+                table,
+                &objects,
+                &edge_probs,
+                tokens,
+                &footers,
+                edge_threshold,
+            );
             let join = |parts: &[LinkedText]| {
                 parts
                     .iter()
@@ -1823,11 +1831,9 @@ mod p1_tests {
             word("Revenue", [150.0, 200.0, 250.0, 300.0]),
             word("2024", [700.0, 300.0, 740.0, 320.0]),
         ];
-        let before: Vec<(String, BBox)> =
-            tokens.iter().map(|t| (t.text.clone(), t.bbox)).collect();
+        let before: Vec<(String, BBox)> = tokens.iter().map(|t| (t.text.clone(), t.bbox)).collect();
         let tables = potatr_outputs_to_tables_cells(&logits, &boxes, &tokens, PAGE_W, PAGE_H);
-        let after: Vec<(String, BBox)> =
-            tokens.iter().map(|t| (t.text.clone(), t.bbox)).collect();
+        let after: Vec<(String, BBox)> = tokens.iter().map(|t| (t.text.clone(), t.bbox)).collect();
         assert_eq!(before, after, "caller words unchanged");
         assert_eq!(tables.len(), 1);
         let texts: Vec<&str> = tables[0].iter().map(|c| c.cell_text.as_str()).collect();
@@ -1851,7 +1857,10 @@ mod p1_tests {
         }
         let objects = potatr_outputs_to_objects(&logits, &boxes, PAGE_W, PAGE_H);
         assert_eq!(
-            objects.iter().map(|o| (o.idx, o.label.as_str())).collect::<Vec<_>>(),
+            objects
+                .iter()
+                .map(|o| (o.idx, o.label.as_str()))
+                .collect::<Vec<_>>(),
             vec![(0, "table")]
         );
         assert!(objects[0].score > 0.99);
@@ -1881,7 +1890,12 @@ mod p1_tests {
         assert_eq!(tables.len(), 1);
         let got: std::collections::HashMap<(usize, usize), (&str, bool)> = tables[0]
             .iter()
-            .map(|c| ((c.row_nums[0], c.column_nums[0]), (c.cell_text.as_str(), c.header)))
+            .map(|c| {
+                (
+                    (c.row_nums[0], c.column_nums[0]),
+                    (c.cell_text.as_str(), c.header),
+                )
+            })
             .collect();
         assert_eq!(
             got,
@@ -1914,7 +1928,10 @@ mod p1_tests {
         ];
         let tables = tables_from_outputs(&logits, &boxes, &edge, &tokens, PAGE_W, PAGE_H, 0.5);
         assert_eq!(
-            tables.iter().map(|t| t.caption.as_str()).collect::<Vec<_>>(),
+            tables
+                .iter()
+                .map(|t| t.caption.as_str())
+                .collect::<Vec<_>>(),
             vec!["First", "Second"]
         );
         assert!(approx(&tables[0].bbox, &[100.0, 100.0, 400.0, 300.0]));
