@@ -17,7 +17,10 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn work_dir(name: &str) -> PathBuf {
-    std::env::temp_dir().join("bobine_test").join("office").join(name)
+    std::env::temp_dir()
+        .join("bobine_test")
+        .join("office")
+        .join(name)
 }
 
 /// Convert via the real extension dispatcher (same path users hit).
@@ -67,7 +70,10 @@ fn docx_converts_with_structure_in_order() {
         ],
     );
     // GFM pipe table with header row + caption text.
-    assert!(md.contains("| Name | Qty | Price |"), "docx GFM header:\n{md}");
+    assert!(
+        md.contains("| Name | Qty | Price |"),
+        "docx GFM header:\n{md}"
+    );
     assert!(md.contains("Fixture inventory"), "docx caption:\n{md}");
     // Embedded picture keeps its alt text (Phase 3 stages the bytes).
     assert!(
@@ -133,11 +139,16 @@ fn docx_pictures_stage_into_work_dir() {
     std::fs::create_dir_all(&work).expect("work dir");
     let cfg = bobine::ConverterConfig::default();
     let mut conv = bobine::HybridConverter::new(cfg, &work.join("cache"));
-    let md = conv.convert(&fixture("basic.docx"), &work).expect("convert");
+    let md = conv
+        .convert(&fixture("basic.docx"), &work)
+        .expect("convert");
     // Relationship-id link rewritten to the staged file.
     assert!(!md.contains("(rId"), "rId link remains:\n{md}");
     assert!(md.contains("assets/office/img_"), "staged link:\n{md}");
-    assert!(md.contains("red-green checkerboard fixture"), "alt kept:\n{md}");
+    assert!(
+        md.contains("red-green checkerboard fixture"),
+        "alt kept:\n{md}"
+    );
     // Staged bytes decode to the 16×16 checkerboard the generator wrote.
     let staged: Vec<_> = std::fs::read_dir(work.join("assets").join("office"))
         .expect("office asset dir")
@@ -153,11 +164,10 @@ fn docx_pictures_stage_into_work_dir() {
 }
 
 #[test]
-fn pptx_and_xlsx_pictures_land_in_gallery() {
-    // Both formats drop pictures from their markdown; staging appends them.
-    // (pptx IR images carry no alt text upstream — gallery links may be
-    // bare; xlsx falls back to the package media stem.)
-    for (name, work_name) in [("deck.pptx", "pptx_img"), ("types.xlsx", "xlsx_img")] {
+fn xlsx_pictures_land_in_gallery() {
+    // xlsx drawings drop out of markdown; package-level staging appends them
+    // to the workbook output gallery.
+    for (name, work_name) in [("types.xlsx", "xlsx_img")] {
         let work = work_dir(work_name);
         let _ = std::fs::remove_dir_all(&work);
         std::fs::create_dir_all(&work).expect("work dir");
@@ -172,10 +182,40 @@ fn pptx_and_xlsx_pictures_land_in_gallery() {
         assert_eq!(staged.len(), 1, "{name} staged count");
         // Staged bytes are the generator's PNG (PNG magic + 16×16).
         let bytes = std::fs::read(staged[0].path()).expect("read staged");
-        assert_eq!(&bytes[..8], &[137, 80, 78, 71, 13, 10, 26, 10], "{name} png magic");
+        assert_eq!(
+            &bytes[..8],
+            &[137, 80, 78, 71, 13, 10, 26, 10],
+            "{name} png magic"
+        );
         let img = image::load_from_memory(&bytes).expect("staged decodes");
         assert_eq!((img.width(), img.height()), (16, 16), "{name} dims");
     }
+}
+
+#[test]
+fn pptx_picture_stays_with_its_slide() {
+    let work = work_dir("pptx_image_slide");
+    let _ = std::fs::remove_dir_all(&work);
+    std::fs::create_dir_all(&work).expect("work dir");
+    let cfg = bobine::ConverterConfig::default();
+    let mut conv = bobine::HybridConverter::new(cfg, &work.join("cache"));
+    let md = conv
+        .convert(&fixture("deck.pptx"), &work)
+        .expect("convert pptx");
+
+    let slide_start = md
+        .find("## Bullets and picture")
+        .expect("picture slide heading");
+    let next_slide = md.find("## Numbers").expect("next slide heading");
+    let picture_slide = &md[slide_start..next_slide];
+    assert!(
+        picture_slide.contains("assets/office/img_"),
+        "picture slide:\n{picture_slide}\nfull markdown:\n{md}"
+    );
+    assert!(
+        !md[next_slide..].contains("assets/office/img_"),
+        "picture escaped its slide:\n{md}"
+    );
 }
 
 #[test]
@@ -186,7 +226,9 @@ fn office_images_respect_extract_images_off() {
     let mut cfg = bobine::ConverterConfig::default();
     cfg.render.extract_images = false;
     let mut conv = bobine::HybridConverter::new(cfg, &work.join("cache"));
-    let md = conv.convert(&fixture("basic.docx"), &work).expect("convert");
+    let md = conv
+        .convert(&fixture("basic.docx"), &work)
+        .expect("convert");
     // extract_images=false: bobine stages nothing and rewrites nothing —
     // no staged-asset links, no asset dir. (office_oxide<=0.1.10 left a raw
     // `(rId…)` link here; >=0.1.11 drops the unresolvable link and keeps
@@ -211,11 +253,17 @@ fn normalize(md: &str) -> String {
 /// change: `BOBINE_UPDATE_GOLDENS=1 cargo test --test test_office office_golden`.
 #[test]
 fn office_golden_files() {
-    let golden_dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("golden").join("office");
+    let golden_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("golden")
+        .join("office");
     std::fs::create_dir_all(&golden_dir).expect("golden dir");
     let update = std::env::var("BOBINE_UPDATE_GOLDENS").is_ok();
-    for (name, stem) in [("basic.docx", "basic"), ("types.xlsx", "types"), ("deck.pptx", "deck")] {
+    for (name, stem) in [
+        ("basic.docx", "basic"),
+        ("types.xlsx", "types"),
+        ("deck.pptx", "deck"),
+    ] {
         let md = normalize(&convert_office(name, &format!("golden_{stem}")));
         let golden_path = golden_dir.join(format!("{stem}.golden.md"));
         if update || !golden_path.exists() {
@@ -229,7 +277,9 @@ fn office_golden_files() {
 
 #[test]
 fn ingest_promotes_office_images_to_asset_store() {
-    let out = std::env::temp_dir().join("bobine_test").join("office_ingest");
+    let out = std::env::temp_dir()
+        .join("bobine_test")
+        .join("office_ingest");
     let _ = std::fs::remove_dir_all(&out);
     let doc = bobine::pipeline::ingest_document(
         &fixture("basic.docx"),
@@ -241,8 +291,48 @@ fn ingest_promotes_office_images_to_asset_store() {
     )
     .expect("ingest docx");
     assert_eq!(doc.image_count, 1, "one staged picture");
-    assert!(doc.md_text.contains("okf-asset://"), "promoted:\n{}", doc.md_text);
-    assert!(doc.md_text.contains("red-green checkerboard fixture"), "alt kept");
+    assert!(
+        doc.md_text.contains("okf-asset://"),
+        "promoted:\n{}",
+        doc.md_text
+    );
+    assert!(
+        doc.md_text.contains("red-green checkerboard fixture"),
+        "alt kept"
+    );
+}
+
+#[test]
+fn pptx_ingest_keeps_picture_with_its_slide() {
+    let out = std::env::temp_dir()
+        .join("bobine_test")
+        .join("pptx_office_ingest");
+    let _ = std::fs::remove_dir_all(&out);
+    let doc = bobine::pipeline::ingest_document(
+        &fixture("deck.pptx"),
+        &out,
+        None,
+        None,
+        &bobine::ProgressHooks::default(),
+        None,
+    )
+    .expect("ingest pptx");
+    assert_eq!(doc.image_count, 1, "one embedded picture");
+    let slide_start = doc
+        .md_text
+        .find("## Bullets and picture")
+        .expect("picture slide heading");
+    let next_slide = doc.md_text.find("## Numbers").expect("next slide heading");
+    let picture_slide = &doc.md_text[slide_start..next_slide];
+    assert!(
+        picture_slide.contains("okf-asset://"),
+        "picture slide:\n{picture_slide}"
+    );
+    assert!(
+        !doc.md_text[next_slide..].contains("okf-asset://"),
+        "picture escaped its slide:\n{}",
+        doc.md_text
+    );
 }
 
 #[test]

@@ -91,7 +91,11 @@ fn region_claim_priority(label: &str) -> u8 {
         CLAIM_TABLE
     } else if MATH_LAYOUT_LABELS.iter().any(|k| l.contains(k)) {
         CLAIM_MATH
-    } else if l.contains("figure") || l.contains("image") || l.contains("chart") || l.contains("seal") {
+    } else if l.contains("figure")
+        || l.contains("image")
+        || l.contains("chart")
+        || l.contains("seal")
+    {
         CLAIM_NONE
     } else {
         CLAIM_TEXT
@@ -177,13 +181,13 @@ fn assign_glyph_owners(
             if region_claim_priority(&region.label) == CLAIM_NONE {
                 continue;
             }
-            let iw = region.x1.min((c.bbox.x + c.bbox.width) * scale)
-                - region.x0.max(c.bbox.x * scale);
+            let iw =
+                region.x1.min((c.bbox.x + c.bbox.width) * scale) - region.x0.max(c.bbox.x * scale);
             if iw <= 0.0 {
                 continue;
             }
-            let ih = region.y1.min((c.bbox.y + c.bbox.height) * scale)
-                - region.y0.max(c.bbox.y * scale);
+            let ih =
+                region.y1.min((c.bbox.y + c.bbox.height) * scale) - region.y0.max(c.bbox.y * scale);
             if ih <= 0.0 {
                 continue;
             }
@@ -535,8 +539,7 @@ fn potatr_route_claims(
     sorted: &[LayoutRegion],
     iou_t: f32,
 ) -> (Vec<bool>, Vec<Vec<usize>>, Vec<usize>) {
-    let region_boxes: Vec<[f32; 4]> =
-        sorted.iter().map(|r| [r.x0, r.y0, r.x1, r.y1]).collect();
+    let region_boxes: Vec<[f32; 4]> = sorted.iter().map(|r| [r.x0, r.y0, r.x1, r.y1]).collect();
     let mut suppressed = vec![false; sorted.len()];
     let mut anchors: Vec<Vec<usize>> = vec![Vec::new(); sorted.len()];
     let mut trailing = Vec::new();
@@ -700,7 +703,10 @@ fn table_block(
                 }
             }
             Err(e) => {
-                tracing::warn!("page {}: structured table probe failed: {e}", ctx.page_index + 1)
+                tracing::warn!(
+                    "page {}: structured table probe failed: {e}",
+                    ctx.page_index + 1
+                )
             }
         }
     }
@@ -769,11 +775,7 @@ struct MathCluster {
 /// merges the decode sequence is byte-identical to the unclustered path.
 /// Greedy over that order — an interleaved band restarts the run, costing
 /// an extra decode but never an incorrect merge.
-fn cluster_math_boxes(
-    boxes: &[Rect],
-    chars: &[SourceChar],
-    line_height: f32,
-) -> Vec<MathCluster> {
+fn cluster_math_boxes(boxes: &[Rect], chars: &[SourceChar], line_height: f32) -> Vec<MathCluster> {
     // NOTE: no re-sort — cluster order follows input order (see above).
     let sorted = boxes.to_vec();
     // The char clusterer already joins same-line math within 2.5x glyph
@@ -1066,8 +1068,7 @@ fn math_blocks(
             if crop.width() >= 4 && crop.height() >= 4 {
                 let p = ctx.work_dir.join(format!("_reg_f_{}.png", block_no));
                 if crop.save(&p).is_ok() {
-                    let budget =
-                        ((bbox.width * bbox.height) / 40.0).clamp(64.0, 512.0) as usize;
+                    let budget = ((bbox.width * bbox.height) / 40.0).clamp(64.0, 512.0) as usize;
                     if let Some(latex) = engine.recognize_formula_capped(&p, budget)? {
                         if let Some(latex) = sanitize_ocr_latex(ctx.config, &latex) {
                             out.push(format!("$$\n{}\n$$", latex));
@@ -1206,7 +1207,9 @@ fn assign_region_lines(
         for &i in &line {
             // `owned` only holds `Some` indices, but never panic on a
             // corrupt page — skip instead of shredding the line.
-            let Some(owner) = glyph_owner[i] else { continue };
+            let Some(owner) = glyph_owner[i] else {
+                continue;
+            };
             *tally.entry(owner).or_default() += 1;
         }
         let winner = tally
@@ -1293,7 +1296,12 @@ pub struct HybridConverter {
 impl HybridConverter {
     pub fn new(config: ConverterConfig, cache_dir: &Path) -> Self {
         let engine = OnnxEngine::new(&config, cache_dir);
-        Self { config, engine, gate_stats: RenderGateStats::default(), closed: false }
+        Self {
+            config,
+            engine,
+            gate_stats: RenderGateStats::default(),
+            closed: false,
+        }
     }
 
     /// What this converter will do, per pass (0.9 vocabulary).
@@ -1305,7 +1313,11 @@ impl HybridConverter {
     /// answer is concrete.
     pub fn runtime_report(&self) -> RuntimeReport {
         let loaded = self.engine.loaded();
-        let cuda = if loaded.any() { Some(embroider::cuda_available()) } else { None };
+        let cuda = if loaded.any() {
+            Some(embroider::cuda_available())
+        } else {
+            None
+        };
         let plan = self.config.runtime_plan(cuda);
         let pass = |p: &crate::config::PassPlan, landed: bool| PassReport {
             providers: p.providers.clone(),
@@ -1374,9 +1386,7 @@ impl HybridConverter {
         hooks: &ProgressHooks<'_>,
     ) -> crate::error::Result<crate::pipeline::ConvertedDocument> {
         self.ensure_open()?;
-        crate::pipeline::ingest_with_converter(
-            self, path, output_dir, lint_fn, hooks,
-        )
+        crate::pipeline::ingest_with_converter(self, path, output_dir, lint_fn, hooks)
     }
 
     /// Whether [`Self::close`] has been called.
@@ -1421,7 +1431,9 @@ impl HybridConverter {
             .to_lowercase();
         match ext.as_str() {
             "pdf" => self.convert_pdf(input, work_dir),
-            "docx" | "xlsx" | "pptx" | "doc" | "xls" | "ppt" => self.convert_office_staged(input, work_dir),
+            "docx" | "xlsx" | "pptx" | "doc" | "xls" | "ppt" => {
+                self.convert_office_staged(input, work_dir)
+            }
             // Structured source beats the text fallback: JATS carries
             // MathML/table/figure structure that plain UTF-8 reading
             // would flatten into tag soup.
@@ -1443,7 +1455,10 @@ impl HybridConverter {
         use std::io::Read;
         let mut chunk = Vec::new();
         std::fs::File::open(input)
-            .and_then(|mut f| f.take(binaryornot_rs::check::CHUNK_SIZE as u64).read_to_end(&mut chunk))
+            .and_then(|mut f| {
+                f.take(binaryornot_rs::check::CHUNK_SIZE as u64)
+                    .read_to_end(&mut chunk)
+            })
             .map_err(BobineError::Io)?;
         if binaryornot_rs::check::is_binary_string(&chunk) {
             return Err(BobineError::UnsupportedFormat(format!(
@@ -1509,7 +1524,9 @@ impl HybridConverter {
                                     "{}/p{}/{}",
                                     self.config.render.image_output_dir,
                                     i,
-                                    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+                                    path.file_name()
+                                        .map(|n| n.to_string_lossy().into_owned())
+                                        .unwrap_or_default()
                                 ),
                                 bbox_pts: im.bbox,
                             })
@@ -1524,7 +1541,9 @@ impl HybridConverter {
                 Vec::new()
             };
             let page_md = self.route_page(pdf, i, work_dir, &assets)?;
-            let final_md = if self.config.render.extract_images && self.config.render.append_unreferenced_images {
+            let final_md = if self.config.render.extract_images
+                && self.config.render.append_unreferenced_images
+            {
                 maybe_append_gallery(page_md, &assets, &self.config.render, work_dir)
             } else {
                 page_md
@@ -1666,8 +1685,13 @@ impl HybridConverter {
     ) -> Result<String> {
         let fast_md = fast_page_markdown(pdf, index)?;
 
-        let mut boxes =
-            math_boxes_from_chars(pdf, index, self.config.text.min_formula_math_chars, 1.5, 1.5);
+        let mut boxes = math_boxes_from_chars(
+            pdf,
+            index,
+            self.config.text.min_formula_math_chars,
+            1.5,
+            1.5,
+        );
         if boxes.is_empty() && self.config.text.formula_layout_fallback {
             // P2 fallback: use RapidLayout to find equations when text-layer
             // has no math fonts (Word/InDesign/OCR output).
@@ -1717,7 +1741,9 @@ impl HybridConverter {
         // Crop + OCR each cluster
         let mut crops: Vec<(usize, PathBuf)> = Vec::new();
         for (j, cluster) in clusters.iter().enumerate() {
-            if let Some(crop) = crop_image(&img, cluster.bounds, dpi, self.config.text.formula_pad_pts) {
+            if let Some(crop) =
+                crop_image(&img, cluster.bounds, dpi, self.config.text.formula_pad_pts)
+            {
                 if crop.width() >= 4 && crop.height() >= 4 {
                     let p = work_dir.join(format!("_formula_p{}_{}.png", index, j));
                     if crop.save(&p).is_ok() {
@@ -1810,10 +1836,27 @@ impl HybridConverter {
         if !self.config.render.extract_images {
             return Ok(md);
         }
+        if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("pptx"))
+        {
+            let pptx = office_oxide::pptx::PptxDocument::open(path)
+                .map_err(|e| BobineError::OfficeOxide(format!("open pptx images: {e}")))?;
+            let slides = crate::office_images::collect_pptx_slide_images(&pptx);
+            let dest = work_dir
+                .join(&self.config.render.image_output_dir)
+                .join("office");
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("document");
+            return crate::office_images::splice_pptx_images_by_slide(&md, &slides, &dest, stem);
+        }
         let images = {
             let ir_images = crate::office_images::collect_office_images(&doc.to_ir());
             if ir_images.is_empty() {
-                // pptx/xlsx drawings never reach the IR — scan package media.
+                // xlsx drawings do not reach the IR — scan package media.
                 crate::office_images::collect_package_images(path)
             } else {
                 ir_images
@@ -1822,8 +1865,13 @@ impl HybridConverter {
         if images.is_empty() {
             return Ok(md);
         }
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("document");
-        let dest = work_dir.join(&self.config.render.image_output_dir).join("office");
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("document");
+        let dest = work_dir
+            .join(&self.config.render.image_output_dir)
+            .join("office");
         crate::office_images::splice_office_images(&md, &images, &dest, stem)
     }
 }
@@ -1993,10 +2041,7 @@ fn promote_headings(md: &str) -> String {
 fn promote_heading_line(t: &str) -> Option<String> {
     // Reject list/quote/table/image lines; note "**" bold runs are fine,
     // only single-star bullets are excluded.
-    if t.starts_with(['#', '|', '>', '-', '!'])
-        || t.starts_with("* ")
-        || t == "*"
-    {
+    if t.starts_with(['#', '|', '>', '-', '!']) || t.starts_with("* ") || t == "*" {
         return None;
     }
     let bare = t.replace("**", "");
@@ -2006,9 +2051,8 @@ fn promote_heading_line(t: &str) -> Option<String> {
     // title-like remainders ("Encoder and Decoder Stacks"). Single-number
     // prefixes ("1.") are excluded from that relaxation because they are
     // indistinguishable from markdown ordered-list items.
-    let ok = plausible_heading_text(rest)
-        || bold_dominant(t)
-        || (!list_risk && short_title_like(rest));
+    let ok =
+        plausible_heading_text(rest) || bold_dominant(t) || (!list_risk && short_title_like(rest));
     if !ok {
         return None;
     }
@@ -2047,7 +2091,10 @@ fn split_section_prefix(s: &str) -> Option<(usize, &str, bool)> {
         if i < b.len() && (b[i] == b' ' || b[i] == b'\t') {
             let rest = s[i..].trim();
             // Section numbering starts at 1 — "0 H" is figure-axis junk.
-            let leading_ok = s[..i].trim_end_matches('.').parse::<u32>().map_or(true, |v| v > 0);
+            let leading_ok = s[..i]
+                .trim_end_matches('.')
+                .parse::<u32>()
+                .map_or(true, |v| v > 0);
             if !rest.is_empty() && leading_ok {
                 let level = match parts {
                     1 => 2,
@@ -2120,10 +2167,7 @@ fn plausible_heading_text(rest: &str) -> bool {
     if rest.contains('=') {
         return false;
     }
-    if rest
-        .split_whitespace()
-        .any(|w| w.parse::<f64>().is_ok())
-    {
+    if rest.split_whitespace().any(|w| w.parse::<f64>().is_ok()) {
         return false;
     }
     let letters = rest.chars().filter(|c| c.is_ascii_alphabetic()).count();
@@ -2213,7 +2257,9 @@ fn title_like(t: &str) -> bool {
     if t.matches(',').count() >= 2 {
         return false;
     }
-    if t.split_whitespace().any(|w| w.trim_end_matches(',').parse::<f64>().is_ok()) {
+    if t.split_whitespace()
+        .any(|w| w.trim_end_matches(',').parse::<f64>().is_ok())
+    {
         return false;
     }
     t.len() <= 120 && t.split_whitespace().count() <= 25
@@ -2242,8 +2288,7 @@ fn nearby_caption_text(
             (r.x1 - r.x0) / scale,
             (r.y1 - r.y0) / scale,
         );
-        let vertically_overlapping =
-            cr.y < fig.y + fig.height && fig.y < cr.y + cr.height;
+        let vertically_overlapping = cr.y < fig.y + fig.height && fig.y < cr.y + cr.height;
         let gap = if vertically_overlapping {
             // SIDE-BY-SIDE caption (wide two-column figures sometimes
             // carry the caption beside them): no horizontal overlap is
@@ -2318,7 +2363,9 @@ fn interleave_images(
     });
 
     // Text-layer lines in reading order (y ascending).
-    let Ok(chars) = pdf.chars(index) else { return md.to_string() };
+    let Ok(chars) = pdf.chars(index) else {
+        return md.to_string();
+    };
     if chars.is_empty() {
         return md.to_string();
     }
@@ -2326,7 +2373,10 @@ fn interleave_images(
     let mut lines: Vec<(f32, f32, String)> = cluster_lines(&chars, &all)
         .into_iter()
         .map(|l| {
-            let y0 = l.iter().map(|&i| chars[i].bbox.y).fold(f32::INFINITY, f32::min);
+            let y0 = l
+                .iter()
+                .map(|&i| chars[i].bbox.y)
+                .fold(f32::INFINITY, f32::min);
             let y1 = l
                 .iter()
                 .map(|&i| chars[i].bbox.y + chars[i].bbox.height)
@@ -2362,7 +2412,9 @@ fn interleave_images(
         let mut alt: Option<String> = None;
         let mut best_dist = f32::INFINITY;
         for j in lo..hi {
-            let Some(c) = caption_alt(&lines[j].2, 120) else { continue };
+            let Some(c) = caption_alt(&lines[j].2, 120) else {
+                continue;
+            };
             let dist = if lines[j].0 >= bottom {
                 lines[j].0 - bottom
             } else {
@@ -2381,8 +2433,18 @@ fn interleave_images(
         // Locate that line's text in the markdown after the previous anchor.
         let needle_full = normalize_with_offsets(&lines[li].2).0;
         let words: Vec<&str> = needle_full.split(' ').collect();
-        let try8 = words.iter().take(8).copied().collect::<Vec<&str>>().join(" ");
-        let try4 = words.iter().take(4).copied().collect::<Vec<&str>>().join(" ");
+        let try8 = words
+            .iter()
+            .take(8)
+            .copied()
+            .collect::<Vec<&str>>()
+            .join(" ");
+        let try4 = words
+            .iter()
+            .take(4)
+            .copied()
+            .collect::<Vec<&str>>()
+            .join(" ");
         let tries = [needle_full.as_str(), try8.as_str(), try4.as_str()];
         let mut hit: Option<(usize, usize)> = None; // (norm pos, matched len)
         for needle in tries.iter() {
@@ -2707,11 +2769,7 @@ fn rect_iou(a: &Rect, b: &Rect) -> f32 {
         return 0.0;
     }
     let union = a.width * a.height + b.width * b.height - inter;
-    if union <= 0.0 {
-        0.0
-    } else {
-        inter / union
-    }
+    if union <= 0.0 { 0.0 } else { inter / union }
 }
 
 /// The embedded raster best covered by `region`, if any.
@@ -2755,7 +2813,9 @@ fn is_figure_label(label: &str) -> bool {
 /// layout model sometimes draws two boxes over one figure, and each box
 /// would emit a near-identical render crop. Text/table/caption regions are
 /// never dropped here: their duplication is handled by glyph ownership.
-fn dedup_figure_regions(regions: Vec<crate::rapid_layout::LayoutRegion>) -> Vec<crate::rapid_layout::LayoutRegion> {
+fn dedup_figure_regions(
+    regions: Vec<crate::rapid_layout::LayoutRegion>,
+) -> Vec<crate::rapid_layout::LayoutRegion> {
     let mut kept: Vec<crate::rapid_layout::LayoutRegion> = Vec::with_capacity(regions.len());
     for r in regions {
         let dup = is_figure_label(&r.label)
@@ -2805,7 +2865,11 @@ fn region_text(pdf: &mut dyn PdfSource, index: usize, bbox: Rect) -> String {
 fn line_string(chars: &[SourceChar], idxs: &[usize]) -> String {
     let mut idxs = idxs.to_vec();
     idxs.sort_by(|&a, &b| {
-        chars[a].bbox.x.partial_cmp(&chars[b].bbox.x).unwrap_or(std::cmp::Ordering::Equal)
+        chars[a]
+            .bbox
+            .x
+            .partial_cmp(&chars[b].bbox.x)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
     let mut text = String::new();
     let mut prev_end = f32::NAN;
@@ -2836,9 +2900,15 @@ fn cluster_lines(chars: &[SourceChar], glyph_ids: &[usize]) -> Vec<Vec<usize>> {
 
     let mut order = glyph_ids.to_vec();
     order.sort_by(|&a, &b| {
-        gyc(a).partial_cmp(&gyc(b)).unwrap_or(std::cmp::Ordering::Equal)
+        gyc(a)
+            .partial_cmp(&gyc(b))
+            .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| {
-                chars[a].bbox.x.partial_cmp(&chars[b].bbox.x).unwrap_or(std::cmp::Ordering::Equal)
+                chars[a]
+                    .bbox
+                    .x
+                    .partial_cmp(&chars[b].bbox.x)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
     });
     let mut lines: Vec<Vec<usize>> = vec![vec![]];
@@ -3069,7 +3139,9 @@ impl HybridConverter {
         );
         if !self.config.health.render_gate_salvage_inline_math {
             self.gate_stats.math_spans_suppressed += math_boxes.len() as u64;
-            return Ok(GateAction::Fire { salvaged: Vec::new() });
+            return Ok(GateAction::Fire {
+                salvaged: Vec::new(),
+            });
         }
         // Opt-in salvage: inline-only boxes from the text layer as `$…$`.
         // Best-effort — corrupt layers salvage garbage, hence off default.
@@ -3112,8 +3184,13 @@ impl HybridConverter {
         // contains them so overlapping regions cannot emit duplicates.
         // hgap 2.5: TeX \quad spacing inside display equations fragments runs
         // at 1.5; vgap 0.9: never merge math from adjacent text lines.
-        let mut page_math_boxes =
-            math_boxes_from_chars(pdf, index, self.config.text.min_formula_math_chars, 2.5, 0.9);
+        let mut page_math_boxes = math_boxes_from_chars(
+            pdf,
+            index,
+            self.config.text.min_formula_math_chars,
+            2.5,
+            0.9,
+        );
         let line_height = estimate_line_height(pdf, index, page_h);
 
         // One chars() pass for the whole page (glyph-exact region
@@ -3142,8 +3219,7 @@ impl HybridConverter {
                 if salvaged.is_empty() {
                     return Ok(None);
                 }
-                let mut fast =
-                    self.fast_markdown_placed(pdf, index, work_dir, assets)?;
+                let mut fast = self.fast_markdown_placed(pdf, index, work_dir, assets)?;
                 for s in &salvaged {
                     fast.push_str("\n\n");
                     fast.push_str(s);
@@ -3193,8 +3269,7 @@ impl HybridConverter {
         // rationale). `owners` was removed: nothing ever read it.
         let (_claim_order, rank) = claim_ranks(&sorted);
         let glyph_owner = assign_glyph_owners(&page_chars, &sorted, &rank, scale);
-        let mut region_lines =
-            assign_region_lines(&page_chars, &glyph_owner, &rank, sorted.len());
+        let mut region_lines = assign_region_lines(&page_chars, &glyph_owner, &rank, sorted.len());
 
         // POTATR page-level table pre-pass (P2, option A precedence).
         // Claims table (+caption/footer) boxes up front when the backend
@@ -3215,10 +3290,12 @@ impl HybridConverter {
 
         // Median glyph height ≈ line height — used as the caption-association
         // distance budget.
-        let mut char_heights: Vec<f32> =
-            page_chars.iter().map(|c| c.bbox.height).collect();
+        let mut char_heights: Vec<f32> = page_chars.iter().map(|c| c.bbox.height).collect();
         char_heights.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let median_char_h = char_heights.get(char_heights.len() / 2).copied().unwrap_or(11.0);
+        let median_char_h = char_heights
+            .get(char_heights.len() / 2)
+            .copied()
+            .unwrap_or(11.0);
 
         // Shared immutable dispatch context (see `RegionCtx`); mutable
         // handles are passed per-arm so mutation stays visible.
@@ -3316,7 +3393,12 @@ impl HybridConverter {
         let md = blocks.join("\n\n");
         if dbg_blocks {
             for (bi, b) in blocks.iter().enumerate() {
-                eprintln!("DBG p{} block[{}] {:?}...", index + 1, bi, b.chars().take(60).collect::<String>());
+                eprintln!(
+                    "DBG p{} block[{}] {:?}...",
+                    index + 1,
+                    bi,
+                    b.chars().take(60).collect::<String>()
+                );
             }
         }
         if md.trim().is_empty() {
@@ -3382,10 +3464,8 @@ mod tests {
         let p = d.join("looks_like_text.md");
         // PNG magic signature: a genuinely binary payload in text clothing.
         std::fs::write(&p, b"\x89PNG\r\n\x1a\n\x00\x01\x02\x03binary blob").unwrap();
-        let mut conv = HybridConverter::new(
-            ConverterConfig::default(),
-            &temp_dir("bin_sniff_cache"),
-        );
+        let mut conv =
+            HybridConverter::new(ConverterConfig::default(), &temp_dir("bin_sniff_cache"));
         let err = conv.convert(&p, &d).unwrap_err();
         match err {
             BobineError::UnsupportedFormat(msg) => {
@@ -3427,9 +3507,15 @@ mod tests {
         config.health.render_gate_enabled = false;
         let mut conv = HybridConverter::new(config, &temp_dir("gate_off_cache"));
         let mut pdf = FakePdf::default();
-        let chars: Vec<SourceChar> = "word ".repeat(100).chars().map(|c| SourceChar::new(c, 0.0, 0.0, 7.0, 10.0, "H")).collect();
+        let chars: Vec<SourceChar> = "word "
+            .repeat(100)
+            .chars()
+            .map(|c| SourceChar::new(c, 0.0, 0.0, 7.0, 10.0, "H"))
+            .collect();
         let img = image::DynamicImage::new_rgb8(8, 8);
-        let action = conv.render_gate_check(&mut pdf, 0, &chars, &img, &[], 12.0).unwrap();
+        let action = conv
+            .render_gate_check(&mut pdf, 0, &chars, &img, &[], 12.0)
+            .unwrap();
         assert!(matches!(action, crate::render_gate::GateAction::Pass));
         assert_eq!(conv.gate_stats().pages_checked, 0);
         assert_eq!(conv.gate_stats().pages_fired, 0);
@@ -3439,15 +3525,18 @@ mod tests {
     fn render_gate_thin_layer_passes_without_models() {
         // Enabled gate + scanned-like thin layer: passes before any OCR
         // read (fail-open ordering), so no models are required.
-        let mut conv = HybridConverter::new(
-            ConverterConfig::default(),
-            &temp_dir("gate_thin_cache"),
-        );
+        let mut conv =
+            HybridConverter::new(ConverterConfig::default(), &temp_dir("gate_thin_cache"));
         assert!(conv.config.health.render_gate_enabled);
         let mut pdf = FakePdf::default();
-        let chars: Vec<SourceChar> = "a b c".chars().map(|c| SourceChar::new(c, 0.0, 0.0, 7.0, 10.0, "H")).collect();
+        let chars: Vec<SourceChar> = "a b c"
+            .chars()
+            .map(|c| SourceChar::new(c, 0.0, 0.0, 7.0, 10.0, "H"))
+            .collect();
         let img = image::DynamicImage::new_rgb8(8, 8);
-        let action = conv.render_gate_check(&mut pdf, 0, &chars, &img, &[], 12.0).unwrap();
+        let action = conv
+            .render_gate_check(&mut pdf, 0, &chars, &img, &[], 12.0)
+            .unwrap();
         assert!(matches!(action, crate::render_gate::GateAction::Pass));
         assert_eq!(conv.gate_stats().pages_checked, 0);
     }
@@ -3457,10 +3546,8 @@ mod tests {
         let d = temp_dir("txt_sniff");
         let p = d.join("notes.weirdext");
         std::fs::write(&p, "# Notes\n\nplain markdown body\n").unwrap();
-        let mut conv = HybridConverter::new(
-            ConverterConfig::default(),
-            &temp_dir("txt_sniff_cache"),
-        );
+        let mut conv =
+            HybridConverter::new(ConverterConfig::default(), &temp_dir("txt_sniff_cache"));
         let md = conv.convert(&p, &d).unwrap();
         assert!(md.contains("plain markdown body"), "{md}");
     }
@@ -3472,10 +3559,8 @@ mod tests {
         let d = temp_dir("empty_sniff");
         let p = d.join("empty.md");
         std::fs::write(&p, b"").unwrap();
-        let mut conv = HybridConverter::new(
-            ConverterConfig::default(),
-            &temp_dir("empty_sniff_cache"),
-        );
+        let mut conv =
+            HybridConverter::new(ConverterConfig::default(), &temp_dir("empty_sniff_cache"));
         assert_eq!(conv.convert(&p, &d).unwrap(), "");
     }
 
@@ -3677,7 +3762,10 @@ mod tests {
         // Case 1: first block is a bare title line.
         let md = "Vector Edge Solitons and Domain Walls\n\nDavid Snee\n\n## I. Intro";
         let out = promote_document_title(md);
-        assert!(out.starts_with("# Vector Edge Solitons and Domain Walls"), "{out}");
+        assert!(
+            out.starts_with("# Vector Edge Solitons and Domain Walls"),
+            "{out}"
+        );
         // Case 2: junk first (ends with '.'), first heading promoted to #.
         let md = "Provided proper attribution is provided, Google grants permission.\n\n## Attention Is All You Need\n\ntext";
         let out = promote_document_title(md);
@@ -3698,19 +3786,34 @@ mod tests {
             caption_alt("Figure 1: Temporal L2 error at time T=1", 120).as_deref(),
             Some("Figure 1: Temporal L2 error at time T=1")
         );
-        assert_eq!(caption_alt("Fig. S1  setup", 120).as_deref(), Some("Fig. S1 setup"));
-        assert_eq!(caption_alt("Table 2: results", 120).as_deref(), Some("Table 2: results"));
+        assert_eq!(
+            caption_alt("Fig. S1  setup", 120).as_deref(),
+            Some("Fig. S1 setup")
+        );
+        assert_eq!(
+            caption_alt("Table 2: results", 120).as_deref(),
+            Some("Table 2: results")
+        );
         // Non-captions → None (empty alt is better than a wrong one).
         assert_eq!(caption_alt("We show that the scheme converges.", 120), None);
         assert_eq!(caption_alt("configuration of the model", 120), None);
         // Truncation at word boundary with ellipsis.
-        let long = caption_alt("Figure 3: a very long caption that keeps going and going beyond the limit", 40).unwrap();
+        let long = caption_alt(
+            "Figure 3: a very long caption that keeps going and going beyond the limit",
+            40,
+        )
+        .unwrap();
         assert!(long.ends_with('…') && long.chars().count() <= 41, "{long}");
         // Square brackets stripped for ![...] syntax safety.
-        assert_eq!(caption_alt("Figure 4: [normalized] error", 120).as_deref(),
-            Some("Figure 4: normalized error"));
+        assert_eq!(
+            caption_alt("Figure 4: [normalized] error", 120).as_deref(),
+            Some("Figure 4: normalized error")
+        );
         // Whitespace collapsed.
-        assert_eq!(caption_alt("Figure   5:\ttitle", 120).as_deref(), Some("Figure 5: title"));
+        assert_eq!(
+            caption_alt("Figure   5:\ttitle", 120).as_deref(),
+            Some("Figure 5: title")
+        );
     }
 
     #[test]
@@ -3728,17 +3831,39 @@ Second paragraph text."
                 .into(),
         );
         for (i, ch) in "First paragraph text".chars().enumerate() {
-            page.chars.push(SourceChar::new(ch, 50.0 + i as f32 * 8.0, 100.0, 7.0, 11.0, "Helvetica"));
+            page.chars.push(SourceChar::new(
+                ch,
+                50.0 + i as f32 * 8.0,
+                100.0,
+                7.0,
+                11.0,
+                "Helvetica",
+            ));
         }
         for (i, ch) in "Figure 1: Test caption here".chars().enumerate() {
-            page.chars.push(SourceChar::new(ch, 50.0 + i as f32 * 8.0, 255.0, 7.0, 11.0, "Helvetica"));
+            page.chars.push(SourceChar::new(
+                ch,
+                50.0 + i as f32 * 8.0,
+                255.0,
+                7.0,
+                11.0,
+                "Helvetica",
+            ));
         }
         for (i, ch) in "Second paragraph text".chars().enumerate() {
-            page.chars.push(SourceChar::new(ch, 50.0 + i as f32 * 8.0, 300.0, 7.0, 11.0, "Helvetica"));
+            page.chars.push(SourceChar::new(
+                ch,
+                50.0 + i as f32 * 8.0,
+                300.0,
+                7.0,
+                11.0,
+                "Helvetica",
+            ));
         }
         let img = image::DynamicImage::new_rgb8(10, 10);
         page.images.push(img);
-        page.image_bboxes.push(Some(Rect::new(50.0, 150.0, 200.0, 100.0))); // bottom=250
+        page.image_bboxes
+            .push(Some(Rect::new(50.0, 150.0, 200.0, 100.0))); // bottom=250
         let dir = temp_dir("interleave");
         let mut conv = HybridConverter::new(ConverterConfig::default(), &dir);
         let mut pdf = FakePdf::new(vec![page]);
@@ -3748,7 +3873,10 @@ Second paragraph text."
         let first = out.find("First paragraph").unwrap();
         let link = out.find("![").unwrap();
         let second = out.find("Second paragraph").unwrap();
-        assert!(first < link && link < second, "link must sit between bands: {out}");
+        assert!(
+            first < link && link < second,
+            "link must sit between bands: {out}"
+        );
         // The caption line below the asset becomes the alt text.
         assert!(
             out.contains("![Figure 1: Test caption here](assets/p0/img0.png)"),
@@ -4199,7 +4327,8 @@ Second paragraph text."
     }
 
     #[test]
-    fn claim_priority_mirrors_routing() {        assert_eq!(region_claim_priority("isolate_formula"), CLAIM_MATH);
+    fn claim_priority_mirrors_routing() {
+        assert_eq!(region_claim_priority("isolate_formula"), CLAIM_MATH);
         assert_eq!(region_claim_priority("formula"), CLAIM_MATH);
         assert_eq!(region_claim_priority("equation"), CLAIM_MATH);
         // Caption substring wins over the math/table substrings
@@ -4248,7 +4377,9 @@ Second paragraph text."
         let got = figure_src(&d, "tiny.png", &r);
         assert!(got.starts_with("data:image/png;base64,"), "{got:.40}");
         let payload = got.trim_start_matches("data:image/png;base64,");
-        let raw = base64::engine::general_purpose::STANDARD.decode(payload).unwrap();
+        let raw = base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .unwrap();
         assert_eq!(raw, b"\x89PNG-fake-bytes");
         // Over the cap stays a link; missing files stay links too.
         assert_eq!(figure_src(&d, "big.png", &r), "big.png");
@@ -4411,7 +4542,8 @@ Second paragraph text."
         let mut page = crate::pdf_source::fake::FakePage::default();
         page.md = None;
         let mut push = |ch: char, x: f32| {
-            page.chars.push(SourceChar::new(ch, x, 700.0, 7.0, 11.0, "H"));
+            page.chars
+                .push(SourceChar::new(ch, x, 700.0, 7.0, 11.0, "H"));
         };
         for (i, ch) in "LEFT".chars().enumerate() {
             push(ch, 50.0 + i as f32 * 8.0);

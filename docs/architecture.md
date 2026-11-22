@@ -527,13 +527,12 @@ parts with deliberately different trust levels:
   (was: footnote bodies, xlsx formula cached values, pptx bullets —
   goldens prove all three). No in-tree workarounds — upstream
   fixes with minimal repros instead.
-- **`office_images`** — bobine-owned staging. Two sources, one contract:
-  the IR walk (document order, alt text, decorative + link-only skipped,
-  table/textbox/note nesting) wins; when the IR carries nothing (pptx/xlsx
-  drawings never reach it — verified), the `*/media/*` package scan fills
-  in (filename-stem alt). Positional pairing against md links, surplus
-  pictures gallery-appended — the same shape as the PDF unreferenced-figure
-  flow, so `ingest_document` promotes both identically.
+- **`office_images`** — bobine-owned staging. DOCX uses the IR walk
+  (document order, alt text, decorative + link-only skipped,
+  table/textbox/note nesting); PPTX uses its slide shape model and inserts
+  pictures into their slide section; XLSX uses the `*/media/*` package scan
+  (filename-stem alt) and appends a gallery. DOCX links pair positionally
+  with IR images. `ingest_document` promotes all staged images identically.
 - **`excel`** — bobine-owned data model over office_oxide cell access
   (`format_cell_value` for xlsx, `as_text` for xls). Formulas are cached
   values only, never evaluated — a load-bearing decision for JSON consumers.

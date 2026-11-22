@@ -12,11 +12,11 @@ Agenda
 - Verify
 - Ship
 
+![](assets/office/img_55d55472003452c7.png)
+
 ## Numbers
 
 Quarterly
 
 Q	Revenue
 Q1	42
-
-![](assets/office/img_55d55472003452c7.png)
