@@ -68,6 +68,10 @@ src/
 ├── mml.rs            MathML → LaTeX verbatim port (GREEK/OPS/FUNC_NAMES…
 │                     tables, mml_to_tex + mathify + merge_math; 692-fixture
 │                     byte-parity gate vs the shimmed Python reference)
+├── math_source.rs    Tagged formula spans, origins, embedded files, reports
+├── pdf_math_raw.rs   Bounded raw-object lookup for formula /AF, /A, /Alt, /NS
+├── math_render.rs    Optional cached KaTeX validation / markup export
+├── input_limits.rs   Shared path and in-memory source-size checks
 ├── jats.rs           JATS XML → GFM: convert_jats_str + JatsDocument
 │                     (inline $…$ fused, display $$…\tag{N}$$, GFM tables,
 │                     figure ![alt](href) links, sections/back-matter;
@@ -92,7 +96,9 @@ legacy/               frozen pure-Python bobine v0.2.0 (reference implementation
 
 Dependency direction: `pipeline → converter → engine → (tex_teller |
 rapid_layout | rapid_ocr | rapid_table | rapid_potatr)`; `converter → tables`,
-`converter → pdf_source`, `converter → excel | office_images`;
+`converter → pdf_source | math_source | math_render`,
+`pdf_source → pdf_math_raw | math_source | input_limits`,
+`converter → excel | office_images | input_limits`;
 `pipeline → excel` (workbook siblings); `documents/assets` sit beside the
 pipeline layer. No cycles.
 
@@ -163,6 +169,26 @@ as-is; the dispatcher always stages. Staged links are work-dir-relative
 (`assets/office/img_<hash>.png`), so the ingest `stage_images` pass
 promotes them to `okf-asset://` with no pipeline changes (it gained one
 resolution candidate: work-dir-relative targets).
+
+### Source and request size limits
+
+`input_limits::ensure_input_file_size` runs before path-based conversion or
+parsing for PDF, Office, JATS/XML, text, and workbook entry points. The shared
+limit is 256 MiB (`MAX_INPUT_FILE_BYTES`); in-memory JATS conversion applies
+the same limit to the XML byte slice. The HTTP host separately rejects
+request bodies over 256 MiB before JSON decoding. A request body contains a
+path, so the server body limit and the referenced-file limit protect different
+inputs.
+
+PDF attachment parsing has two additional per-file limits: 16 MiB for
+document-level embedded sources, and 1 MiB for MathML associated with an
+individual formula. These checks apply after `pdf_oxide` decodes attachment
+streams. Consequently, they limit data Bobine passes to downstream parsers,
+but do not bound decompression peak memory. Bobine also has no aggregate
+attachment count or decoded-byte cap yet; the checks in the PDF object lookup
+bound traversal work, not total decompressed attachment storage. Inline/base64
+image output is separately capped at 4 MiB per image; larger images remain
+file links.
 
 ### Excel export (`convert_excel`)
 
@@ -341,6 +367,27 @@ Invariants:
 no math fonts, run RapidLayout and use `equation`-labelled regions
 (`MATH_LAYOUT_LABELS`). Inline math is lost — opt-in only, same tradeoff
 as Python.
+
+### Tagged formula sources (0.10.0)
+
+When `prefer_structured_math` is enabled, the PDF adapter reads tagged
+`/Formula` elements from `pdf_oxide`'s parsed structure tree and aligns them
+to page coordinates. The bounded raw-object lookup is restricted to those
+formula elements and preserves normalized `/A` and `/NS` attributes, decodes
+`/Alt` as a description, and follows `/AF` for associated MathML. Associated
+files are reused from `extract_embedded_files()` only when the filename match
+is unique; ambiguous or unregistered associations are skipped. Formula content
+precedence is structure MathML, associated-file MathML, then description-only
+`/Alt`. Structured spans replace only overlapping OCR candidates and are
+spliced at their page positions. `math_source_report()` exposes counts and
+warnings to callers. This path uses `pdf_oxide` for tree parsing and stream
+decoding; Bobine does not implement a general PDF parser or decoder.
+
+`math-validate` enables nonfatal KaTeX validation during extraction.
+`math-export` enables the Rust `render_math_markup` API for HTML, MathML, or
+both. Both features are opt-in on the Rust crate. The release workflow adds
+`math-validate` when building published Python wheels; the default feature
+list in `pyproject.toml` does not enable it for local source builds.
 
 ---
 

@@ -193,6 +193,10 @@ src/
 ├── render_gate.rs    Render-health gate (Option C: OCR↔layer agreement, version-scoped to pdf_oxide < 0.3.79)
 ├── sanitize.rs       Post-OCR LaTeX repair (split_cmds, fence fixup, script split)
 ├── mml.rs            MathML → LaTeX (verbatim port, fixture-parity gated)
+├── math_source.rs    Tagged formula spans, source provenance and warnings
+├── pdf_math_raw.rs   Bounded raw-object lookup for formula /AF and attributes
+├── math_render.rs    Optional KaTeX validation / HTML and MathML export
+├── input_limits.rs   Shared 256 MiB source-file limit
 ├── jats.rs           JATS XML → GFM (formulas/tables/figures, no ONNX needed)
 ├── pdf_source.rs     PdfSource trait — page text without a real PDF file
 ├── tables.rs         HTML table → GFM pipe-table converter
@@ -291,6 +295,24 @@ columns and prose stay apart. For text-layer-hostile PDFs (Word/InDesign/OCR
 output without math fonts), set `formula_layout_fallback=True` to ask the
 layout model for equation regions instead (off by default).
 
+Tagged PDFs can provide formula MathML through the structure tree or an
+associated MathML file (`/AF`). Bobine converts these sources to LaTeX,
+places them by page position, and suppresses only overlapping formula OCR
+candidates. `/Alt` remains descriptive text, not formula input. The latest
+conversion's source counts and warnings are available from
+`HybridConverter.math_source_report()`. KaTeX validation is enabled in the
+published Python wheels; it is opt-in for Rust builds with `math-validate`.
+Rust callers can opt into `math-export` and use `render_math_markup` to render
+HTML, MathML, or both. The default Rust build includes neither feature.
+
+Bobine rejects path-based input files larger than 256 MiB before parsing.
+Embedded document sources have a 16 MiB per-file parsing cap, formula-linked
+attachments a 1 MiB per-file cap, and base64 image embedding a 4 MiB cap.
+These attachment caps are checked after `pdf_oxide` decodes the streams, so
+they do not bound peak decompression memory; there is no aggregate attachment
+count or byte cap yet. The HTTP server independently caps request bodies at
+256 MiB.
+
 ### OCR batching
 
 OCR recognition runs line crops in chunks of 32 on accelerators (6.3x faster
@@ -307,6 +329,8 @@ csv/json (`convert_excel`, `<stem>.<sheet>.csv` + `<stem>.json` siblings).
 Embedded pictures stage into `<work_dir>/assets/office/` and rewrite to staged
 files, promoted to `okf-asset://` by `ingest_document` — see §12 of the
 [architecture doc](https://github.com/opticsWolf/bobine/blob/main/docs/architecture.md).
+PPTX pictures stay with the slide content they belong to; unreferenced images
+are gallery-appended when extraction is enabled.
 
 ## Structured sources (JATS)
 

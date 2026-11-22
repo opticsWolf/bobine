@@ -6,15 +6,17 @@
   MathML text, raw formula attributes, `/Alt` descriptions, and associated
   MathML files through `pdf_oxide`. Structured formulas are inserted by page
   position and suppress only overlapping OCR candidates; provenance and
-  source warnings are available to Rust and Python callers. KaTeX-backed
-  validation and HTML/MathML export remain opt-in features.
+  source warnings are available to Rust and Python callers. The Rust crate
+  keeps KaTeX optional; published Python wheels enable validation, while
+  HTML/MathML export remains opt-in.
 - **Explicit input and body limits.** Reject input files larger than 256 MiB
-  across conversion entry points, raise embedded-source and inline-image
-  budgets to 16 MiB and 4 MiB, and enforce the 256 MiB HTTP request-body cap.
-  Formula-associated attachments retain their 1 MiB per-file cap. The PDF
-  backend still decodes catalog attachments before Bobine can apply parsed
-  byte limits; the extraction code records this as a follow-up resource-limit
-  item.
+  across conversion entry points and enforce the separate 256 MiB HTTP
+  request-body cap. Document-level embedded sources have a 16 MiB per-file
+  parsing cap, base64 image embedding has a 4 MiB per-image cap, and
+  formula-associated attachments retain their 1 MiB per-file cap. The PDF
+  backend decodes catalog attachments before Bobine applies parsing limits;
+  there is no aggregate attachment count/byte cap, and peak decompression
+  memory is not bounded by these checks.
 - **Binary text fallback detection.** Use `binaryornot-rs` when deciding
   whether unrecognized or text-suffixed inputs can safely take the text
   fallback.

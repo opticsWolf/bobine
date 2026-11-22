@@ -70,6 +70,7 @@ md = conv.convert("notes.md", work_dir="/tmp/out")
 | `HybridConverter.ingest_document(path, out, on_page=, should_continue=)` | Full pipeline on a converter you hold: sessions stay warm across files (0.9) |
 | `HybridConverter.close()` / `with` | Release the ONNX sessions; a closed converter refuses work until you build a new one |
 | `HybridConverter.convert_office(path)` | Office → markdown (associated fn, no staging; `convert()` stages) |
+| `HybridConverter.math_source_report()` | Source counts and warnings from the latest PDF conversion |
 | `convert_to_markdown(path, config, work_dir, cache_dir)` | Raw markdown string, one-shot |
 | `convert_excel(path)` | Workbook → `ExcelDocument`: `.markdown`, `.sheet_names`, `.csv_by_sheet`, `.json` |
 | `convert_jats(path, work_dir, config?)` | JATS `.xml`/`.jats` → `JatsDocument` (no models, no ORT; see below) |
@@ -301,7 +302,13 @@ match; ambiguous or unlisted associated files are skipped. `/A` and `/NS` are
 retained on the Rust `MathSpan` result as normalized metadata; `/Alt` is decoded
 as a description and never treated as LaTeX. The document-source and formula-
 attachment byte caps apply before Bobine parses attachment content, after
-`pdf_oxide` has decoded the stream.
+`pdf_oxide` has decoded the stream. There is no aggregate attachment count or
+decoded-byte cap, and the per-file caps do not bound peak decompression memory.
+
+Rust builds can opt into `math-validate` for KaTeX validation or `math-export`
+for `bobine::render_math_markup` (HTML, MathML, or both). The published Python
+wheels include `math-validate`; the default feature list in `pyproject.toml`
+does not, so a local source-built wheel must enable it explicitly if needed.
 
 ## Structured sources: JATS (v0.7.0)
 
