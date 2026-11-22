@@ -21,9 +21,9 @@ jobs:
   # Rust test suite — runs on every push/PR so dependency updates
   # (e.g. pdf_oxide) can't silently shift golden output.
   # Needs onnxruntime: lib tests abort without a resolvable dylib
-  # (STATUS_STACK_BUFFER_OVERRUN); model-backed tests skip or degrade
-  # gracefully, fixtures are all committed (no downloads except the
-  # small RapidTable weights from HuggingFace).
+  # (STATUS_STACK_BUFFER_OVERRUN); the pinned PyPI wheel supplies it.
+  # Model-backed tests skip or degrade gracefully; fixtures are committed
+  # (RapidTable weights may download from HuggingFace).
   test:
     runs-on: ubuntu-22.04
     steps:
@@ -40,15 +40,29 @@ jobs:
           fi
           echo 'torch-free'
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
       # Same ORT as the pyproject extras pin (single pinned runtime, COMPAT.md).
-      - name: Download onnxruntime (CPU)
+      # Use the PyPI wheel: the upstream GitHub release asset URL can return
+      # a 404 page, which curl -sL previously saved as if it were a tarball.
+      - name: Install onnxruntime (CPU)
         run: |
-          curl -sL --max-time 300 -o /tmp/ort.tgz \
-            https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-linux-x64-1.31.1.tgz
-          mkdir -p /tmp/ort && tar xzf /tmp/ort.tgz -C /tmp/ort
+          python -m pip install --disable-pip-version-check --no-input "onnxruntime==1.31.1"
+          python - <<'PY'
+          import os
+          import sysconfig
+          from pathlib import Path
+
+          capi = Path(sysconfig.get_paths()["purelib"]) / "onnxruntime" / "capi"
+          library = capi / "libonnxruntime.so.1.31.1"
+          if not library.is_file():
+              raise SystemExit(f"ONNX Runtime library not found: {library}")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"ORT_DYLIB_PATH={library}\n")
+              env.write(f"LD_LIBRARY_PATH={capi}:{os.environ.get('LD_LIBRARY_PATH', '')}\n")
+          PY
       - name: Rust tests (locked)
-        env:
-          ORT_DYLIB_PATH: /tmp/ort/onnxruntime-linux-x64-1.31.1/lib/libonnxruntime.so.1.31.1
         run: >
           cargo test --locked --lib
           --test test_office --test test_excel

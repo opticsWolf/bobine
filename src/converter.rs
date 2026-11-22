@@ -4371,12 +4371,9 @@ Second paragraph text."
             },
             &temp_dir("surgical_plain"),
         );
+        let work_dir = temp_dir("surgical_plain_output");
         let out = conv
-            .convert_pdf_source(
-                &mut pdf,
-                Path::new("/tmp/nowhere"),
-                &ProgressHooks::default(),
-            )
+            .convert_pdf_source(&mut pdf, &work_dir, &ProgressHooks::default())
             .unwrap();
         assert!(out.contains("plain body prose"), "{}", out);
     }
@@ -4388,12 +4385,9 @@ Second paragraph text."
             "Helvetica",
         )]);
         let mut conv = HybridConverter::new(ConverterConfig::default(), &temp_dir("auto_plain"));
+        let work_dir = temp_dir("auto_plain_output");
         let out = conv
-            .convert_pdf_source(
-                &mut pdf,
-                Path::new("/tmp/nowhere"),
-                &ProgressHooks::default(),
-            )
+            .convert_pdf_source(&mut pdf, &work_dir, &ProgressHooks::default())
             .unwrap();
         assert!(out.contains("regular sentences"), "{}", out);
     }

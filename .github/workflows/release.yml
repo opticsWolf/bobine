@@ -40,14 +40,28 @@ jobs:
         run: cargo check --locked
       - name: Verify optional math export feature
         run: cargo check --locked --features math-export
-      - name: Download onnxruntime (CPU — lib tests abort without a dylib)
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install onnxruntime (CPU — lib tests abort without a dylib)
         run: |
-          curl -sL --max-time 300 -o /tmp/ort.tgz \
-            https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-linux-x64-1.31.1.tgz
-          mkdir -p /tmp/ort && tar xzf /tmp/ort.tgz -C /tmp/ort
+          # Install the same pinned build used by the Python extras. Direct
+          # release-asset downloads can return a 404 HTML page instead.
+          python -m pip install --disable-pip-version-check --no-input "onnxruntime==1.31.1"
+          python - <<'PY'
+          import os
+          import sysconfig
+          from pathlib import Path
+
+          capi = Path(sysconfig.get_paths()["purelib"]) / "onnxruntime" / "capi"
+          library = capi / "libonnxruntime.so.1.31.1"
+          if not library.is_file():
+              raise SystemExit(f"ONNX Runtime library not found: {library}")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"ORT_DYLIB_PATH={library}\n")
+              env.write(f"LD_LIBRARY_PATH={capi}:{os.environ.get('LD_LIBRARY_PATH', '')}\n")
+          PY
       - name: Run library unit tests (integration needs onnxruntime)
-        env:
-          ORT_DYLIB_PATH: /tmp/ort/onnxruntime-linux-x64-1.31.1/lib/libonnxruntime.so.1.31.1
         run: cargo test --locked --lib
       - name: Publish to crates.io
         # Tags publish; manual dispatch is a dry-run (check + test only).
